@@ -1,3 +1,12 @@
+## [1.1.10](https://github.com/ibrahimshadev/dikt/compare/v1.1.9...v1.1.10) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** move push trigger from build to release workflow ([3af74d3](https://github.com/ibrahimshadev/dikt/commit/3af74d3fbc50c5aa2cf4cbbeec21c6eaf58bab20))
+* **recording:** set status synchronously to prevent race condition ([d0e6df8](https://github.com/ibrahimshadev/dikt/commit/d0e6df8d03715118895fe0d6d2b75e09b3b9d75f))
+* trigger release test ([50961dc](https://github.com/ibrahimshadev/dikt/commit/50961dc6628dac849d95adcc942516641f93262a))
+
 ## [1.1.9](https://github.com/ibrahimshadev/dikt/compare/v1.1.8...v1.1.9) (2026-02-03)
 
 
