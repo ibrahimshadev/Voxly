@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/ibrahimshadev/dikt/compare/v1.1.2...v1.1.3) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ui:** fix transparent window on Windows and change default hotkey ([a6ca22a](https://github.com/ibrahimshadev/dikt/commit/a6ca22aedd68420a5c1bfe2137b4da17a4a25641))
+
 ## [1.1.2](https://github.com/ibrahimshadev/dikt/compare/v1.1.1...v1.1.2) (2026-02-03)
 
 
