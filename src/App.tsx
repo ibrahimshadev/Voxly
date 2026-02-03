@@ -16,7 +16,7 @@ type Settings = {
 const DEFAULT_SETTINGS: Settings = {
   base_url: 'https://api.openai.com/v1',
   model: 'whisper-1',
-  hotkey: 'Super+Space',
+  hotkey: 'Control+Space',
   api_key: ''
 };
 

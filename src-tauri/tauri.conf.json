@@ -39,7 +39,8 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "center": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "shadow": false
       }
     ]
   }

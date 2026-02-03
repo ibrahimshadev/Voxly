@@ -29,7 +29,7 @@ impl Default for AppSettings {
     Self {
       base_url: "https://api.openai.com/v1".to_string(),
       model: "whisper-1".to_string(),
-      hotkey: "Super+Space".to_string(),
+      hotkey: "Control+Space".to_string(),
       api_key: String::new(),
     }
   }
@@ -178,14 +178,14 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
     serde_json::from_str::<StoredSettings>(&contents).unwrap_or_else(|_| StoredSettings {
       base_url: "https://api.openai.com/v1".to_string(),
       model: "whisper-1".to_string(),
-      hotkey: "Super+Space".to_string(),
+      hotkey: "Control+Space".to_string(),
       encrypted_api_key: None,
     })
   } else {
     StoredSettings {
       base_url: "https://api.openai.com/v1".to_string(),
       model: "whisper-1".to_string(),
-      hotkey: "Super+Space".to_string(),
+      hotkey: "Control+Space".to_string(),
       encrypted_api_key: None,
     }
   };
