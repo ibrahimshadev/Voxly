@@ -6,7 +6,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 
 const SERVICE_NAME: &str = "dikt";
-const DEFAULT_HOTKEY: &str = "Control+Space";
+// Use Tauri's canonical modifier name. This resolves to Ctrl on Windows/Linux and Cmd on macOS.
+const DEFAULT_HOTKEY: &str = "CommandOrControl+Space";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -43,8 +44,9 @@ pub fn load_settings() -> AppSettings {
     if let Ok(contents) = fs::read_to_string(&path) {
       if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
         let mut updated = false;
-        if is_deprecated_hotkey(&stored.hotkey) {
-          stored.hotkey = DEFAULT_HOTKEY.to_string();
+        let normalized = normalize_hotkey(&stored.hotkey);
+        if normalized != stored.hotkey {
+          stored.hotkey = normalized;
           updated = true;
         }
 
@@ -106,8 +108,15 @@ fn settings_path() -> Result<PathBuf, String> {
   Ok(base_dir.join("dikt").join("settings.json"))
 }
 
-fn is_deprecated_hotkey(hotkey: &str) -> bool {
-  matches!(hotkey, "Control+Super" | "Alt+Space" | "Super+Space")
+fn normalize_hotkey(hotkey: &str) -> String {
+  // Migrate older / non-canonical variants to values the plugin parser is known to accept.
+  match hotkey {
+    // Old experiments
+    "Control+Super" | "Alt+Space" | "Super+Space" => DEFAULT_HOTKEY.to_string(),
+    // Some builds stored a non-canonical Control name; normalize it.
+    "Control+Space" => DEFAULT_HOTKEY.to_string(),
+    other => other.to_string(),
+  }
 }
 
 // Encryption helpers for fallback storage
@@ -195,14 +204,14 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
     serde_json::from_str::<StoredSettings>(&contents).unwrap_or_else(|_| StoredSettings {
       base_url: "https://api.openai.com/v1".to_string(),
       model: "whisper-1".to_string(),
-      hotkey: "Control+Space".to_string(),
+      hotkey: DEFAULT_HOTKEY.to_string(),
       encrypted_api_key: None,
     })
   } else {
     StoredSettings {
       base_url: "https://api.openai.com/v1".to_string(),
       model: "whisper-1".to_string(),
-      hotkey: "Control+Space".to_string(),
+      hotkey: DEFAULT_HOTKEY.to_string(),
       encrypted_api_key: None,
     }
   };

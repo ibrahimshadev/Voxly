@@ -21,7 +21,7 @@ Build a minimalist, cross-platform voice-to-text application that activates via 
 
 ### Common Patterns
 
-1. **Global hotkey activation** (typically Control+Space or configurable)
+1. **Global hotkey activation** (typically Ctrl+Space / Cmd+Space or configurable)
 2. **Push-to-talk** or toggle recording modes
 3. **Floating minimal UI** showing recording/transcription state
 4. **Auto-paste** into active text field
@@ -69,7 +69,7 @@ Build a minimalist, cross-platform voice-to-text application that activates via 
 ### Must Have (P0)
 
 #### 3.1 Global Keyboard Shortcut
-- Configurable hotkey (default: `Control+Space`)
+- Configurable hotkey (default: `CommandOrControl+Space`)
 - Works from any application
 - **Push-to-talk mode**: Hold to record, release to transcribe
 

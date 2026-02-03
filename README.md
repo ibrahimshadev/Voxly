@@ -4,7 +4,7 @@ A minimalist, cross-platform voice-to-text application. Hold a hotkey, speak, an
 
 ## Features
 
-- **Hold-to-talk**: Press and hold your configured hotkey (default: `Control+Space`) to record, release to transcribe
+- **Hold-to-talk**: Press and hold your configured hotkey (default: `CommandOrControl+Space`) to record, release to transcribe
 - **Auto-paste**: Transcribed text is automatically pasted into the focused input
 - **Cloud transcription**: Uses OpenAI-compatible APIs (Groq free tier, OpenAI, or custom)
 - **Floating overlay**: Minimal glassmorphism UI shows recording/transcribing status
@@ -17,7 +17,7 @@ A minimalist, cross-platform voice-to-text application. Hold a hotkey, speak, an
 3. Configure your API key in Settings:
    - **Groq** (free): Get a key at [console.groq.com](https://console.groq.com)
    - **OpenAI** (paid): Get a key at [platform.openai.com](https://platform.openai.com)
-4. Hold your hotkey (default: `Control+Space`) and speak
+4. Hold your hotkey (default: `CommandOrControl+Space`) and speak
 5. Release to transcribe and auto-paste
 
 ## Supported Providers

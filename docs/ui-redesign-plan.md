@@ -26,7 +26,7 @@ mv research.md docs/
 - **Settings click:** Panel slides up, has collapse button
 
 ### 2. New Hotkey
-- **Default:** `Control+Space`
+- **Default:** `CommandOrControl+Space`
   - Windows: Ctrl+Win
   - Linux: Ctrl+Super
   - macOS: Ctrl+Cmd
@@ -67,7 +67,7 @@ mv research.md docs/
 
 ```rust
 // Change default hotkey
-hotkey: "Control+Space".to_string()
+hotkey: "CommandOrControl+Space".to_string()
 
 // Add to StoredSettings struct
 #[serde(default)]
