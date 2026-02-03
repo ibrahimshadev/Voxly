@@ -49,7 +49,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const COLLAPSED_HEIGHT = 100;
-const EXPANDED_HEIGHT = 540;
+const EXPANDED_HEIGHT = 580;
 const PANEL_WIDTH = 360;
 
 // Format hotkey for display
@@ -349,22 +349,22 @@ export default function App() {
       <div
         class="pill"
         classList={{
-          expanded: isHovered() || isActive(),
+          expanded: (isHovered() || isActive()) && !showSettings(),
           recording: status() === 'recording'
         }}
         onMouseDown={startDrag}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Idle: just dots */}
-        <Show when={status() === 'idle' && !isHovered()}>
+        {/* Idle: just dots (or when settings is open) */}
+        <Show when={status() === 'idle' && (!isHovered() || showSettings())}>
           <div class="idle-dots">
             <span /><span /><span /><span /><span />
           </div>
         </Show>
 
-        {/* Hovered idle: show hotkey + settings */}
-        <Show when={status() === 'idle' && isHovered()}>
+        {/* Hovered idle: show hotkey + settings (only when settings panel is closed) */}
+        <Show when={status() === 'idle' && isHovered() && !showSettings()}>
           <span class="hotkey-text">{formatHotkey(settings().hotkey)}</span>
           <button class="gear-button" onClick={toggleSettings} title="Settings">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
