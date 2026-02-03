@@ -148,6 +148,10 @@ export default function App() {
 
   const handlePressed = async () => {
     if (status() === 'recording') return;
+    // Set status synchronously BEFORE calling backend to avoid race condition
+    // with handleReleased (which checks status before calling stop_and_transcribe)
+    setError('');
+    setStatus('recording');
     try {
       await invoke('start_recording');
     } catch (err) {
