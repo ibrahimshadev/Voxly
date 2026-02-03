@@ -1,3 +1,11 @@
+## [1.4.1](https://github.com/ibrahimshadev/dikt/compare/v1.4.0...v1.4.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ui:** adjust settings panel bottom offset to prevent header cutoff ([410b7f4](https://github.com/ibrahimshadev/dikt/commit/410b7f40b6ea29d0b258021653d52b1b61a3204d))
+* **ui:** position settings panel absolutely to prevent hiding pill ([d66d4e1](https://github.com/ibrahimshadev/dikt/commit/d66d4e1802c7da9e457809ef08c93862be84de9e))
+
 # [1.4.0](https://github.com/ibrahimshadev/dikt/compare/v1.3.1...v1.4.0) (2026-02-03)
 
 
