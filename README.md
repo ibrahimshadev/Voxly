@@ -4,7 +4,7 @@ A minimalist, cross-platform voice-to-text application. Hold a hotkey, speak, an
 
 ## Features
 
-- **Hold-to-talk**: Press and hold `Ctrl+Shift+Space` to record, release to transcribe
+- **Hold-to-talk**: Press and hold your configured hotkey (default: `Control+Space`) to record, release to transcribe
 - **Auto-paste**: Transcribed text is automatically pasted into the focused input
 - **Cloud transcription**: Uses OpenAI-compatible APIs (Groq free tier, OpenAI, or custom)
 - **Floating overlay**: Minimal glassmorphism UI shows recording/transcribing status
@@ -17,7 +17,7 @@ A minimalist, cross-platform voice-to-text application. Hold a hotkey, speak, an
 3. Configure your API key in Settings:
    - **Groq** (free): Get a key at [console.groq.com](https://console.groq.com)
    - **OpenAI** (paid): Get a key at [platform.openai.com](https://platform.openai.com)
-4. Hold `Ctrl+Shift+Space` and speak
+4. Hold your hotkey (default: `Control+Space`) and speak
 5. Release to transcribe and auto-paste
 
 ## Supported Providers
@@ -79,6 +79,18 @@ Outputs:
 - **Backend**: Rust
 - **Audio**: [cpal](https://github.com/RustAudio/cpal)
 - **Transcription**: OpenAI Whisper API (cloud)
+
+## Security & Data Storage
+
+- **Audio**: recorded locally and sent to the configured OpenAI-compatible endpoint for transcription.
+- **Paste behavior**: Dikt writes the transcript to the system clipboard and triggers paste (Windows/Linux: `Ctrl+V`, macOS: `Cmd+V`).
+  - Note: clipboard managers may still record clipboard changes even if we later restore the clipboard.
+- **Settings**:
+  - Base URL / model / hotkey are stored in a local JSON file:
+    - Windows: `%APPDATA%\\dikt\\settings.json`
+    - Linux/macOS: `$XDG_CONFIG_HOME/dikt/settings.json` (or `~/.config/dikt/settings.json`)
+  - API key is stored using the OS credential manager via `keyring` when available.
+  - If the OS credential manager is unavailable/fails, Dikt falls back to storing an **obfuscated** value in `settings.json` (`encrypted_api_key`). This is not strong encryption.
 
 ## Project Structure
 

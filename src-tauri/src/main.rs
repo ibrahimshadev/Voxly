@@ -3,6 +3,7 @@
 mod audio;
 mod clipboard;
 mod commands;
+mod domain;
 mod settings;
 mod state;
 mod transcribe;

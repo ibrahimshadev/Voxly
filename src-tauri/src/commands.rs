@@ -1,48 +1,38 @@
-use tauri::{LogicalSize, State, WebviewWindow};
+use tauri::{Emitter, LogicalSize, PhysicalPosition, State, WebviewWindow};
 
-use crate::clipboard;
 use crate::settings::AppSettings;
 use crate::state::AppState;
-use crate::transcribe;
 
 #[tauri::command]
-pub fn start_recording(state: State<'_, AppState>) -> Result<(), String> {
-    state.recorder.start()
+pub fn start_recording(window: WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    let window = window.clone();
+    state.manager.start_recording(move |update| {
+        let _ = window.emit("dictation:update", update);
+    })
 }
 
 #[tauri::command]
-pub async fn stop_and_transcribe(state: State<'_, AppState>) -> Result<String, String> {
-    let wav_data = state.recorder.stop()?;
-
-    let settings = state.settings.lock().map_err(|_| "Settings lock poisoned")?.clone();
-
-    let text =
-        transcribe::transcribe(&settings.base_url, &settings.api_key, &settings.model, wav_data)
-            .await?;
-
-    clipboard::copy_and_paste(&text)?;
-
-    Ok(text)
+pub async fn stop_and_transcribe(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let window = window.clone();
+    state
+        .manager
+        .stop_and_process(move |update| {
+            let _ = window.emit("dictation:update", update);
+        })
+        .await
 }
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
-    Ok(state
-        .settings
-        .lock()
-        .map_err(|_| "Settings lock poisoned")?
-        .clone())
+    state.manager.get_settings()
 }
 
 #[tauri::command]
 pub fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<(), String> {
-    crate::settings::save_settings(&settings)?;
-    let mut guard = state
-        .settings
-        .lock()
-        .map_err(|_| "Settings lock poisoned")?;
-    *guard = settings;
-    Ok(())
+    state.manager.save_settings(settings)
 }
 
 #[tauri::command]
@@ -79,36 +69,58 @@ pub fn position_window_bottom(window: WebviewWindow) -> Result<(), String> {
 }
 
 pub fn position_window_bottom_internal(window: &WebviewWindow) -> Result<(), String> {
+    let window_size = window.outer_size().map_err(|e| e.to_string())?;
+
+    // Prefer platform work-area APIs (Windows taskbar-aware). Fallback to monitor bounds.
+    #[cfg(target_os = "windows")]
+    if let Some((left, top, right, bottom)) = windows_work_area() {
+        let work_width = (right - left) as f64;
+        let work_height = (bottom - top) as f64;
+        let window_width = window_size.width as f64;
+        let window_height = window_size.height as f64;
+
+        let x = left as f64 + (work_width - window_width) / 2.0;
+        let y = top as f64 + work_height - window_height - 10.0;
+
+        window
+            .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
     let monitor = window
         .current_monitor()
         .map_err(|e| e.to_string())?
         .ok_or("No monitor found")?;
 
-    let scale_factor = monitor.scale_factor();
-    let window_size = window.outer_size().map_err(|e| e.to_string())?;
-
-    // Use available work area (excludes taskbar/dock) instead of full monitor size
     let monitor_size = monitor.size();
     let monitor_pos = monitor.position();
 
-    // Calculate work area - on Windows this accounts for taskbar
-    // Default to 48px taskbar height if we can't detect it
-    #[cfg(target_os = "windows")]
-    let taskbar_offset = 48.0;
-    #[cfg(not(target_os = "windows"))]
-    let taskbar_offset = 0.0;
+    let screen_width = monitor_size.width as f64;
+    let screen_height = monitor_size.height as f64;
+    let window_width = window_size.width as f64;
+    let window_height = window_size.height as f64;
 
-    let screen_width = monitor_size.width as f64 / scale_factor;
-    let screen_height = monitor_size.height as f64 / scale_factor - taskbar_offset;
-    let window_width = window_size.width as f64 / scale_factor;
-    let window_height = window_size.height as f64 / scale_factor;
-
-    let x = (monitor_pos.x as f64 / scale_factor) + (screen_width - window_width) / 2.0;
-    let y = (monitor_pos.y as f64 / scale_factor) + screen_height - window_height - 10.0;
+    let x = monitor_pos.x as f64 + (screen_width - window_width) / 2.0;
+    let y = monitor_pos.y as f64 + screen_height - window_height - 10.0;
 
     window
-        .set_position(tauri::LogicalPosition::new(x, y))
+        .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_work_area() -> Option<(i32, i32, i32, i32)> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
+
+    let mut rect = RECT::default();
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut rect as *mut _ as _), 0) }
+        .as_bool();
+    if !ok {
+        return None;
+    }
+    Some((rect.left, rect.top, rect.right, rect.bottom))
 }

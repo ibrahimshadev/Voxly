@@ -1,18 +1,21 @@
-use std::sync::Mutex;
-
-use crate::audio::AudioRecorder;
-use crate::settings::AppSettings;
+use crate::domain::{
+  impls::{ClipboardPaster, CpalRecorder, FileAndKeyringSettingsStore, OpenAiCompatibleTranscriber},
+  manager::DictationSessionManager,
+};
 
 pub struct AppState {
-    pub recorder: AudioRecorder,
-    pub settings: Mutex<AppSettings>,
+  pub manager: DictationSessionManager,
 }
 
 impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            recorder: AudioRecorder::default(),
-            settings: Mutex::new(crate::settings::load_settings()),
-        }
+  fn default() -> Self {
+    Self {
+      manager: DictationSessionManager::new(
+        Box::new(CpalRecorder::default()),
+        Box::new(FileAndKeyringSettingsStore),
+        Box::new(OpenAiCompatibleTranscriber),
+        Box::new(ClipboardPaster),
+      ),
     }
+  }
 }

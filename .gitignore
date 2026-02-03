@@ -17,6 +17,7 @@ jspm_packages/
 # =============================================================================
 /target/
 src-tauri/target/
+.cargo-home/
 **/*.rs.bk
 *.pdb
 Cargo.lock

@@ -133,29 +133,20 @@ html, body {
   color: #fff;
 }
 
-/* Wave animation for recording */
+/* Real-time audio visualization */
 .wave-bars {
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 20px;
+  height: 24px;
 }
 
 .wave-bar {
   width: 3px;
-  height: 4px;
-  background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 100%);
+  min-height: 4px;
+  background: rgba(255, 255, 255, 0.8);
   border-radius: 2px;
-  animation: wave 0.8s ease-in-out infinite;
-}
-
-@keyframes wave {
-  0%, 100% {
-    height: 4px;
-  }
-  50% {
-    height: 16px;
-  }
+  transition: height 0.05s ease-out;
 }
 
 /* Loading dots for transcribing */

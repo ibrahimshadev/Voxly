@@ -1,10 +1,21 @@
-import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show, For, createEffect } from 'solid-js';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-type Status = 'idle' | 'recording' | 'transcribing' | 'done' | 'error';
+type Status = 'idle' | 'recording' | 'transcribing' | 'pasting' | 'done' | 'error';
+
+type DictationUpdate = {
+  state: 'idle' | 'recording' | 'transcribing' | 'pasting' | 'done' | 'error';
+  message?: string;
+  text?: string;
+};
+
+// Audio visualization constants
+const NUM_BARS = 7;
+const MIN_BAR_HEIGHT = 4;
+const MAX_BAR_HEIGHT = 20;
 
 type Settings = {
   base_url: string;
@@ -43,7 +54,83 @@ export default function App() {
   const [settings, setSettings] = createSignal<Settings>(DEFAULT_SETTINGS);
   const [testMessage, setTestMessage] = createSignal('');
   const [saving, setSaving] = createSignal(false);
+  const [audioLevels, setAudioLevels] = createSignal<number[]>(Array(NUM_BARS).fill(MIN_BAR_HEIGHT));
   let registeredHotkey = DEFAULT_SETTINGS.hotkey;
+
+  // Audio visualization refs
+  let audioContext: AudioContext | null = null;
+  let analyser: AnalyserNode | null = null;
+  let mediaStream: MediaStream | null = null;
+  let animationId: number | null = null;
+
+  const startAudioVisualization = async () => {
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new AudioContext();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 32; // Small FFT for few bars
+      analyser.smoothingTimeConstant = 0.7;
+
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const updateLevels = () => {
+        if (!analyser || status() !== 'recording') return;
+
+        analyser.getByteFrequencyData(dataArray);
+
+        // Map frequency data to bar heights
+        const levels: number[] = [];
+        const step = Math.floor(dataArray.length / NUM_BARS);
+        for (let i = 0; i < NUM_BARS; i++) {
+          // Average a few frequency bins for each bar
+          let sum = 0;
+          for (let j = 0; j < step; j++) {
+            sum += dataArray[i * step + j] || 0;
+          }
+          const avg = sum / step;
+          // Map 0-255 to MIN_BAR_HEIGHT-MAX_BAR_HEIGHT
+          const height = MIN_BAR_HEIGHT + (avg / 255) * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
+          levels.push(height);
+        }
+        setAudioLevels(levels);
+
+        animationId = requestAnimationFrame(updateLevels);
+      };
+
+      updateLevels();
+    } catch (err) {
+      console.error('Failed to start audio visualization:', err);
+    }
+  };
+
+  const stopAudioVisualization = () => {
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream = null;
+    }
+    if (audioContext) {
+      audioContext.close();
+      audioContext = null;
+    }
+    analyser = null;
+    setAudioLevels(Array(NUM_BARS).fill(MIN_BAR_HEIGHT));
+  };
+
+  // Start/stop visualization based on recording status
+  createEffect(() => {
+    if (status() === 'recording') {
+      startAudioVisualization();
+    } else {
+      stopAudioVisualization();
+    }
+  });
 
   const registerHotkey = async (hotkey: string) => {
     if (registeredHotkey) {
@@ -61,8 +148,6 @@ export default function App() {
 
   const handlePressed = async () => {
     if (status() === 'recording') return;
-    setError('');
-    setStatus('recording');
     try {
       await invoke('start_recording');
     } catch (err) {
@@ -73,12 +158,10 @@ export default function App() {
 
   const handleReleased = async () => {
     if (status() !== 'recording') return;
-    setStatus('transcribing');
     try {
       const result = (await invoke<string>('stop_and_transcribe')) ?? '';
-      setText(result);
-      setStatus('done');
-      setTimeout(() => setStatus('idle'), 1500);
+      // Backend also emits structured status updates; keep this as a fallback.
+      if (result) setText(result);
     } catch (err) {
       setStatus('error');
       setError(String(err));
@@ -145,13 +228,52 @@ export default function App() {
       }
     });
 
+    const unlistenDictation = await listen<DictationUpdate>('dictation:update', (event) => {
+      const payload = event.payload;
+      switch (payload.state) {
+        case 'recording': {
+          setError('');
+          setStatus('recording');
+          break;
+        }
+        case 'transcribing': {
+          setError('');
+          setStatus('transcribing');
+          break;
+        }
+        case 'pasting': {
+          setError('');
+          setStatus('pasting');
+          break;
+        }
+        case 'done': {
+          if (payload.text != null) setText(payload.text);
+          setStatus('done');
+          setTimeout(() => setStatus('idle'), 1500);
+          break;
+        }
+        case 'error': {
+          setStatus('error');
+          setError(payload.message ?? 'Error');
+          break;
+        }
+        case 'idle':
+        default: {
+          setStatus('idle');
+          break;
+        }
+      }
+    });
+
     onCleanup(() => {
       void unlisten();
+      void unlistenDictation();
     });
   });
 
   onCleanup(() => {
     void unregister(registeredHotkey);
+    stopAudioVisualization();
   });
 
   const onField = (key: keyof Settings) => (event: Event) => {
@@ -167,7 +289,8 @@ export default function App() {
     await getCurrentWindow().startDragging();
   };
 
-  const isActive = () => status() === 'recording' || status() === 'transcribing';
+  const isActive = () =>
+    status() === 'recording' || status() === 'transcribing' || status() === 'pasting';
 
   return (
     <div class="app-container" onMouseDown={startDrag}>
@@ -263,17 +386,17 @@ export default function App() {
             </button>
           </Show>
 
-          {/* Recording: wave animation */}
+          {/* Recording: real-time audio visualization */}
           <Show when={status() === 'recording'}>
             <div class="wave-bars">
-              <For each={[0, 1, 2, 3, 4, 5, 6]}>
-                {(i) => <div class="wave-bar" style={{ "animation-delay": `${i * 0.08}s` }} />}
+              <For each={audioLevels()}>
+                {(height) => <div class="wave-bar" style={{ height: `${height}px` }} />}
               </For>
             </div>
           </Show>
 
           {/* Transcribing */}
-          <Show when={status() === 'transcribing'}>
+          <Show when={status() === 'transcribing' || status() === 'pasting'}>
             <div class="loading-dots">
               <span /><span /><span />
             </div>

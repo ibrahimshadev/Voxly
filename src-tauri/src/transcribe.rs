@@ -50,3 +50,32 @@ fn build_transcription_url(base_url: &str) -> String {
     format!("{trimmed}/audio/transcriptions")
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::build_transcription_url;
+
+  #[test]
+  fn url_builder_appends_endpoint() {
+    assert_eq!(
+      build_transcription_url("https://api.openai.com/v1"),
+      "https://api.openai.com/v1/audio/transcriptions"
+    );
+    assert_eq!(
+      build_transcription_url("https://api.openai.com/v1/"),
+      "https://api.openai.com/v1/audio/transcriptions"
+    );
+  }
+
+  #[test]
+  fn url_builder_accepts_full_endpoint() {
+    assert_eq!(
+      build_transcription_url("https://api.openai.com/v1/audio/transcriptions"),
+      "https://api.openai.com/v1/audio/transcriptions"
+    );
+    assert_eq!(
+      build_transcription_url("https://api.openai.com/v1/audio/transcriptions/"),
+      "https://api.openai.com/v1/audio/transcriptions"
+    );
+  }
+}
