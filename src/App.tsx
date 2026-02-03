@@ -343,28 +343,68 @@ export default function App() {
         <div class="tooltip" classList={{ visible: isHovered() && !isActive() }}>
           <span>Hold to talk: <strong>{formatHotkey(settings().hotkey)}</strong></span>
         </div>
+      </Show>
 
-        {/* The minimal pill */}
-        <div
-          class="pill"
-          classList={{
-            expanded: isHovered() || isActive(),
-            recording: status() === 'recording'
-          }}
-          onMouseDown={startDrag}
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-        >
-          {/* Idle: just dots */}
-          <Show when={status() === 'idle' && !isHovered()}>
-            <div class="idle-dots">
-              <span /><span /><span /><span /><span />
-            </div>
-          </Show>
+      {/* The minimal pill */}
+      <div
+        class="pill"
+        classList={{
+          expanded: isHovered() || isActive(),
+          recording: status() === 'recording'
+        }}
+        onMouseDown={startDrag}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Idle: just dots */}
+        <Show when={status() === 'idle' && !isHovered()}>
+          <div class="idle-dots">
+            <span /><span /><span /><span /><span />
+          </div>
+        </Show>
 
-          {/* Hovered idle: show hotkey + settings */}
-          <Show when={status() === 'idle' && isHovered()}>
-            <span class="hotkey-text">{formatHotkey(settings().hotkey)}</span>
+        {/* Hovered idle: show hotkey + settings */}
+        <Show when={status() === 'idle' && isHovered()}>
+          <span class="hotkey-text">{formatHotkey(settings().hotkey)}</span>
+          <button class="gear-button" onClick={toggleSettings} title="Settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </Show>
+
+        {/* Recording: static visualization (no mic access) */}
+        <Show when={status() === 'recording'}>
+          <div class="wave-bars">
+            <span class="wave-bar" />
+            <span class="wave-bar" />
+            <span class="wave-bar" />
+            <span class="wave-bar" />
+            <span class="wave-bar" />
+            <span class="wave-bar" />
+            <span class="wave-bar" />
+          </div>
+        </Show>
+
+        {/* Transcribing */}
+        <Show when={status() === 'transcribing' || status() === 'pasting'}>
+          <div class="loading-dots">
+            <span /><span /><span />
+          </div>
+        </Show>
+
+        {/* Done */}
+        <Show when={status() === 'done'}>
+          <svg class="check-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </Show>
+
+        {/* Error */}
+        <Show when={status() === 'error'}>
+          <span class="error-icon" title={error()}>!</span>
+          <Show when={isHovered()}>
             <button class="gear-button" onClick={toggleSettings} title="Settings">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3" />
@@ -372,48 +412,8 @@ export default function App() {
               </svg>
             </button>
           </Show>
-
-          {/* Recording: static visualization (no mic access) */}
-          <Show when={status() === 'recording'}>
-            <div class="wave-bars">
-              <span class="wave-bar" />
-              <span class="wave-bar" />
-              <span class="wave-bar" />
-              <span class="wave-bar" />
-              <span class="wave-bar" />
-              <span class="wave-bar" />
-              <span class="wave-bar" />
-            </div>
-          </Show>
-
-          {/* Transcribing */}
-          <Show when={status() === 'transcribing' || status() === 'pasting'}>
-            <div class="loading-dots">
-              <span /><span /><span />
-            </div>
-          </Show>
-
-          {/* Done */}
-          <Show when={status() === 'done'}>
-            <svg class="check-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </Show>
-
-          {/* Error */}
-          <Show when={status() === 'error'}>
-            <span class="error-icon" title={error()}>!</span>
-            <Show when={isHovered()}>
-              <button class="gear-button" onClick={toggleSettings} title="Settings">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-              </button>
-            </Show>
-          </Show>
-        </div>
-      </Show>
+        </Show>
+      </div>
     </div>
   );
 }
