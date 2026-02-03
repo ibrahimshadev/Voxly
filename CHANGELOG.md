@@ -1,3 +1,10 @@
+## [1.1.9](https://github.com/ibrahimshadev/dikt/compare/v1.1.8...v1.1.9) (2026-02-03)
+
+
+### Bug Fixes
+
+* **hotkey:** use CommandOrControl for cross-platform compatibility ([640e66c](https://github.com/ibrahimshadev/dikt/commit/640e66cc56e88bb5b2f7d4fcc6f05fc727696a3d))
+
 ## [1.1.8](https://github.com/ibrahimshadev/dikt/compare/v1.1.7...v1.1.8) (2026-02-03)
 
 
