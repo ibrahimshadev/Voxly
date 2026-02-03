@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show, For, createEffect } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -11,11 +11,6 @@ type DictationUpdate = {
   message?: string;
   text?: string;
 };
-
-// Audio visualization constants
-const NUM_BARS = 7;
-const MIN_BAR_HEIGHT = 4;
-const MAX_BAR_HEIGHT = 20;
 
 type Settings = {
   base_url: string;
@@ -54,83 +49,8 @@ export default function App() {
   const [settings, setSettings] = createSignal<Settings>(DEFAULT_SETTINGS);
   const [testMessage, setTestMessage] = createSignal('');
   const [saving, setSaving] = createSignal(false);
-  const [audioLevels, setAudioLevels] = createSignal<number[]>(Array(NUM_BARS).fill(MIN_BAR_HEIGHT));
+  let isHolding = false;
   let registeredHotkey = DEFAULT_SETTINGS.hotkey;
-
-  // Audio visualization refs
-  let audioContext: AudioContext | null = null;
-  let analyser: AnalyserNode | null = null;
-  let mediaStream: MediaStream | null = null;
-  let animationId: number | null = null;
-
-  const startAudioVisualization = async () => {
-    try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioContext = new AudioContext();
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 32; // Small FFT for few bars
-      analyser.smoothingTimeConstant = 0.7;
-
-      const source = audioContext.createMediaStreamSource(mediaStream);
-      source.connect(analyser);
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      const updateLevels = () => {
-        if (!analyser || status() !== 'recording') return;
-
-        analyser.getByteFrequencyData(dataArray);
-
-        // Map frequency data to bar heights
-        const levels: number[] = [];
-        const step = Math.floor(dataArray.length / NUM_BARS);
-        for (let i = 0; i < NUM_BARS; i++) {
-          // Average a few frequency bins for each bar
-          let sum = 0;
-          for (let j = 0; j < step; j++) {
-            sum += dataArray[i * step + j] || 0;
-          }
-          const avg = sum / step;
-          // Map 0-255 to MIN_BAR_HEIGHT-MAX_BAR_HEIGHT
-          const height = MIN_BAR_HEIGHT + (avg / 255) * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
-          levels.push(height);
-        }
-        setAudioLevels(levels);
-
-        animationId = requestAnimationFrame(updateLevels);
-      };
-
-      updateLevels();
-    } catch (err) {
-      console.error('Failed to start audio visualization:', err);
-    }
-  };
-
-  const stopAudioVisualization = () => {
-    if (animationId) {
-      cancelAnimationFrame(animationId);
-      animationId = null;
-    }
-    if (mediaStream) {
-      mediaStream.getTracks().forEach(track => track.stop());
-      mediaStream = null;
-    }
-    if (audioContext) {
-      audioContext.close();
-      audioContext = null;
-    }
-    analyser = null;
-    setAudioLevels(Array(NUM_BARS).fill(MIN_BAR_HEIGHT));
-  };
-
-  // Start/stop visualization based on recording status
-  createEffect(() => {
-    if (status() === 'recording') {
-      startAudioVisualization();
-    } else {
-      stopAudioVisualization();
-    }
-  });
 
   const registerHotkey = async (hotkey: string) => {
     if (registeredHotkey) {
@@ -147,7 +67,8 @@ export default function App() {
   };
 
   const handlePressed = async () => {
-    if (status() === 'recording') return;
+    if (isHolding || status() === 'recording') return;
+    isHolding = true;
     // Set status synchronously BEFORE calling backend to avoid race condition
     // with handleReleased (which checks status before calling stop_and_transcribe)
     setError('');
@@ -155,17 +76,24 @@ export default function App() {
     try {
       await invoke('start_recording');
     } catch (err) {
+      isHolding = false;
       setStatus('error');
       setError(String(err));
     }
   };
 
   const handleReleased = async () => {
-    if (status() !== 'recording') return;
+    if (!isHolding) return;
+    isHolding = false;
+    setStatus('transcribing');
     try {
       const result = (await invoke<string>('stop_and_transcribe')) ?? '';
-      // Backend also emits structured status updates; keep this as a fallback.
+      // Backend emits structured status updates; keep a UI fallback.
       if (result) setText(result);
+      if (status() !== 'error') {
+        setStatus('done');
+        setTimeout(() => setStatus('idle'), 1500);
+      }
     } catch (err) {
       setStatus('error');
       setError(String(err));
@@ -236,6 +164,7 @@ export default function App() {
       const payload = event.payload;
       switch (payload.state) {
         case 'recording': {
+          if (!isHolding) break;
           setError('');
           setStatus('recording');
           break;
@@ -251,18 +180,21 @@ export default function App() {
           break;
         }
         case 'done': {
+          isHolding = false;
           if (payload.text != null) setText(payload.text);
           setStatus('done');
           setTimeout(() => setStatus('idle'), 1500);
           break;
         }
         case 'error': {
+          isHolding = false;
           setStatus('error');
           setError(payload.message ?? 'Error');
           break;
         }
         case 'idle':
         default: {
+          isHolding = false;
           setStatus('idle');
           break;
         }
@@ -277,7 +209,6 @@ export default function App() {
 
   onCleanup(() => {
     void unregister(registeredHotkey);
-    stopAudioVisualization();
   });
 
   const onField = (key: keyof Settings) => (event: Event) => {
@@ -390,12 +321,16 @@ export default function App() {
             </button>
           </Show>
 
-          {/* Recording: real-time audio visualization */}
+          {/* Recording: static visualization (no mic access) */}
           <Show when={status() === 'recording'}>
             <div class="wave-bars">
-              <For each={audioLevels()}>
-                {(height) => <div class="wave-bar" style={{ height: `${height}px` }} />}
-              </For>
+              <span class="wave-bar" />
+              <span class="wave-bar" />
+              <span class="wave-bar" />
+              <span class="wave-bar" />
+              <span class="wave-bar" />
+              <span class="wave-bar" />
+              <span class="wave-bar" />
             </div>
           </Show>
 
