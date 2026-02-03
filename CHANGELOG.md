@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/ibrahimshadev/dikt/compare/v1.1.1...v1.1.2) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ui:** fix glassmorphism backdrop and window dragging on Windows ([aabb8af](https://github.com/ibrahimshadev/dikt/commit/aabb8affe8531ebe327645dc60e9211cbb08093c))
+
 ## [1.1.1](https://github.com/ibrahimshadev/dikt/compare/v1.1.0...v1.1.1) (2026-02-03)
 
 
