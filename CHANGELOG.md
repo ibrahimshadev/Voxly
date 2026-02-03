@@ -1,3 +1,10 @@
+## [1.1.7](https://github.com/ibrahimshadev/dikt/compare/v1.1.6...v1.1.7) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** fix release asset upload permissions ([339e46a](https://github.com/ibrahimshadev/dikt/commit/339e46a5be3a145dde17f4a33d767f3abe6bef2e))
+
 ## [1.1.6](https://github.com/ibrahimshadev/dikt/compare/v1.1.5...v1.1.6) (2026-02-03)
 
 
