@@ -2,6 +2,7 @@ import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 type Status = 'idle' | 'recording' | 'transcribing' | 'done' | 'error';
 
@@ -157,6 +158,12 @@ export default function App() {
     setSettings((current) => ({ ...current, [key]: target.value }));
   };
 
+  const startDrag = async (e: MouseEvent) => {
+    // Don't drag if clicking on a button
+    if ((e.target as HTMLElement).closest('button')) return;
+    await getCurrentWindow().startDragging();
+  };
+
   return (
     <div class="pill-container">
       <Show when={showSettings()}>
@@ -221,6 +228,7 @@ export default function App() {
         class="pill"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onMouseDown={startDrag}
       >
         <Show when={status() === 'idle' && !showSettings()}>
           <span class="hotkey-text">{formatHotkey(settings().hotkey)}</span>

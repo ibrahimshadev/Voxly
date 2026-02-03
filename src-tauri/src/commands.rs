@@ -84,16 +84,27 @@ pub fn position_window_bottom_internal(window: &WebviewWindow) -> Result<(), Str
         .map_err(|e| e.to_string())?
         .ok_or("No monitor found")?;
 
-    let monitor_size = monitor.size();
     let scale_factor = monitor.scale_factor();
-
     let window_size = window.outer_size().map_err(|e| e.to_string())?;
 
-    let x = ((monitor_size.width as f64 / scale_factor) - (window_size.width as f64 / scale_factor))
-        / 2.0;
-    let y = (monitor_size.height as f64 / scale_factor)
-        - (window_size.height as f64 / scale_factor)
-        - 5.0; // 5px from bottom
+    // Use available work area (excludes taskbar/dock) instead of full monitor size
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+
+    // Calculate work area - on Windows this accounts for taskbar
+    // Default to 48px taskbar height if we can't detect it
+    #[cfg(target_os = "windows")]
+    let taskbar_offset = 48.0;
+    #[cfg(not(target_os = "windows"))]
+    let taskbar_offset = 0.0;
+
+    let screen_width = monitor_size.width as f64 / scale_factor;
+    let screen_height = monitor_size.height as f64 / scale_factor - taskbar_offset;
+    let window_width = window_size.width as f64 / scale_factor;
+    let window_height = window_size.height as f64 / scale_factor;
+
+    let x = (monitor_pos.x as f64 / scale_factor) + (screen_width - window_width) / 2.0;
+    let y = (monitor_pos.y as f64 / scale_factor) + screen_height - window_height - 10.0;
 
     window
         .set_position(tauri::LogicalPosition::new(x, y))

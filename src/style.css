@@ -39,6 +39,11 @@ body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   font-size: 13px;
   position: relative;
+  cursor: grab;
+}
+
+.pill:active {
+  cursor: grabbing;
 }
 
 .hotkey-text {
