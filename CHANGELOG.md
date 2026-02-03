@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/ibrahimshadev/dikt/compare/v1.1.0...v1.1.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** use semantic-release-action for proper output exports ([c5e3ba7](https://github.com/ibrahimshadev/dikt/commit/c5e3ba77819cc8a619c0cce6c49bd256849701e8))
+
 # [1.1.0](https://github.com/ibrahimshadev/dikt/compare/v1.0.0...v1.1.0) (2026-02-03)
 
 
