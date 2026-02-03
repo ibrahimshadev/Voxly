@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/ibrahimshadev/dikt/compare/v1.1.3...v1.1.4) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** add macOS icon generation to release workflow ([a3f77d3](https://github.com/ibrahimshadev/dikt/commit/a3f77d3bd8faa44753e58ce2821d8ce6f42be768))
+
 ## [1.1.3](https://github.com/ibrahimshadev/dikt/compare/v1.1.2...v1.1.3) (2026-02-03)
 
 
