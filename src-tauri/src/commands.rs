@@ -114,12 +114,20 @@ pub fn position_window_bottom_internal(window: &WebviewWindow) -> Result<(), Str
 #[cfg(target_os = "windows")]
 fn windows_work_area() -> Option<(i32, i32, i32, i32)> {
     use windows::Win32::Foundation::RECT;
-    use windows::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    };
 
     let mut rect = RECT::default();
-    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut rect as *mut _ as _), 0) }
-        .as_bool();
-    if !ok {
+    let result = unsafe {
+        SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            Some(&mut rect as *mut _ as _),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    if result.is_err() {
         return None;
     }
     Some((rect.left, rect.top, rect.right, rect.bottom))
