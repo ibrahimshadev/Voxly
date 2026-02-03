@@ -6,6 +6,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 
 const SERVICE_NAME: &str = "dikt";
+const DEFAULT_HOTKEY: &str = "Control+Space";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -29,7 +30,7 @@ impl Default for AppSettings {
     Self {
       base_url: "https://api.openai.com/v1".to_string(),
       model: "whisper-1".to_string(),
-      hotkey: "Control+Space".to_string(),
+      hotkey: DEFAULT_HOTKEY.to_string(),
       api_key: String::new(),
     }
   }
@@ -40,10 +41,22 @@ pub fn load_settings() -> AppSettings {
 
   if let Ok(path) = settings_path() {
     if let Ok(contents) = fs::read_to_string(&path) {
-      if let Ok(stored) = serde_json::from_str::<StoredSettings>(&contents) {
+      if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
+        let mut updated = false;
+        if is_deprecated_hotkey(&stored.hotkey) {
+          stored.hotkey = DEFAULT_HOTKEY.to_string();
+          updated = true;
+        }
+
         settings.base_url = stored.base_url;
         settings.model = stored.model;
         settings.hotkey = stored.hotkey;
+
+        if updated {
+          if let Ok(new_contents) = serde_json::to_string_pretty(&stored) {
+            let _ = fs::write(&path, new_contents);
+          }
+        }
       }
     }
   }
@@ -91,6 +104,10 @@ fn settings_path() -> Result<PathBuf, String> {
   };
 
   Ok(base_dir.join("dikt").join("settings.json"))
+}
+
+fn is_deprecated_hotkey(hotkey: &str) -> bool {
+  matches!(hotkey, "Control+Super" | "Alt+Space" | "Super+Space")
 }
 
 // Encryption helpers for fallback storage
