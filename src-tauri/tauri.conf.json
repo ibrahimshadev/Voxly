@@ -23,8 +23,8 @@
       {
         "label": "main",
         "title": "Dikt",
-        "width": 200,
-        "height": 48,
+        "width": 320,
+        "height": 80,
         "resizable": false,
         "decorations": false,
         "transparent": true,

@@ -13,82 +13,116 @@ body {
   color: #fff;
 }
 
-/* Pill Container - anchored to bottom */
-.pill-container {
+/* Main container - draggable area */
+.app-container {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   align-items: center;
   min-height: 100vh;
-  padding-bottom: 4px;
+  padding-bottom: 8px;
+  cursor: grab;
 }
 
-/* The Pill */
+.app-container:active {
+  cursor: grabbing;
+}
+
+/* Tooltip - appears above pill on hover */
+.tooltip {
+  background: rgba(24, 24, 24, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 10px 18px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #d4d4d4;
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tooltip strong {
+  color: #fff;
+}
+
+/* The minimal pill */
 .pill {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 180px;
-  height: 40px;
-  padding: 0 16px;
-  background: rgba(18, 18, 18, 0.85);
+  min-width: 56px;
+  height: 12px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.pill.expanded {
+  min-width: 160px;
+  height: 36px;
+  padding: 0 14px;
+  background: rgba(24, 24, 24, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  font-size: 13px;
-  position: relative;
-  cursor: grab;
+  border-radius: 20px;
 }
 
-.pill:active {
-  cursor: grabbing;
+.pill.recording {
+  min-width: 120px;
+  height: 36px;
+  background: rgba(24, 24, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
 }
 
+/* Idle dots - tiny indicator */
+.idle-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.idle-dots span {
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+}
+
+/* Hotkey text in expanded state */
 .hotkey-text {
-  color: #a4a4a4;
+  color: #a0a0a0;
   font-size: 12px;
-  letter-spacing: 0.5px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
-.status-text {
-  color: #a4a4a4;
-  font-size: 16px;
-  letter-spacing: 2px;
-}
-
-.check-icon {
-  color: #4ade80;
-}
-
-.error-text {
-  color: #ff6b6b;
-  font-size: 18px;
-  font-weight: bold;
-}
-
-/* Gear Button */
+/* Gear button */
 .gear-button {
-  position: absolute;
-  right: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  color: #a4a4a4;
+  background: rgba(255, 255, 255, 0.08);
+  color: #888;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, background 0.2s ease;
-}
-
-.gear-button.visible {
-  opacity: 1;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .gear-button:hover {
@@ -96,20 +130,20 @@ body {
   color: #fff;
 }
 
-/* Wave Animation */
+/* Wave animation for recording */
 .wave-bars {
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 24px;
+  height: 20px;
 }
 
 .wave-bar {
   width: 3px;
   height: 4px;
-  background: #19d0e8;
+  background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 100%);
   border-radius: 2px;
-  animation: wave 1s ease-in-out infinite;
+  animation: wave 0.8s ease-in-out infinite;
 }
 
 @keyframes wave {
@@ -117,43 +151,78 @@ body {
     height: 4px;
   }
   50% {
-    height: 18px;
+    height: 16px;
   }
 }
 
-/* Settings Panel - slides up from pill */
-.settings-panel {
-  width: 180px;
-  background: rgba(18, 18, 18, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px 14px 0 0;
-  border-bottom: none;
-  backdrop-filter: blur(16px);
-  animation: slideUp 0.2s ease-out;
-  overflow: hidden;
+/* Loading dots for transcribing */
+.loading-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
+.loading-dots span {
+  width: 6px;
+  height: 6px;
+  background: #a0a0a0;
+  border-radius: 50%;
+  animation: loadingPulse 1.2s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes loadingPulse {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
   }
-  to {
+  40% {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
+}
+
+/* Success check */
+.check-icon {
+  color: #4ade80;
+}
+
+/* Error icon */
+.error-icon {
+  color: #f87171;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+/* Settings Panel */
+.settings-panel {
+  width: 300px;
+  background: rgba(20, 20, 20, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  margin-bottom: 8px;
 }
 
 .settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .settings-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -161,13 +230,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: #a4a4a4;
+  color: #888;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -180,60 +249,61 @@ body {
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 16px;
 }
 
 /* Form Fields */
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  color: #a4a4a4;
+  gap: 6px;
+  font-size: 12px;
+  color: #888;
 }
 
 input {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.3);
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
+  transition: border-color 0.15s ease;
 }
 
 input:focus {
   outline: none;
-  border-color: rgba(25, 208, 232, 0.5);
+  border-color: rgba(96, 165, 250, 0.5);
 }
 
 input::placeholder {
-  color: #666;
+  color: #555;
 }
 
 /* Actions */
 .actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: flex-end;
   margin-top: 4px;
 }
 
 .button {
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 8px 16px;
+  border-radius: 10px;
   border: none;
-  background: #19d0e8;
-  color: #0b0b0b;
-  font-size: 12px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .button:hover {
-  opacity: 0.9;
+  background: #2563eb;
 }
 
 .button:disabled {
@@ -244,25 +314,21 @@ input::placeholder {
 .button.ghost {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #fff;
+  color: #ccc;
 }
 
 .button.ghost:hover {
   background: rgba(255, 255, 255, 0.05);
+  color: #fff;
 }
 
 /* Status Messages */
 .muted {
-  color: #a4a4a4;
-  font-size: 11px;
-}
-
-.error {
-  color: #ff6b6b;
-  font-size: 11px;
+  color: #888;
+  font-size: 12px;
 }
 
 .warning {
-  color: #f5c451;
-  font-size: 11px;
+  color: #fbbf24;
+  font-size: 12px;
 }
