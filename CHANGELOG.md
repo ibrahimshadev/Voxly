@@ -1,3 +1,15 @@
+# [1.6.0](https://github.com/ibrahimshadev/dikt/compare/v1.5.0...v1.6.0) (2026-02-04)
+
+
+### Bug Fixes
+
+* **ui:** eliminate tab switch flicker and refine pill appearance ([fa90fa5](https://github.com/ibrahimshadev/dikt/commit/fa90fa56d4e089089a96505c272332405e601a04))
+
+
+### Features
+
+* addded vocabulary support ([e23ce08](https://github.com/ibrahimshadev/dikt/commit/e23ce08e6e62dc3cfcfcf9321d102b917d2ee85a))
+
 # [1.5.0](https://github.com/ibrahimshadev/dikt/compare/v1.4.1...v1.5.0) (2026-02-04)
 
 
