@@ -21,8 +21,9 @@ fn main() {
     .setup(|app| {
       // Create tray menu
       let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+      let reset_position_item = MenuItem::with_id(app, "reset_position", "Reset Position", true, None::<&str>)?;
       let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-      let menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+      let menu = Menu::with_items(app, &[&settings_item, &reset_position_item, &quit_item])?;
 
       // Build tray icon
       TrayIconBuilder::new()
@@ -38,6 +39,12 @@ fn main() {
               let _ = window.show();
               let _ = window.set_focus();
               let _ = window.emit("show-settings", ());
+            }
+          }
+          "reset_position" => {
+            if let Some(window) = app.get_webview_window("main") {
+              let _ = window.show();
+              let _ = commands::position_window_bottom_internal(&window);
             }
           }
           _ => {}
