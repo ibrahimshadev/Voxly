@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/ibrahimshadev/dikt/compare/v1.4.1...v1.5.0) (2026-02-04)
+
+
+### Features
+
+* **ui:** make settings panel height dynamic with smooth animations ([c9d6d6d](https://github.com/ibrahimshadev/dikt/commit/c9d6d6d47c79d64c4895214736cdfc8ba84ee01d))
+
 ## [1.4.1](https://github.com/ibrahimshadev/dikt/compare/v1.4.0...v1.4.1) (2026-02-03)
 
 
