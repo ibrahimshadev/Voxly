@@ -58,9 +58,9 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-width: 56px;
+  min-width: 48px;
   height: 20px;
-  padding: 0 10px;
+  padding: 0 8px;
   background: rgba(24, 24, 24, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
@@ -98,13 +98,13 @@ html, body {
 /* Idle dots - tiny indicator */
 .idle-dots {
   display: flex;
-  gap: 3px;
+  gap: 2px;
   align-items: center;
 }
 
 .idle-dots span {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   background: rgba(255, 255, 255, 0.8);
   border-radius: 50%;
 }
