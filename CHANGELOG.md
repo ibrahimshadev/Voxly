@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/ibrahimshadev/dikt/compare/v1.8.0...v1.9.0) (2026-02-04)
+
+
+### Features
+
+* **tray:** add reset position menu item to recover off-screen window ([ac8ab30](https://github.com/ibrahimshadev/dikt/commit/ac8ab30b50d1ae5ff3eaba9a935883893b320c98))
+
 # [1.8.0](https://github.com/ibrahimshadev/dikt/compare/v1.7.0...v1.8.0) (2026-02-04)
 
 
