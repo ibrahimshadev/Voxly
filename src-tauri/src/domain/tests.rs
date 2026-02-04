@@ -8,7 +8,7 @@ use crate::settings::AppSettings;
 use super::{
   manager::DictationSessionManager,
   ports::{Paster, Recorder, SettingsStore, Transcriber},
-  types::DictationState,
+  types::{DictationState, VocabularyEntry},
 };
 
 // ============================================================================
@@ -119,7 +119,12 @@ impl MockTranscriber {
 
 #[async_trait::async_trait]
 impl Transcriber for MockTranscriber {
-  async fn transcribe(&self, _settings: &AppSettings, _audio_wav: Vec<u8>) -> Result<String, String> {
+  async fn transcribe(
+    &self,
+    _settings: &AppSettings,
+    _audio_wav: Vec<u8>,
+    _prompt: Option<&str>,
+  ) -> Result<String, String> {
     self.transcribe_called.fetch_add(1, Ordering::SeqCst);
     self.result.lock().unwrap().clone()
   }
@@ -218,6 +223,26 @@ fn test_save_settings_updates_store_and_memory() {
 
   let loaded = manager.get_settings().unwrap();
   assert_eq!(loaded.model, "new-model");
+}
+
+#[test]
+fn test_save_vocabulary_updates_store_and_memory() {
+  let manager = create_default_manager();
+
+  let vocabulary = vec![VocabularyEntry {
+    id: "entry-1".to_string(),
+    word: "Claude Code".to_string(),
+    replacements: vec!["cloud code".to_string()],
+    enabled: true,
+  }];
+
+  manager.save_vocabulary(vocabulary).unwrap();
+
+  let loaded = manager.get_settings().unwrap();
+  assert_eq!(loaded.vocabulary.len(), 1);
+  assert_eq!(loaded.vocabulary[0].word, "Claude Code");
+  assert_eq!(loaded.vocabulary[0].replacements[0], "cloud code");
+  assert!(loaded.vocabulary[0].enabled);
 }
 
 // ============================================================================

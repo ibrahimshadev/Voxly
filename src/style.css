@@ -239,7 +239,7 @@ html, body {
   bottom: 48px; /* Position above the pill */
   left: 50%;
   transform: translateX(-50%) translateY(8px) scale(0.98);
-  width: 300px;
+  width: 320px;
   background: rgba(28, 28, 30, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
@@ -271,6 +271,36 @@ html, body {
   color: rgba(255, 255, 255, 0.9);
 }
 
+.tab-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+
+.tab-button {
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: #999;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-button:hover {
+  color: #ddd;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.tab-button.active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #fff;
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
 .collapse-button {
   display: flex;
   align-items: center;
@@ -296,6 +326,7 @@ html, body {
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px 14px;
+  min-height: 280px;
 }
 
 /* Form Fields */
@@ -310,7 +341,8 @@ html, body {
   letter-spacing: 0.3px;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   padding: 8px 10px;
   border-radius: 6px;
@@ -322,17 +354,26 @@ input {
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-input:hover {
+textarea {
+  resize: vertical;
+  min-height: 88px;
+  line-height: 1.35;
+}
+
+input:hover,
+textarea:hover {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
-input:focus {
+input:focus,
+textarea:focus {
   outline: none;
   border-color: rgba(96, 165, 250, 0.5);
   background: rgba(0, 0, 0, 0.4);
 }
 
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: #444;
 }
 
@@ -409,6 +450,92 @@ select option {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
+}
+
+.button.wide {
+  width: 100%;
+}
+
+.vocabulary-content {
+  gap: 12px;
+}
+
+.vocabulary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 230px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.vocabulary-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.vocabulary-entry.disabled {
+  opacity: 0.6;
+}
+
+.vocabulary-entry-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.vocabulary-word {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e5e7eb;
+  max-width: 130px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vocabulary-meta {
+  color: #777;
+  font-size: 11px;
+}
+
+.vocabulary-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mini-button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #bbb;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.mini-button:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.mini-button.danger {
+  color: #fda4af;
+}
+
+.vocabulary-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* Status Messages */

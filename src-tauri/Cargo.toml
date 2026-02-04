@@ -22,6 +22,7 @@ enigo = "0.2"
 keyring = "3"
 once_cell = "1"
 base64 = "0.22"
+regex = "1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

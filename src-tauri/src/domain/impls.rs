@@ -45,7 +45,20 @@ pub struct OpenAiCompatibleTranscriber;
 
 #[async_trait::async_trait]
 impl Transcriber for OpenAiCompatibleTranscriber {
-  async fn transcribe(&self, settings: &AppSettings, audio_wav: Vec<u8>) -> Result<String, String> {
-    transcribe::transcribe(&settings.base_url, &settings.api_key, &settings.model, audio_wav).await
+  async fn transcribe(
+    &self,
+    settings: &AppSettings,
+    audio_wav: Vec<u8>,
+    prompt: Option<&str>,
+  ) -> Result<String, String> {
+    transcribe::transcribe(
+      &settings.base_url,
+      &settings.api_key,
+      &settings.model,
+      &settings.provider,
+      audio_wav,
+      prompt,
+    )
+    .await
   }
 }

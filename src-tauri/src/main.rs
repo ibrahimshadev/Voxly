@@ -74,6 +74,7 @@ fn main() {
       commands::stop_and_transcribe,
       commands::get_settings,
       commands::save_settings,
+      commands::save_vocabulary,
       commands::test_connection,
       commands::resize_window,
       commands::position_window_bottom,

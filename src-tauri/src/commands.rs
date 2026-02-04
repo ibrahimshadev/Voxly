@@ -1,5 +1,6 @@
 use tauri::{Emitter, LogicalSize, PhysicalPosition, State, WebviewWindow};
 
+use crate::domain::types::VocabularyEntry;
 use crate::settings::AppSettings;
 use crate::state::AppState;
 
@@ -33,6 +34,14 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
 #[tauri::command]
 pub fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<(), String> {
     state.manager.save_settings(settings)
+}
+
+#[tauri::command]
+pub fn save_vocabulary(
+    vocabulary: Vec<VocabularyEntry>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.manager.save_vocabulary(vocabulary)
 }
 
 #[tauri::command]

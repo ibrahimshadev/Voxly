@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool {
+  true
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DictationState {
@@ -38,4 +42,16 @@ impl DictationUpdate {
     self.text = Some(text.into());
     self
   }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VocabularyEntry {
+  #[serde(default)]
+  pub id: String,
+  #[serde(default)]
+  pub word: String,
+  #[serde(default)]
+  pub replacements: Vec<String>,
+  #[serde(default = "default_true")]
+  pub enabled: bool,
 }

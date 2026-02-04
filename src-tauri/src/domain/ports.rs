@@ -16,5 +16,10 @@ pub trait Paster: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait Transcriber: Send + Sync {
-  async fn transcribe(&self, settings: &AppSettings, audio_wav: Vec<u8>) -> Result<String, String>;
+  async fn transcribe(
+    &self,
+    settings: &AppSettings,
+    audio_wav: Vec<u8>,
+    prompt: Option<&str>,
+  ) -> Result<String, String>;
 }

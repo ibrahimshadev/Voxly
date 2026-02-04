@@ -1,11 +1,17 @@
 use std::sync::Mutex;
 
+use regex::Regex;
+
 use crate::settings::AppSettings;
 
 use super::{
   ports::{Paster, Recorder, SettingsStore, Transcriber},
-  types::{DictationState, DictationUpdate},
+  types::{DictationState, DictationUpdate, VocabularyEntry},
 };
+
+const MAX_PROMPT_ENTRIES: usize = 50;
+const MAX_PROMPT_CHARS: usize = 800;
+const MAX_REPLACEMENTS_PER_ENTRY: usize = 10;
 
 pub struct DictationSessionManager {
   state: Mutex<DictationState>,
@@ -52,6 +58,24 @@ impl DictationSessionManager {
       .lock()
       .map_err(|_| "Settings lock poisoned".to_string())?;
     *guard = settings;
+    Ok(())
+  }
+
+  pub fn save_vocabulary(&self, vocabulary: Vec<VocabularyEntry>) -> Result<(), String> {
+    let mut next_settings = self
+      .settings
+      .lock()
+      .map_err(|_| "Settings lock poisoned".to_string())?
+      .clone();
+    next_settings.vocabulary = vocabulary;
+
+    self.settings_store.save(&next_settings)?;
+
+    let mut guard = self
+      .settings
+      .lock()
+      .map_err(|_| "Settings lock poisoned".to_string())?;
+    *guard = next_settings;
     Ok(())
   }
 
@@ -102,7 +126,12 @@ impl DictationSessionManager {
         .map_err(|_| "Settings lock poisoned".to_string())?
         .clone();
 
-      let text = self.transcriber.transcribe(&settings, wav_data).await?;
+      let prompt = build_vocabulary_prompt(&settings.vocabulary);
+      let text = self
+        .transcriber
+        .transcribe(&settings, wav_data, prompt.as_deref())
+        .await?;
+      let text = apply_vocabulary_replacements(&text, &settings.vocabulary);
 
       {
         let _ = self.set_state(DictationState::Pasting);
@@ -136,5 +165,151 @@ impl DictationSessionManager {
     let mut state = self.state.lock().map_err(|_| "State lock poisoned".to_string())?;
     *state = next;
     Ok(())
+  }
+}
+
+fn build_vocabulary_prompt(vocabulary: &[VocabularyEntry]) -> Option<String> {
+  let words: Vec<&str> = vocabulary
+    .iter()
+    .filter(|entry| entry.enabled)
+    .map(|entry| entry.word.trim())
+    .filter(|word| !word.is_empty())
+    .take(MAX_PROMPT_ENTRIES)
+    .collect();
+
+  if words.is_empty() {
+    return None;
+  }
+
+  let mut prompt = String::from("Vocabulary: ");
+  for word in words {
+    let candidate = if prompt == "Vocabulary: " {
+      format!("{prompt}{word}")
+    } else {
+      format!("{prompt}, {word}")
+    };
+
+    if candidate.len() > MAX_PROMPT_CHARS {
+      break;
+    }
+
+    prompt = candidate;
+  }
+
+  if prompt == "Vocabulary: " {
+    None
+  } else {
+    Some(prompt)
+  }
+}
+
+fn apply_vocabulary_replacements(text: &str, vocabulary: &[VocabularyEntry]) -> String {
+  let mut result = text.to_string();
+
+  for entry in vocabulary.iter().filter(|entry| entry.enabled) {
+    if entry.word.trim().is_empty() {
+      continue;
+    }
+
+    for replacement in entry.replacements.iter().take(MAX_REPLACEMENTS_PER_ENTRY) {
+      let replacement = replacement.trim();
+      if replacement.is_empty() {
+        continue;
+      }
+
+      let pattern = build_word_boundary_pattern(replacement);
+      let regex = match Regex::new(&pattern) {
+        Ok(regex) => regex,
+        Err(error) => {
+          eprintln!("Invalid replacement regex '{replacement}': {error}");
+          continue;
+        }
+      };
+      result = regex.replace_all(&result, entry.word.as_str()).to_string();
+    }
+  }
+
+  result
+}
+
+fn build_word_boundary_pattern(replacement: &str) -> String {
+  let escaped = regex::escape(replacement);
+  let starts_with_word_char = replacement.chars().next().is_some_and(is_word_char);
+  let ends_with_word_char = replacement.chars().last().is_some_and(is_word_char);
+
+  let mut pattern = String::from("(?iu)");
+  if starts_with_word_char {
+    pattern.push_str(r"\b");
+  }
+  pattern.push_str(&escaped);
+  if ends_with_word_char {
+    pattern.push_str(r"\b");
+  }
+
+  pattern
+}
+
+fn is_word_char(ch: char) -> bool {
+  ch.is_alphanumeric() || ch == '_'
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{apply_vocabulary_replacements, build_vocabulary_prompt, VocabularyEntry};
+
+  #[test]
+  fn build_prompt_returns_none_for_empty_vocabulary() {
+    assert!(build_vocabulary_prompt(&[]).is_none());
+  }
+
+  #[test]
+  fn build_prompt_uses_enabled_words_only() {
+    let vocabulary = vec![
+      VocabularyEntry {
+        id: "1".to_string(),
+        word: "Kubernetes".to_string(),
+        replacements: vec!["cube and eighties".to_string()],
+        enabled: true,
+      },
+      VocabularyEntry {
+        id: "2".to_string(),
+        word: "Anthropic".to_string(),
+        replacements: vec!["anthropic".to_string()],
+        enabled: false,
+      },
+    ];
+
+    let prompt = build_vocabulary_prompt(&vocabulary).unwrap();
+    assert_eq!(prompt, "Vocabulary: Kubernetes");
+  }
+
+  #[test]
+  fn apply_replacements_matches_word_boundaries() {
+    let vocabulary = vec![VocabularyEntry {
+      id: "1".to_string(),
+      word: "the".to_string(),
+      replacements: vec!["teh".to_string()],
+      enabled: true,
+    }];
+
+    assert_eq!(
+      apply_vocabulary_replacements("teh cat, other", &vocabulary),
+      "the cat, other"
+    );
+  }
+
+  #[test]
+  fn apply_replacements_is_case_insensitive() {
+    let vocabulary = vec![VocabularyEntry {
+      id: "1".to_string(),
+      word: "Kubernetes".to_string(),
+      replacements: vec!["cube and eighties".to_string()],
+      enabled: true,
+    }];
+
+    assert_eq!(
+      apply_vocabulary_replacements("CUBE AND EIGHTIES", &vocabulary),
+      "Kubernetes"
+    );
   }
 }

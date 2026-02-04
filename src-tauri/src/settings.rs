@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::types::VocabularyEntry;
+
 const SERVICE_NAME: &str = "dikt";
 // Use Tauri's canonical modifier name. This resolves to Ctrl on Windows/Linux and Cmd on macOS.
 const DEFAULT_HOTKEY: &str = "CommandOrControl+Space";
@@ -16,6 +18,8 @@ pub struct AppSettings {
   pub model: String,
   pub hotkey: String,
   pub api_key: String,
+  #[serde(default)]
+  pub vocabulary: Vec<VocabularyEntry>,
 }
 
 fn default_provider() -> String {
@@ -31,6 +35,8 @@ struct StoredSettings {
   hotkey: String,
   #[serde(default)]
   encrypted_api_key: Option<String>,
+  #[serde(default)]
+  vocabulary: Vec<VocabularyEntry>,
 }
 
 impl Default for AppSettings {
@@ -41,6 +47,7 @@ impl Default for AppSettings {
       model: "whisper-large-v3-turbo".to_string(),
       hotkey: DEFAULT_HOTKEY.to_string(),
       api_key: String::new(),
+      vocabulary: Vec::new(),
     }
   }
 }
@@ -68,6 +75,7 @@ pub fn load_settings() -> AppSettings {
         settings.base_url = stored.base_url;
         settings.model = stored.model;
         settings.hotkey = stored.hotkey;
+        settings.vocabulary = stored.vocabulary;
       }
     }
   }
@@ -86,6 +94,7 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     model: settings.model.clone(),
     hotkey: settings.hotkey.clone(),
     encrypted_api_key: None,
+    vocabulary: settings.vocabulary.clone(),
   };
 
   let path = settings_path()?;
@@ -215,6 +224,7 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
       model: "whisper-large-v3-turbo".to_string(),
       hotkey: DEFAULT_HOTKEY.to_string(),
       encrypted_api_key: None,
+      vocabulary: Vec::new(),
     })
   } else {
     StoredSettings {
@@ -223,6 +233,7 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
       model: "whisper-large-v3-turbo".to_string(),
       hotkey: DEFAULT_HOTKEY.to_string(),
       encrypted_api_key: None,
+      vocabulary: Vec::new(),
     }
   };
 
@@ -259,5 +270,23 @@ fn clear_encrypted_api_key_fallback() {
         }
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::StoredSettings;
+
+  #[test]
+  fn legacy_settings_without_vocabulary_deserialize() {
+    let legacy_json = r#"{
+      "provider": "groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "model": "whisper-large-v3-turbo",
+      "hotkey": "CommandOrControl+Space"
+    }"#;
+
+    let parsed: StoredSettings = serde_json::from_str(legacy_json).unwrap();
+    assert!(parsed.vocabulary.is_empty());
   }
 }
