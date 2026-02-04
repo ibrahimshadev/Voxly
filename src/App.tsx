@@ -49,7 +49,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const COLLAPSED_HEIGHT = 100;
-const PANEL_WIDTH = 360;
+const PANEL_WIDTH = 320;
 const SETTINGS_PANEL_BOTTOM_OFFSET = 48; // Space for pill + padding
 
 // Format hotkey for display

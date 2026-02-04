@@ -239,10 +239,10 @@ html, body {
   bottom: 48px; /* Position above the pill */
   left: 50%;
   transform: translateX(-50%) translateY(8px) scale(0.98);
-  width: 340px;
-  background: rgba(24, 24, 26, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  width: 300px;
+  background: rgba(28, 28, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
   backdrop-filter: blur(24px);
   transform-origin: bottom center;
   /* Hidden by default */
@@ -261,102 +261,105 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 10px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .settings-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .collapse-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
-  color: #888;
+  color: #666;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
 .collapse-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
 
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 20px 20px;
+  gap: 10px;
+  padding: 12px 14px 14px;
 }
 
 /* Form Fields */
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: #999;
+  gap: 4px;
+  font-size: 11px;
+  color: #777;
   font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 input {
   width: 100%;
-  padding: 11px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.25);
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 input:hover {
-  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 input:focus {
   outline: none;
-  border-color: rgba(96, 165, 250, 0.6);
+  border-color: rgba(96, 165, 250, 0.5);
   background: rgba(0, 0, 0, 0.4);
 }
 
 input::placeholder {
-  color: #555;
+  color: #444;
 }
 
 select {
   width: 100%;
-  padding: 11px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.25);
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 12px center;
+  background-position: right 10px center;
 }
 
 select:hover {
-  background-color: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 select:focus {
   outline: none;
-  border-color: rgba(96, 165, 250, 0.6);
+  border-color: rgba(96, 165, 250, 0.5);
   background-color: rgba(0, 0, 0, 0.4);
 }
 
@@ -368,18 +371,20 @@ select option {
 /* Actions */
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: flex-end;
-  margin-top: 4px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .button {
-  padding: 8px 16px;
-  border-radius: 10px;
+  padding: 6px 14px;
+  border-radius: 6px;
   border: none;
   background: #3b82f6;
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -396,22 +401,23 @@ select option {
 
 .button.ghost {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #999;
 }
 
 .button.ghost:hover {
   background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
 
 /* Status Messages */
 .muted {
-  color: #888;
-  font-size: 12px;
+  color: #666;
+  font-size: 11px;
 }
 
 .warning {
-  color: #fbbf24;
-  font-size: 12px;
+  color: #f59e0b;
+  font-size: 11px;
 }
