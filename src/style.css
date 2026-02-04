@@ -52,17 +52,19 @@ html, body {
   color: #fff;
 }
 
-/* The minimal pill - NO backdrop-filter in idle to avoid large blur rectangle */
+/* The minimal pill */
 .pill {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   min-width: 56px;
-  height: 12px;
-  padding: 0 6px;
-  background: rgba(100, 100, 100, 0.6);
+  height: 20px;
+  padding: 0 10px;
+  background: rgba(24, 24, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
+  backdrop-filter: blur(12px);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   cursor: grab;
@@ -83,12 +85,13 @@ html, body {
   backdrop-filter: blur(12px);
 }
 
-.pill.recording {
-  min-width: 120px;
-  height: 36px;
+.pill.recording,
+.pill.transcribing {
+  min-width: 90px;
+  height: 28px;
   background: rgba(24, 24, 24, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  border-radius: 14px;
   backdrop-filter: blur(12px);
 }
 
@@ -102,7 +105,7 @@ html, body {
 .idle-dots span {
   width: 4px;
   height: 4px;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.8);
   border-radius: 50%;
 }
 
@@ -139,15 +142,15 @@ html, body {
 .wave-bars {
   display: flex;
   align-items: center;
-  gap: 3px;
-  height: 24px;
+  gap: 2px;
+  height: 16px;
 }
 
 .wave-bar {
-  width: 3px;
-  height: 18px;
+  width: 2px;
+  height: 12px;
   background: rgba(255, 255, 255, 0.8);
-  border-radius: 2px;
+  border-radius: 1px;
   transform-origin: bottom;
   animation: wavePulse 1.1s ease-in-out infinite;
 }
@@ -195,8 +198,8 @@ html, body {
 }
 
 .loading-dots span {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   background: #a0a0a0;
   border-radius: 50%;
   animation: loadingPulse 1.2s ease-in-out infinite;
@@ -327,6 +330,10 @@ html, body {
   gap: 10px;
   padding: 12px 14px 14px;
   min-height: 280px;
+}
+
+.tab-content.hidden {
+  display: none;
 }
 
 /* Form Fields */

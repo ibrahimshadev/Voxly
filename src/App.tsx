@@ -160,7 +160,9 @@ export default function App() {
       if (result) setText(result);
       if (status() !== 'error') {
         setStatus('done');
-        setTimeout(() => setStatus('idle'), 1500);
+        setTimeout(() => {
+          if (status() === 'done') setStatus('idle');
+        }, 1500);
       }
     } catch (err) {
       setStatus('error');
@@ -296,7 +298,9 @@ export default function App() {
           isHolding = false;
           if (payload.text != null) setText(payload.text);
           setStatus('done');
-          setTimeout(() => setStatus('idle'), 1500);
+          setTimeout(() => {
+            if (status() === 'done') setStatus('idle');
+          }, 1500);
           break;
         }
         case 'error': {
@@ -342,11 +346,10 @@ export default function App() {
     }));
   };
 
-  const switchToTab = async (tab: Tab) => {
+  const switchToTab = (tab: Tab) => {
     setActiveTab(tab);
     setTestMessage('');
     setVocabularyMessage('');
-    await resizeWindowToFitSettings();
   };
 
   const persistVocabulary = async (nextVocabulary: VocabularyEntry[], message?: string) => {
@@ -470,7 +473,7 @@ export default function App() {
           <button
             class="tab-button"
             classList={{ active: activeTab() === 'settings' }}
-            onClick={() => void switchToTab('settings')}
+            onClick={() => switchToTab('settings')}
             type="button"
           >
             Settings
@@ -478,170 +481,167 @@ export default function App() {
           <button
             class="tab-button"
             classList={{ active: activeTab() === 'vocabulary' }}
-            onClick={() => void switchToTab('vocabulary')}
+            onClick={() => switchToTab('vocabulary')}
             type="button"
           >
             Vocabulary
           </button>
         </div>
 
-        <Show
-          when={activeTab() === 'settings'}
-          fallback={
-            <div class="settings-content vocabulary-content">
-              <Show when={vocabularyMessage()}>
-                <div class="muted">{vocabularyMessage()}</div>
-              </Show>
-
-              <Show
-                when={isVocabularyEditorOpen()}
-                fallback={
-                  <>
-                    <Show
-                      when={settings().vocabulary.length > 0}
-                      fallback={<div class="muted">No vocabulary yet. Add terms you frequently dictate.</div>}
-                    >
-                      <div class="vocabulary-list">
-                        {settings().vocabulary.map((entry) => (
-                          <div class="vocabulary-entry" classList={{ disabled: !entry.enabled }}>
-                            <div class="vocabulary-entry-main">
-                              <span class="vocabulary-word">{entry.word}</span>
-                              <span class="vocabulary-meta">{entry.replacements.length} replacement(s)</span>
-                            </div>
-                            <div class="vocabulary-entry-actions">
-                              <button
-                                class="mini-button"
-                                onClick={() => toggleVocabularyEntryEnabled(entry.id)}
-                                type="button"
-                              >
-                                {entry.enabled ? 'On' : 'Off'}
-                              </button>
-                              <button class="mini-button" onClick={() => openEditVocabularyEditor(entry)} type="button">
-                                Edit
-                              </button>
-                              <button
-                                class="mini-button danger"
-                                onClick={() => deleteVocabularyEntry(entry.id)}
-                                type="button"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </Show>
-
-                    <button
-                      class="button ghost wide"
-                      onClick={openCreateVocabularyEditor}
-                      disabled={settings().vocabulary.length >= MAX_VOCABULARY_ENTRIES}
-                      type="button"
-                    >
-                      + Add word
-                    </button>
-                  </>
-                }
-              >
-                <div class="vocabulary-editor">
-                  <label class="field">
-                    <span>Word</span>
-                    <input
-                      value={editorWord()}
-                      onInput={(event) => setEditorWord((event.target as HTMLInputElement).value)}
-                      placeholder="Kubernetes"
-                    />
-                  </label>
-
-                  <label class="field">
-                    <span>Replacements (one per line)</span>
-                    <textarea
-                      value={editorReplacements()}
-                      onInput={(event) => setEditorReplacements((event.target as HTMLTextAreaElement).value)}
-                      rows={5}
-                      placeholder="cube and eighties\nkuber nettis"
-                    />
-                  </label>
-
-                  <div class="muted">
-                    Up to {MAX_REPLACEMENTS_PER_ENTRY} replacements. Matching is case-insensitive and word-boundary based.
-                  </div>
-
-                  <div class="actions">
-                    <button class="button ghost" onClick={cancelVocabularyEditor} type="button">
-                      Cancel
-                    </button>
-                    <button class="button" onClick={saveVocabularyEntry} type="button">
-                      Save Entry
-                    </button>
-                  </div>
-                </div>
-              </Show>
-            </div>
-          }
-        >
-          <div class="settings-content">
-            <label class="field">
-              <span>Provider</span>
-              <select value={settings().provider} onChange={onProviderChange}>
-                <option value="groq">Groq</option>
-                <option value="openai">OpenAI</option>
-                <option value="custom">Custom</option>
+        {/* Settings Tab */}
+        <div class="settings-content tab-content" classList={{ hidden: activeTab() !== 'settings' }}>
+          <label class="field">
+            <span>Provider</span>
+            <select value={settings().provider} onChange={onProviderChange}>
+              <option value="groq">Groq</option>
+              <option value="openai">OpenAI</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Base URL</span>
+            <input
+              value={settings().base_url}
+              onInput={onField('base_url')}
+              placeholder="https://api.groq.com/openai/v1"
+            />
+          </label>
+          <label class="field">
+            <span>Model</span>
+            <Show
+              when={settings().provider !== 'custom'}
+              fallback={<input value={settings().model} onInput={onField('model')} placeholder="model-name" />}
+            >
+              <select value={settings().model} onChange={onField('model')}>
+                {PROVIDERS[settings().provider].models.map((model) => (
+                  <option value={model}>{model}</option>
+                ))}
               </select>
-            </label>
-            <label class="field">
-              <span>Base URL</span>
-              <input
-                value={settings().base_url}
-                onInput={onField('base_url')}
-                placeholder="https://api.groq.com/openai/v1"
-              />
-            </label>
-            <label class="field">
-              <span>Model</span>
-              <Show
-                when={settings().provider !== 'custom'}
-                fallback={<input value={settings().model} onInput={onField('model')} placeholder="model-name" />}
-              >
-                <select value={settings().model} onChange={onField('model')}>
-                  {PROVIDERS[settings().provider].models.map((model) => (
-                    <option value={model}>{model}</option>
-                  ))}
-                </select>
-              </Show>
-            </label>
-            <label class="field">
-              <span>API Key</span>
-              <input
-                type="password"
-                value={settings().api_key}
-                onInput={onField('api_key')}
-                placeholder="sk-..."
-              />
-            </label>
-            <label class="field">
-              <span>Hotkey</span>
-              <input value={settings().hotkey} onInput={onField('hotkey')} />
-            </label>
-
-            <Show when={!settings().api_key}>
-              <div class="warning">Missing API key</div>
             </Show>
+          </label>
+          <label class="field">
+            <span>API Key</span>
+            <input
+              type="password"
+              value={settings().api_key}
+              onInput={onField('api_key')}
+              placeholder="sk-..."
+            />
+          </label>
+          <label class="field">
+            <span>Hotkey</span>
+            <input value={settings().hotkey} onInput={onField('hotkey')} />
+          </label>
 
-            <Show when={testMessage()}>
-              <div class="muted">{testMessage()}</div>
-            </Show>
+          <Show when={!settings().api_key}>
+            <div class="warning">Missing API key</div>
+          </Show>
 
-            <div class="actions">
-              <button class="button ghost" onClick={testConnection} type="button">
-                Test
-              </button>
-              <button class="button" disabled={saving()} onClick={saveSettings} type="button">
-                Save
-              </button>
-            </div>
+          <Show when={testMessage()}>
+            <div class="muted">{testMessage()}</div>
+          </Show>
+
+          <div class="actions">
+            <button class="button ghost" onClick={testConnection} type="button">
+              Test
+            </button>
+            <button class="button" disabled={saving()} onClick={saveSettings} type="button">
+              Save
+            </button>
           </div>
-        </Show>
+        </div>
+
+        {/* Vocabulary Tab */}
+        <div class="settings-content vocabulary-content tab-content" classList={{ hidden: activeTab() !== 'vocabulary' }}>
+          <Show when={vocabularyMessage()}>
+            <div class="muted">{vocabularyMessage()}</div>
+          </Show>
+
+          <Show
+            when={isVocabularyEditorOpen()}
+            fallback={
+              <>
+                <Show
+                  when={settings().vocabulary.length > 0}
+                  fallback={<div class="muted">No vocabulary yet. Add terms you frequently dictate.</div>}
+                >
+                  <div class="vocabulary-list">
+                    {settings().vocabulary.map((entry) => (
+                      <div class="vocabulary-entry" classList={{ disabled: !entry.enabled }}>
+                        <div class="vocabulary-entry-main">
+                          <span class="vocabulary-word">{entry.word}</span>
+                          <span class="vocabulary-meta">{entry.replacements.length} replacement(s)</span>
+                        </div>
+                        <div class="vocabulary-entry-actions">
+                          <button
+                            class="mini-button"
+                            onClick={() => toggleVocabularyEntryEnabled(entry.id)}
+                            type="button"
+                          >
+                            {entry.enabled ? 'On' : 'Off'}
+                          </button>
+                          <button class="mini-button" onClick={() => openEditVocabularyEditor(entry)} type="button">
+                            Edit
+                          </button>
+                          <button
+                            class="mini-button danger"
+                            onClick={() => deleteVocabularyEntry(entry.id)}
+                            type="button"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Show>
+
+                <button
+                  class="button ghost wide"
+                  onClick={openCreateVocabularyEditor}
+                  disabled={settings().vocabulary.length >= MAX_VOCABULARY_ENTRIES}
+                  type="button"
+                >
+                  + Add word
+                </button>
+              </>
+            }
+          >
+            <div class="vocabulary-editor">
+              <label class="field">
+                <span>Word</span>
+                <input
+                  value={editorWord()}
+                  onInput={(event) => setEditorWord((event.target as HTMLInputElement).value)}
+                  placeholder="Kubernetes"
+                />
+              </label>
+
+              <label class="field">
+                <span>Replacements (one per line)</span>
+                <textarea
+                  value={editorReplacements()}
+                  onInput={(event) => setEditorReplacements((event.target as HTMLTextAreaElement).value)}
+                  rows={5}
+                  placeholder="cube and eighties\nkuber nettis"
+                />
+              </label>
+
+              <div class="muted">
+                Up to {MAX_REPLACEMENTS_PER_ENTRY} replacements. Matching is case-insensitive and word-boundary based.
+              </div>
+
+              <div class="actions">
+                <button class="button ghost" onClick={cancelVocabularyEditor} type="button">
+                  Cancel
+                </button>
+                <button class="button" onClick={saveVocabularyEntry} type="button">
+                  Save Entry
+                </button>
+              </div>
+            </div>
+          </Show>
+        </div>
       </div>
 
       <Show when={!showSettings()}>
@@ -656,7 +656,8 @@ export default function App() {
         class="pill"
         classList={{
           expanded: (isHovered() || isActive()) && !showSettings(),
-          recording: status() === 'recording'
+          recording: status() === 'recording',
+          transcribing: status() === 'transcribing' || status() === 'pasting'
         }}
         onMouseDown={startDrag}
         onMouseEnter={() => setIsHovered(true)}
