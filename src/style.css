@@ -255,6 +255,29 @@ body.window-settings {
   flex: 1;
   overflow-y: auto;
   padding-bottom: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.window-settings-root .settings-content::-webkit-scrollbar,
+.vocabulary-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.window-settings-root .settings-content::-webkit-scrollbar-track,
+.vocabulary-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.window-settings-root .settings-content::-webkit-scrollbar-thumb,
+.vocabulary-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+}
+
+.window-settings-root .settings-content::-webkit-scrollbar-thumb:hover,
+.vocabulary-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .settings-header {
@@ -469,6 +492,8 @@ select option {
   max-height: 230px;
   overflow-y: auto;
   padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 
 .vocabulary-entry {
