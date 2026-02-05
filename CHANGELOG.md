@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/ibrahimshadev/dikt/compare/v1.10.0...v1.11.0) (2026-02-05)
+
+
+### Features
+
+* **window:** two-window architecture with cursor passthrough ([5c6c2d5](https://github.com/ibrahimshadev/dikt/commit/5c6c2d55ebaf2e50fbb65dab5f36dcd47896aca4))
+
 # [1.10.0](https://github.com/ibrahimshadev/dikt/compare/v1.9.0...v1.10.0) (2026-02-04)
 
 
