@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/ibrahimshadev/dikt/compare/v1.11.0...v1.12.0) (2026-02-05)
+
+
+### Features
+
+* **settings:** add output mode with clipboard copy option and fix settings layout ([12abcfa](https://github.com/ibrahimshadev/dikt/commit/12abcfa593679673d216fc3bd004081954153a8a))
+
 # [1.11.0](https://github.com/ibrahimshadev/dikt/compare/v1.10.0...v1.11.0) (2026-02-05)
 
 
