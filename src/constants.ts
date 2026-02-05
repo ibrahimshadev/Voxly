@@ -28,8 +28,5 @@ export const DEFAULT_SETTINGS: Settings = {
   vocabulary: []
 };
 
-export const COLLAPSED_HEIGHT = 100;
-export const PANEL_WIDTH = 320;
-export const SETTINGS_PANEL_BOTTOM_OFFSET = 48;
 export const MAX_VOCABULARY_ENTRIES = 100;
 export const MAX_REPLACEMENTS_PER_ENTRY = 10;

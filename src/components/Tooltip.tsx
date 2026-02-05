@@ -2,11 +2,13 @@ import { Show } from 'solid-js';
 import { Motion, Presence } from 'solid-motionone';
 import type { HotkeyMode } from '../types';
 import { formatHotkey } from './Pill';
+import GearButton from './Pill/GearButton';
 
 type TooltipProps = {
   visible: boolean;
   hotkey: string;
   hotkeyMode: HotkeyMode;
+  onSettingsClick: () => void;
 };
 
 export default function Tooltip(props: TooltipProps) {
@@ -24,6 +26,7 @@ export default function Tooltip(props: TooltipProps) {
             {props.hotkeyMode === 'hold' ? 'Hold to talk: ' : 'Press to toggle: '}
             <strong>{formatHotkey(props.hotkey)}</strong>
           </span>
+          <GearButton onClick={props.onSettingsClick} />
         </Motion.div>
       </Show>
     </Presence>

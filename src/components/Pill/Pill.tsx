@@ -1,6 +1,6 @@
 import { Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
-import type { Status, Settings } from '../../types';
+import type { Status } from '../../types';
 import IdleDots from './IdleDots';
 import SineWaves from './SineWaves';
 import LoadingDots from './LoadingDots';
@@ -8,13 +8,8 @@ import GearButton from './GearButton';
 
 type PillProps = {
   status: Accessor<Status>;
-  isHovered: Accessor<boolean>;
-  showSettings: Accessor<boolean>;
-  settings: Accessor<Settings>;
   error: Accessor<string>;
   onMouseDown: (e: MouseEvent) => void;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
   onSettingsClick: () => void;
 };
 
@@ -28,28 +23,18 @@ export function formatHotkey(hotkey: string): string {
 }
 
 export default function Pill(props: PillProps) {
-  const isActive = () =>
-    props.status() === 'recording' || props.status() === 'transcribing' || props.status() === 'pasting';
-
   return (
     <div
       class="pill"
       classList={{
-        expanded: (props.isHovered() || isActive()) && !props.showSettings(),
         recording: props.status() === 'recording',
-        transcribing: props.status() === 'transcribing' || props.status() === 'pasting'
+        transcribing: props.status() === 'transcribing' || props.status() === 'pasting',
+        error: props.status() === 'error',
       }}
       onMouseDown={props.onMouseDown}
-      onMouseEnter={props.onMouseEnter}
-      onMouseLeave={props.onMouseLeave}
     >
-      <Show when={props.status() === 'idle' && (!props.isHovered() || props.showSettings())}>
+      <Show when={props.status() === 'idle'}>
         <IdleDots />
-      </Show>
-
-      <Show when={props.status() === 'idle' && props.isHovered() && !props.showSettings()}>
-        <span class="hotkey-text">{formatHotkey(props.settings().hotkey)}</span>
-        <GearButton onClick={props.onSettingsClick} />
       </Show>
 
       <Show when={props.status() === 'recording'}>
@@ -68,9 +53,7 @@ export default function Pill(props: PillProps) {
 
       <Show when={props.status() === 'error'}>
         <span class="error-icon" title={props.error()}>!</span>
-        <Show when={props.isHovered()}>
-          <GearButton onClick={props.onSettingsClick} />
-        </Show>
+        <GearButton onClick={props.onSettingsClick} />
       </Show>
     </div>
   );

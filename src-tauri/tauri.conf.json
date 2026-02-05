@@ -41,6 +41,21 @@
         "center": false,
         "dragDropEnabled": false,
         "shadow": false
+      },
+      {
+        "label": "settings",
+        "title": "Dikt Settings",
+        "width": 340,
+        "height": 580,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": false,
+        "dragDropEnabled": false,
+        "shadow": false
       }
     ]
   }

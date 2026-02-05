@@ -1,11 +1,12 @@
 {
   "identifier": "main",
   "description": "Main capability",
-  "windows": ["main"],
+  "windows": ["main", "settings"],
   "permissions": [
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "core:event:default"
   ]
 }
