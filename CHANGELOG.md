@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/ibrahimshadev/dikt/compare/v1.13.1...v1.14.0) (2026-02-06)
+
+
+### Features
+
+* **modes:** add post-transcription formatting modes ([037dbcb](https://github.com/ibrahimshadev/dikt/commit/037dbcb1af52167314aef3a3270dcb7965620064))
+
 ## [1.13.1](https://github.com/ibrahimshadev/dikt/compare/v1.13.0...v1.13.1) (2026-02-06)
 
 
