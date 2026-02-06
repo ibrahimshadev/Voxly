@@ -7,6 +7,8 @@ mod audio;
 mod clipboard;
 mod commands;
 mod domain;
+mod format_text;
+mod models_api;
 mod settings;
 mod state;
 mod transcribe;
@@ -98,6 +100,7 @@ fn main() {
             commands::hide_settings_window,
             commands::sync_settings_window_position,
             commands::set_cursor_passthrough,
+            commands::fetch_provider_models,
             commands::get_transcription_history,
             commands::delete_transcription_history_item,
             commands::clear_transcription_history,

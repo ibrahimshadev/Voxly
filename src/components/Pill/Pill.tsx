@@ -28,7 +28,7 @@ export default function Pill(props: PillProps) {
       class="pill"
       classList={{
         recording: props.status() === 'recording',
-        transcribing: props.status() === 'transcribing' || props.status() === 'pasting',
+        transcribing: props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting',
         error: props.status() === 'error',
       }}
       onMouseDown={props.onMouseDown}
@@ -41,7 +41,7 @@ export default function Pill(props: PillProps) {
         <SineWaves />
       </Show>
 
-      <Show when={props.status() === 'transcribing' || props.status() === 'pasting'}>
+      <Show when={props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting'}>
         <LoadingDots />
       </Show>
 

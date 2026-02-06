@@ -5,7 +5,7 @@ use regex::Regex;
 use crate::settings::AppSettings;
 
 use super::{
-  ports::{Paster, Recorder, SettingsStore, Transcriber},
+  ports::{Formatter, Paster, Recorder, SettingsStore, Transcriber},
   types::{DictationState, DictationUpdate, VocabularyEntry},
 };
 
@@ -21,6 +21,7 @@ pub struct DictationSessionManager {
   settings_store: Box<dyn SettingsStore>,
   transcriber: Box<dyn Transcriber>,
   paster: Box<dyn Paster>,
+  formatter: Box<dyn Formatter>,
 }
 
 impl DictationSessionManager {
@@ -29,6 +30,7 @@ impl DictationSessionManager {
     settings_store: Box<dyn SettingsStore>,
     transcriber: Box<dyn Transcriber>,
     paster: Box<dyn Paster>,
+    formatter: Box<dyn Formatter>,
   ) -> Self {
     let initial_settings = settings_store.load();
     Self {
@@ -38,6 +40,7 @@ impl DictationSessionManager {
       settings_store,
       transcriber,
       paster,
+      formatter,
     }
   }
 
@@ -132,6 +135,34 @@ impl DictationSessionManager {
         .transcribe(&settings, wav_data, prompt.as_deref())
         .await?;
       let text = apply_vocabulary_replacements(&text, &settings.vocabulary);
+
+      let text = if let Some(ref mode_id) = settings.active_mode_id {
+        if let Some(mode) = settings.modes.iter().find(|m| &m.id == mode_id) {
+          let _ = self.set_state(DictationState::Formatting);
+          on_update(DictationUpdate::new(DictationState::Formatting));
+          match self
+            .formatter
+            .format(
+              &settings.base_url,
+              &settings.api_key,
+              &mode.model,
+              &mode.system_prompt,
+              &text,
+            )
+            .await
+          {
+            Ok(formatted) => formatted,
+            Err(e) => {
+              eprintln!("Formatting failed, using original text: {e}");
+              text
+            }
+          }
+        } else {
+          text
+        }
+      } else {
+        text
+      };
 
       if let Err(e) = crate::transcription_history::append_item(&text, 50) {
         eprintln!("Failed to save transcription history: {e}");

@@ -7,8 +7,8 @@ use crate::settings::AppSettings;
 
 use super::{
   manager::DictationSessionManager,
-  ports::{Paster, Recorder, SettingsStore, Transcriber},
-  types::{DictationState, VocabularyEntry},
+  ports::{Formatter, Paster, Recorder, SettingsStore, Transcriber},
+  types::{DictationState, Mode, VocabularyEntry},
 };
 
 // ============================================================================
@@ -173,6 +173,52 @@ impl Paster for MockPaster {
   }
 }
 
+struct MockFormatter {
+  should_fail: AtomicBool,
+  prefix: Mutex<String>,
+}
+
+impl MockFormatter {
+  fn new() -> Self {
+    Self {
+      should_fail: AtomicBool::new(false),
+      prefix: Mutex::new(String::new()),
+    }
+  }
+
+  fn with_prefix(prefix: &str) -> Self {
+    Self {
+      should_fail: AtomicBool::new(false),
+      prefix: Mutex::new(prefix.to_string()),
+    }
+  }
+
+  fn with_failure() -> Self {
+    Self {
+      should_fail: AtomicBool::new(true),
+      prefix: Mutex::new(String::new()),
+    }
+  }
+}
+
+#[async_trait::async_trait]
+impl Formatter for MockFormatter {
+  async fn format(
+    &self,
+    _base_url: &str,
+    _api_key: &str,
+    _model: &str,
+    _system_prompt: &str,
+    text: &str,
+  ) -> Result<String, String> {
+    if self.should_fail.load(Ordering::SeqCst) {
+      return Err("Mock format failure".to_string());
+    }
+
+    Ok(format!("{}{}", self.prefix.lock().unwrap().as_str(), text))
+  }
+}
+
 // ============================================================================
 // Helper to create manager with mocks
 // ============================================================================
@@ -183,11 +229,28 @@ fn create_manager(
   transcriber: MockTranscriber,
   paster: MockPaster,
 ) -> DictationSessionManager {
+  create_manager_with_formatter(
+    recorder,
+    settings_store,
+    transcriber,
+    paster,
+    MockFormatter::new(),
+  )
+}
+
+fn create_manager_with_formatter(
+  recorder: MockRecorder,
+  settings_store: MockSettingsStore,
+  transcriber: MockTranscriber,
+  paster: MockPaster,
+  formatter: MockFormatter,
+) -> DictationSessionManager {
   DictationSessionManager::new(
     Box::new(recorder),
     Box::new(settings_store),
     Box::new(transcriber),
     Box::new(paster),
+    Box::new(formatter),
   )
 }
 
@@ -405,6 +468,72 @@ async fn test_stop_and_process_handles_recorder_stop_failure() {
 
   assert!(result.is_err());
   assert!(result.unwrap_err().contains("Mock stop failure"));
+}
+
+#[tokio::test]
+async fn test_stop_and_process_emits_formatting_when_mode_active() {
+  let mut settings = AppSettings::default();
+  settings.active_mode_id = Some("mode-1".to_string());
+  settings.modes = vec![Mode {
+    id: "mode-1".to_string(),
+    name: "Formatter".to_string(),
+    system_prompt: "Format this".to_string(),
+    model: "chat-model".to_string(),
+  }];
+
+  let manager = create_manager_with_formatter(
+    MockRecorder::new(),
+    MockSettingsStore::with_settings(settings),
+    MockTranscriber::new("Hello world"),
+    MockPaster::new(),
+    MockFormatter::with_prefix("Formatted: "),
+  );
+
+  manager.start_recording(|_| {}).unwrap();
+
+  let mut updates = vec![];
+  let result = manager.stop_and_process(|update| updates.push(update)).await;
+
+  assert!(result.is_ok());
+  assert_eq!(result.unwrap(), "Formatted: Hello world");
+  assert_eq!(updates.len(), 4);
+  assert_eq!(updates[0].state, DictationState::Transcribing);
+  assert_eq!(updates[1].state, DictationState::Formatting);
+  assert_eq!(updates[2].state, DictationState::Pasting);
+  assert_eq!(
+    updates[3].text,
+    Some("Formatted: Hello world".to_string())
+  );
+}
+
+#[tokio::test]
+async fn test_stop_and_process_falls_back_when_formatting_fails() {
+  let mut settings = AppSettings::default();
+  settings.active_mode_id = Some("mode-1".to_string());
+  settings.modes = vec![Mode {
+    id: "mode-1".to_string(),
+    name: "Formatter".to_string(),
+    system_prompt: "Format this".to_string(),
+    model: "chat-model".to_string(),
+  }];
+
+  let manager = create_manager_with_formatter(
+    MockRecorder::new(),
+    MockSettingsStore::with_settings(settings),
+    MockTranscriber::new("Hello world"),
+    MockPaster::new(),
+    MockFormatter::with_failure(),
+  );
+
+  manager.start_recording(|_| {}).unwrap();
+
+  let mut updates = vec![];
+  let result = manager.stop_and_process(|update| updates.push(update)).await;
+
+  assert!(result.is_ok());
+  assert_eq!(result.unwrap(), "Hello world");
+  assert!(updates.iter().any(|update| update.state == DictationState::Formatting));
+  assert_eq!(updates.last().and_then(|update| update.text.clone()), Some("Hello world".to_string()));
 }
 
 // ============================================================================

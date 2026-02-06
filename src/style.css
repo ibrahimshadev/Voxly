@@ -319,7 +319,7 @@ body.window-settings {
 
 .tab-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   padding: 10px 14px 0;
 }
@@ -656,4 +656,101 @@ select option {
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
+}
+
+/* Modes Tab */
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.15);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.mode-card.active {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.mode-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mode-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mode-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e5e7eb;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mode-summary-meta {
+  font-size: 11px;
+  color: #777;
+}
+
+.mode-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.mode-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mode-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #777;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.mode-field textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.modes-content {
+  gap: 12px;
+}
+
+.modes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mode-name-input {
+  flex: 1;
+  min-width: 0;
 }

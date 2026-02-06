@@ -1,5 +1,8 @@
 use crate::domain::{
-  impls::{ClipboardPaster, CpalRecorder, FileAndKeyringSettingsStore, OpenAiCompatibleTranscriber},
+  impls::{
+    ClipboardPaster, CpalRecorder, FileAndKeyringSettingsStore, OpenAiCompatibleFormatter,
+    OpenAiCompatibleTranscriber,
+  },
   manager::DictationSessionManager,
 };
 
@@ -15,6 +18,7 @@ impl Default for AppState {
         Box::new(FileAndKeyringSettingsStore),
         Box::new(OpenAiCompatibleTranscriber),
         Box::new(ClipboardPaster),
+        Box::new(OpenAiCompatibleFormatter),
       ),
     }
   }

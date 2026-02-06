@@ -1,9 +1,10 @@
-import { createSignal, onCleanup, onMount } from 'solid-js';
+import { createSignal, createEffect, createMemo, on, onCleanup, onMount } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 
-import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem } from './types';
+import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, Mode } from './types';
 import {
+  CHAT_MODELS,
   DEFAULT_SETTINGS,
   MAX_REPLACEMENTS_PER_ENTRY,
   MAX_VOCABULARY_ENTRIES
@@ -50,6 +51,10 @@ export default function SettingsApp() {
 
   const [history, setHistory] = createSignal<TranscriptionHistoryItem[]>([]);
   const [historyMessage, setHistoryMessage] = createSignal('');
+
+  const [modelsList, setModelsList] = createSignal<string[]>([]);
+  const [modelsLoading, setModelsLoading] = createSignal(false);
+  const [modelsError, setModelsError] = createSignal('');
 
   const [isVocabularyEditorOpen, setIsVocabularyEditorOpen] = createSignal(false);
   const [editingVocabularyId, setEditingVocabularyId] = createSignal<string | null>(null);
@@ -167,6 +172,77 @@ export default function SettingsApp() {
     setHistoryMessage('');
   };
 
+  const fetchModels = async () => {
+    setModelsLoading(true);
+    setModelsError('');
+    try {
+      const result = await invoke<string[]>('fetch_provider_models', {
+        baseUrl: settings().base_url,
+        apiKey: settings().api_key
+      });
+      const fallback = CHAT_MODELS[settings().provider] ?? [];
+      const availableModels = result.length > 0 ? result : fallback;
+      setModelsList(availableModels);
+      setModelsError(result.length === 0 ? 'API returned no models, using defaults' : '');
+      if (settings().provider !== 'custom' && availableModels.length > 0) {
+        const firstModel = availableModels[0];
+        setSettings((current) => ({
+          ...current,
+          modes: current.modes.map((mode) =>
+            availableModels.includes(mode.model) ? mode : { ...mode, model: firstModel }
+          )
+        }));
+      }
+    } catch (err) {
+      setModelsError('Model fetch failed: ' + String(err));
+      const fallback = CHAT_MODELS[settings().provider] ?? [];
+      setModelsList(fallback);
+      if (settings().provider !== 'custom' && fallback.length > 0) {
+        const firstModel = fallback[0];
+        setSettings((current) => ({
+          ...current,
+          modes: current.modes.map((mode) =>
+            fallback.includes(mode.model) ? mode : { ...mode, model: firstModel }
+          )
+        }));
+      }
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  const addMode = () => {
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `mode-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const preferred = CHAT_MODELS[settings().provider]?.[0] ?? '';
+    const available = modelsList();
+    const defaultModel = available.includes(preferred) ? preferred
+      : available.length > 0 ? available[0]
+      : preferred;
+    const newMode: Mode = { id, name: '', system_prompt: '', model: defaultModel };
+    setSettings((current) => ({ ...current, modes: [...current.modes, newMode] }));
+  };
+
+  const deleteMode = (id: string) => {
+    setSettings((current) => {
+      const nextModes = current.modes.filter((mode) => mode.id !== id);
+      const nextActiveModeId = current.active_mode_id === id ? null : current.active_mode_id;
+      return { ...current, modes: nextModes, active_mode_id: nextActiveModeId };
+    });
+  };
+
+  const updateMode = (id: string, field: keyof Mode, value: string) => {
+    setSettings((current) => ({
+      ...current,
+      modes: current.modes.map((mode) => (mode.id === id ? { ...mode, [field]: value } : mode))
+    }));
+  };
+
+  const setActiveModeId = (id: string | null) => {
+    setSettings((current) => ({ ...current, active_mode_id: id }));
+  };
+
   const openCreateVocabularyEditor = () => {
     if (settings().vocabulary.length >= MAX_VOCABULARY_ENTRIES) {
       setVocabularyMessage(`Maximum ${MAX_VOCABULARY_ENTRIES} entries reached.`);
@@ -250,6 +326,17 @@ export default function SettingsApp() {
     setVocabularyMessage('');
   };
 
+  const provider = createMemo(() => settings().provider);
+
+  createEffect(on(
+    () => [provider(), activeTab()] as const,
+    ([_provider, tab]) => {
+      if (tab === 'modes') {
+        void fetchModels();
+      }
+    }
+  ));
+
   onMount(async () => {
     document.body.classList.add('window-settings');
     await loadSettings();
@@ -305,6 +392,13 @@ export default function SettingsApp() {
         onHistoryCopy={copyHistoryText}
         onHistoryDelete={deleteHistoryItem}
         onHistoryClearAll={clearHistory}
+        modelsList={modelsList}
+        modelsLoading={modelsLoading}
+        modelsError={modelsError}
+        onUpdateMode={updateMode}
+        onSetActiveModeId={setActiveModeId}
+        onAddMode={addMode}
+        onDeleteMode={deleteMode}
       />
     </div>
   );

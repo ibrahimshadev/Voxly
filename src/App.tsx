@@ -135,7 +135,10 @@ export default function App() {
   };
 
   const isActive = () =>
-    status() === 'recording' || status() === 'transcribing' || status() === 'pasting';
+    status() === 'recording' ||
+    status() === 'transcribing' ||
+    status() === 'formatting' ||
+    status() === 'pasting';
 
   onMount(async () => {
     document.body.classList.add('window-main');
@@ -153,6 +156,11 @@ export default function App() {
         case 'transcribing': {
           setError('');
           setStatus('transcribing');
+          break;
+        }
+        case 'formatting': {
+          setError('');
+          setStatus('formatting');
           break;
         }
         case 'pasting': {

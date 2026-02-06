@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::types::VocabularyEntry;
+use crate::domain::types::{Mode, VocabularyEntry};
 
 const SERVICE_NAME: &str = "dikt";
 // Use Tauri's canonical modifier name. This resolves to Ctrl on Windows/Linux and Cmd on macOS.
@@ -24,6 +24,10 @@ pub struct AppSettings {
   pub api_key: String,
   #[serde(default)]
   pub vocabulary: Vec<VocabularyEntry>,
+  #[serde(default)]
+  pub active_mode_id: Option<String>,
+  #[serde(default)]
+  pub modes: Vec<Mode>,
 }
 
 fn default_provider() -> String {
@@ -36,6 +40,30 @@ fn default_hotkey_mode() -> String {
 
 fn default_copy_to_clipboard_on_success() -> bool {
   false
+}
+
+fn default_modes(provider: &str) -> Vec<Mode> {
+  let model = match provider {
+    "groq" => "llama-3.3-70b-versatile",
+    "openai" => "gpt-4o-mini",
+    _ => "",
+  }
+  .to_string();
+
+  vec![
+    Mode {
+      id: uuid::Uuid::new_v4().to_string(),
+      name: "Grammar & Punctuation".to_string(),
+      system_prompt: "Fix grammar, punctuation, and spelling. Preserve the original meaning and tone. Return only the corrected text.".to_string(),
+      model: model.clone(),
+    },
+    Mode {
+      id: uuid::Uuid::new_v4().to_string(),
+      name: "Email Draft".to_string(),
+      system_prompt: "Rewrite the following dictation as a professional email. Keep the same intent and key points. Return only the email body.".to_string(),
+      model,
+    },
+  ]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +81,10 @@ struct StoredSettings {
   encrypted_api_key: Option<String>,
   #[serde(default)]
   vocabulary: Vec<VocabularyEntry>,
+  #[serde(default)]
+  active_mode_id: Option<String>,
+  #[serde(default)]
+  modes: Vec<Mode>,
 }
 
 impl Default for AppSettings {
@@ -66,15 +98,19 @@ impl Default for AppSettings {
       copy_to_clipboard_on_success: false,
       api_key: String::new(),
       vocabulary: Vec::new(),
+      active_mode_id: None,
+      modes: Vec::new(),
     }
   }
 }
 
 pub fn load_settings() -> AppSettings {
   let mut settings = AppSettings::default();
+  let mut should_seed_default_modes = true;
 
   if let Ok(path) = settings_path() {
     if let Ok(contents) = fs::read_to_string(&path) {
+      let has_modes_field = json_has_modes_field(&contents);
       if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
         let mut updated = false;
         let normalized = normalize_hotkey(&stored.hotkey);
@@ -96,6 +132,9 @@ pub fn load_settings() -> AppSettings {
         settings.hotkey_mode = stored.hotkey_mode;
         settings.copy_to_clipboard_on_success = stored.copy_to_clipboard_on_success;
         settings.vocabulary = stored.vocabulary;
+        settings.active_mode_id = stored.active_mode_id;
+        settings.modes = stored.modes;
+        should_seed_default_modes = !has_modes_field;
       }
     }
   }
@@ -104,7 +143,18 @@ pub fn load_settings() -> AppSettings {
     settings.api_key = api_key;
   }
 
+  if should_seed_default_modes && settings.modes.is_empty() {
+    settings.modes = default_modes(&settings.provider);
+  }
+
   settings
+}
+
+fn json_has_modes_field(contents: &str) -> bool {
+  serde_json::from_str::<serde_json::Value>(contents)
+    .ok()
+    .and_then(|value| value.as_object().map(|obj| obj.contains_key("modes")))
+    .unwrap_or(false)
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
@@ -117,6 +167,8 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     copy_to_clipboard_on_success: settings.copy_to_clipboard_on_success,
     encrypted_api_key: None,
     vocabulary: settings.vocabulary.clone(),
+    active_mode_id: settings.active_mode_id.clone(),
+    modes: settings.modes.clone(),
   };
 
   let path = settings_path()?;
@@ -249,6 +301,8 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
       copy_to_clipboard_on_success: false,
       encrypted_api_key: None,
       vocabulary: Vec::new(),
+      active_mode_id: None,
+      modes: Vec::new(),
     })
   } else {
     StoredSettings {
@@ -260,6 +314,8 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
       copy_to_clipboard_on_success: false,
       encrypted_api_key: None,
       vocabulary: Vec::new(),
+      active_mode_id: None,
+      modes: Vec::new(),
     }
   };
 
@@ -301,7 +357,7 @@ fn clear_encrypted_api_key_fallback() {
 
 #[cfg(test)]
 mod tests {
-  use super::StoredSettings;
+  use super::{json_has_modes_field, StoredSettings};
 
   #[test]
   fn legacy_settings_without_vocabulary_deserialize() {
@@ -314,5 +370,41 @@ mod tests {
 
     let parsed: StoredSettings = serde_json::from_str(legacy_json).unwrap();
     assert!(parsed.vocabulary.is_empty());
+  }
+
+  #[test]
+  fn legacy_settings_without_modes_deserialize() {
+    let legacy_json = r#"{
+      "provider": "groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "model": "whisper-large-v3-turbo",
+      "hotkey": "CommandOrControl+Space",
+      "vocabulary": []
+    }"#;
+
+    let parsed: StoredSettings = serde_json::from_str(legacy_json).unwrap();
+    assert!(parsed.modes.is_empty());
+    assert!(parsed.active_mode_id.is_none());
+  }
+
+  #[test]
+  fn modes_field_detection_returns_false_when_missing() {
+    let json = r#"{
+      "provider": "groq",
+      "base_url": "https://api.groq.com/openai/v1"
+    }"#;
+
+    assert!(!json_has_modes_field(json));
+  }
+
+  #[test]
+  fn modes_field_detection_returns_true_when_present() {
+    let json = r#"{
+      "provider": "groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "modes": []
+    }"#;
+
+    assert!(json_has_modes_field(json));
   }
 }

@@ -135,6 +135,18 @@ pub async fn test_connection(settings: AppSettings) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn fetch_provider_models(
+    base_url: String,
+    api_key: String,
+) -> Result<Vec<String>, String> {
+    let result = crate::models_api::fetch_models(&base_url, &api_key).await;
+    if let Err(ref e) = result {
+        eprintln!("fetch_provider_models error: {e}");
+    }
+    result
+}
+
+#[tauri::command]
 pub fn get_transcription_history() -> Result<Vec<TranscriptionHistoryItem>, String> {
     crate::transcription_history::load_history()
 }

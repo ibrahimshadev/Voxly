@@ -1,10 +1,11 @@
 import { Show, Switch, Match } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
 import { Motion, Presence } from 'solid-motionone';
-import type { Tab, Settings, VocabularyEntry, TranscriptionHistoryItem } from '../../types';
+import type { Tab, Settings, Mode, VocabularyEntry, TranscriptionHistoryItem } from '../../types';
 import SettingsTab from './SettingsTab';
 import VocabularyTab from './VocabularyTab';
 import HistoryTab from './HistoryTab';
+import ModesTab from './ModesTab';
 
 type SettingsPanelProps = {
   visible: Accessor<boolean>;
@@ -34,6 +35,13 @@ type SettingsPanelProps = {
   onHistoryCopy: (text: string) => void;
   onHistoryDelete: (id: string) => void;
   onHistoryClearAll: () => void;
+  modelsList: Accessor<string[]>;
+  modelsLoading: Accessor<boolean>;
+  modelsError: Accessor<string>;
+  onUpdateMode: (id: string, field: keyof Mode, value: string) => void;
+  onSetActiveModeId: (id: string | null) => void;
+  onAddMode: () => void;
+  onDeleteMode: (id: string) => void;
   ref?: (el: HTMLDivElement) => void;
 };
 
@@ -84,6 +92,14 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               type="button"
             >
               History
+            </button>
+            <button
+              class="tab-button"
+              classList={{ active: props.activeTab() === 'modes' }}
+              onClick={() => props.onTabChange('modes')}
+              type="button"
+            >
+              Modes
             </button>
           </div>
 
@@ -148,6 +164,30 @@ export default function SettingsPanel(props: SettingsPanelProps) {
                       onCopy={props.onHistoryCopy}
                       onDelete={props.onHistoryDelete}
                       onClearAll={props.onHistoryClearAll}
+                    />
+                  </Motion.div>
+                </Match>
+                <Match when={props.activeTab() === 'modes'}>
+                  <Motion.div
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.15 }}
+                    class="settings-tab-pane"
+                  >
+                    <ModesTab
+                      settings={props.settings}
+                      modes={() => props.settings().modes}
+                      activeModeId={() => props.settings().active_mode_id}
+                      modelsList={props.modelsList}
+                      modelsLoading={props.modelsLoading}
+                      modelsError={props.modelsError}
+                      saving={props.saving}
+                      onUpdateMode={props.onUpdateMode}
+                      onSetActiveModeId={props.onSetActiveModeId}
+                      onAddMode={props.onAddMode}
+                      onDeleteMode={props.onDeleteMode}
+                      onSave={props.onSave}
                     />
                   </Motion.div>
                 </Match>

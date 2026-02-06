@@ -1,5 +1,5 @@
-export type Status = 'idle' | 'recording' | 'transcribing' | 'pasting' | 'done' | 'error';
-export type Tab = 'settings' | 'vocabulary' | 'history';
+export type Status = 'idle' | 'recording' | 'transcribing' | 'formatting' | 'pasting' | 'done' | 'error';
+export type Tab = 'settings' | 'vocabulary' | 'history' | 'modes';
 export type Provider = 'groq' | 'openai' | 'custom';
 export type HotkeyMode = 'hold' | 'lock';
 
@@ -8,6 +8,13 @@ export type VocabularyEntry = {
   word: string;
   replacements: string[];
   enabled: boolean;
+};
+
+export type Mode = {
+  id: string;
+  name: string;
+  system_prompt: string;
+  model: string;
 };
 
 export type Settings = {
@@ -19,6 +26,8 @@ export type Settings = {
   copy_to_clipboard_on_success: boolean;
   api_key: string;
   vocabulary: VocabularyEntry[];
+  active_mode_id: string | null;
+  modes: Mode[];
 };
 
 export type TranscriptionHistoryItem = {
@@ -28,7 +37,7 @@ export type TranscriptionHistoryItem = {
 };
 
 export type DictationUpdate = {
-  state: 'idle' | 'recording' | 'transcribing' | 'pasting' | 'done' | 'error';
+  state: 'idle' | 'recording' | 'transcribing' | 'formatting' | 'pasting' | 'done' | 'error';
   message?: string;
   text?: string;
 };

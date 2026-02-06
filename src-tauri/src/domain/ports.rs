@@ -1,5 +1,17 @@
 use crate::settings::AppSettings;
 
+#[async_trait::async_trait]
+pub trait Formatter: Send + Sync {
+  async fn format(
+    &self,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    text: &str,
+  ) -> Result<String, String>;
+}
+
 pub trait SettingsStore: Send + Sync {
   fn load(&self) -> AppSettings;
   fn save(&self, settings: &AppSettings) -> Result<(), String>;

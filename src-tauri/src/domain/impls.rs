@@ -1,6 +1,6 @@
-use crate::{audio::AudioRecorder, clipboard, settings, transcribe};
+use crate::{audio::AudioRecorder, clipboard, format_text, settings, transcribe};
 
-use super::ports::{Paster, Recorder, SettingsStore, Transcriber};
+use super::ports::{Formatter, Paster, Recorder, SettingsStore, Transcriber};
 use crate::settings::AppSettings;
 
 pub struct CpalRecorder(AudioRecorder);
@@ -42,6 +42,22 @@ impl Paster for ClipboardPaster {
 
   fn copy(&self, text: &str) -> Result<(), String> {
     clipboard::copy_to_clipboard(text)
+  }
+}
+
+pub struct OpenAiCompatibleFormatter;
+
+#[async_trait::async_trait]
+impl Formatter for OpenAiCompatibleFormatter {
+  async fn format(
+    &self,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    text: &str,
+  ) -> Result<String, String> {
+    format_text::format_text(base_url, api_key, model, system_prompt, text).await
   }
 }
 

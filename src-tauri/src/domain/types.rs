@@ -10,6 +10,7 @@ pub enum DictationState {
   Idle,
   Recording,
   Transcribing,
+  Formatting,
   Pasting,
   Done,
   Error,
@@ -54,4 +55,16 @@ pub struct VocabularyEntry {
   pub replacements: Vec<String>,
   #[serde(default = "default_true")]
   pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Mode {
+  #[serde(default)]
+  pub id: String,
+  #[serde(default)]
+  pub name: String,
+  #[serde(default)]
+  pub system_prompt: String,
+  #[serde(default)]
+  pub model: String,
 }
