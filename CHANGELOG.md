@@ -1,3 +1,11 @@
+# [1.15.0](https://github.com/ibrahimshadev/dikt/compare/v1.14.0...v1.15.0) (2026-02-07)
+
+
+### Features
+
+* **settings:** add modes page, per-provider keys, and duration fallback ([1232547](https://github.com/ibrahimshadev/dikt/commit/12325471969fb740f0b742bde1c19b0f7d3ea3f7))
+* **settings:** redesign settings as multi-page dashboard with history ([a2e04bd](https://github.com/ibrahimshadev/dikt/commit/a2e04bd4eaa49c7cda3b11a06cf9991a615eb404))
+
 # [1.14.0](https://github.com/ibrahimshadev/dikt/compare/v1.13.1...v1.14.0) (2026-02-06)
 
 
