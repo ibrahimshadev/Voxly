@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dikt Vocabulary</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#10b77f",
+                        "primary-dark": "#059669",
+                        "background-light": "#f6f8f7",
+                        "background-dark": "#0a0a0a",
+                        "surface-dark": "#111111",
+                        "border-dark": "#333333",
+                        "accent-dark": "#1c1c1c",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"],
+                        "mono": ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", "monospace"],
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background-dark text-white h-screen overflow-hidden flex selection:bg-primary/30 selection:text-primary-light">
+<aside class="w-64 bg-[#0d0e12] border-r border-white/5 flex flex-col justify-between shrink-0 z-20">
+<div class="p-6">
+<div class="flex items-center gap-3 mb-8">
+<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(16,183,127,0.4)]">
+<span class="material-symbols-outlined text-black text-[20px] font-bold">mic</span>
+</div>
+<div>
+<h1 class="font-bold text-lg tracking-tight">dikt</h1>
+<span class="text-[10px] text-gray-500 font-mono tracking-widest uppercase">PRO v2.1</span>
+</div>
+</div>
+<nav class="space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-gray-300">settings</span>
+<span class="text-sm font-medium">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-gray-300">history</span>
+<span class="text-sm font-medium">History</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary border border-primary/20 group transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">book_2</span>
+<span class="text-sm font-medium">Vocabulary</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-gray-300">layers</span>
+<span class="text-sm font-medium">Modes</span>
+</a>
+</nav>
+</div>
+<div class="p-4 border-t border-white/5">
+<div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+<div class="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 overflow-hidden" data-alt="Abstract gradient user avatar with purple and blue hues"></div>
+<div class="flex flex-col overflow-hidden">
+<span class="text-sm font-medium truncate text-gray-200">Alex Chen</span>
+<span class="text-xs text-gray-500 truncate">alex@dikt.app</span>
+</div>
+<span class="material-symbols-outlined text-gray-600 text-[16px] ml-auto">unfold_more</span>
+</div>
+</div>
+</aside>
+<main class="flex-1 overflow-y-auto scrollbar-hide bg-[#0a0a0a] relative">
+<div class="absolute inset-0 z-0 opacity-[0.03]" style="background-image: radial-gradient(#ffffff 1px, transparent 1px); background-size: 24px 24px;"></div>
+<div class="max-w-4xl mx-auto py-10 px-10 relative z-10">
+<header class="mb-8 flex items-end justify-between">
+<div>
+<h2 class="text-3xl font-bold tracking-tight mb-2">Vocabulary</h2>
+<p class="text-gray-400 max-w-lg">Train the model on your specific terminology, acronyms, and names.</p>
+</div>
+<div class="relative w-64">
+<span class="absolute left-3 top-2.5 text-gray-600 material-symbols-outlined text-[18px]">search</span>
+<input class="w-full bg-surface-dark border border-white/10 rounded-lg py-2 pl-9 pr-3 text-sm text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder-gray-600" placeholder="Search words..." type="text"/>
+</div>
+</header>
+<div class="space-y-6">
+<button class="w-full group relative flex flex-col items-center justify-center p-6 border-2 border-dashed border-white/10 hover:border-primary/40 rounded-xl transition-all duration-300 bg-transparent hover:bg-white/[0.01]">
+<div class="h-10 w-10 rounded-full bg-surface-dark border border-white/10 flex items-center justify-center mb-2 group-hover:scale-110 group-hover:border-primary/50 transition-all">
+<span class="material-symbols-outlined text-gray-400 group-hover:text-primary transition-colors">add</span>
+</div>
+<span class="text-sm font-medium text-gray-400 group-hover:text-gray-200">Add new word or phrase</span>
+<span class="text-xs text-gray-600 mt-1">Supports IPA notation</span>
+</button>
+<div class="flex items-center px-4 pb-2 text-xs font-mono text-gray-500 uppercase tracking-wider">
+<div class="flex-1">Phrase / Word</div>
+<div class="w-48">Phonetic / Hint</div>
+<div class="w-24 text-right">Type</div>
+<div class="w-12"></div>
+</div>
+<div class="divide-y divide-primary/10">
+<div class="group flex items-center py-4 px-4 hover:bg-white/[0.02] transition-colors -mx-4 rounded-lg">
+<div class="flex-1">
+<div class="font-semibold text-gray-200 text-lg">Kubernetes</div>
+<div class="text-xs text-gray-500 mt-0.5">Container orchestration</div>
+</div>
+<div class="w-48 font-mono text-sm text-primary/80">/kuːbərˈnɛtiːz/</div>
+<div class="w-24 text-right">
+<span class="text-[10px] font-mono border border-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">Tech</span>
+</div>
+<div class="w-12 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+<div class="group flex items-center py-4 px-4 hover:bg-white/[0.02] transition-colors -mx-4 rounded-lg">
+<div class="flex-1">
+<div class="font-semibold text-gray-200 text-lg">Supabase</div>
+<div class="text-xs text-gray-500 mt-0.5">Backend as a Service</div>
+</div>
+<div class="w-48 font-mono text-sm text-primary/80">/ˈsuːpəˌbeɪs/</div>
+<div class="w-24 text-right">
+<span class="text-[10px] font-mono border border-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">Product</span>
+</div>
+<div class="w-12 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+<div class="group flex items-center py-4 px-4 hover:bg-white/[0.02] transition-colors -mx-4 rounded-lg">
+<div class="flex-1">
+<div class="font-semibold text-gray-200 text-lg">idempotency</div>
+</div>
+<div class="w-48 font-mono text-sm text-primary/80">/ˌaɪdəmˈpoʊtənsi/</div>
+<div class="w-24 text-right">
+<span class="text-[10px] font-mono border border-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">Dev</span>
+</div>
+<div class="w-12 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+<div class="group flex items-center py-4 px-4 hover:bg-white/[0.02] transition-colors -mx-4 rounded-lg">
+<div class="flex-1">
+<div class="font-semibold text-gray-200 text-lg">useEffect</div>
+<div class="text-xs text-gray-500 mt-0.5">React Hook</div>
+</div>
+<div class="w-48 font-mono text-sm text-primary/80">use-effect</div>
+<div class="w-24 text-right">
+<span class="text-[10px] font-mono border border-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">Code</span>
+</div>
+<div class="w-12 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+<div class="group flex items-center py-4 px-4 hover:bg-white/[0.02] transition-colors -mx-4 rounded-lg">
+<div class="flex-1">
+<div class="font-semibold text-gray-200 text-lg">Vercel</div>
+</div>
+<div class="w-48 font-mono text-sm text-primary/80">/ˈvɜːrsəl/</div>
+<div class="w-24 text-right">
+<span class="text-[10px] font-mono border border-white/10 px-2 py-0.5 rounded text-gray-400 uppercase">Company</span>
+</div>
+<div class="w-12 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-gray-500 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<aside class="w-80 bg-[#0d0e12] border-l border-white/5 flex flex-col shrink-0 z-20">
+<div class="p-8 flex-1 flex flex-col h-full">
+<div class="flex items-center justify-between mb-8">
+<h2 class="text-xs font-semibold text-gray-300 uppercase tracking-wider">Dataset Stats</h2>
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+</div>
+<div class="grid grid-cols-2 gap-x-4 gap-y-10">
+<div class="flex flex-col gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">dataset</span>
+<div>
+<div class="font-mono text-3xl font-bold text-white tracking-tight">142</div>
+<div class="text-[10px] text-gray-500 font-medium uppercase tracking-wide mt-1">Total Words</div>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">model_training</span>
+<div>
+<div class="font-mono text-3xl font-bold text-white tracking-tight">94<span class="text-lg text-gray-600">%</span></div>
+<div class="text-[10px] text-gray-500 font-medium uppercase tracking-wide mt-1">Hit Rate</div>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">auto_awesome</span>
+<div>
+<div class="font-mono text-3xl font-bold text-white tracking-tight">28</div>
+<div class="text-[10px] text-gray-500 font-medium uppercase tracking-wide mt-1">Auto-Added</div>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">tune</span>
+<div>
+<div class="font-mono text-3xl font-bold text-white tracking-tight">15</div>
+<div class="text-[10px] text-gray-500 font-medium uppercase tracking-wide mt-1">Phonetic Rules</div>
+</div>
+</div>
+</div>
+<div class="mt-12 pt-6 border-t border-white/5">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-gray-500 text-[18px] mt-0.5">cloud_sync</span>
+<div>
+<div class="text-sm text-gray-300 font-medium">Last Sync</div>
+<div class="text-xs text-gray-500 mt-1 font-mono">2 mins ago</div>
+<div class="text-[10px] text-primary mt-2 flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                            Operational
+                        </div>
+</div>
+</div>
+</div>
+<div class="mt-auto pt-6 border-t border-white/5 opacity-40 hover:opacity-100 transition-opacity">
+<div class="flex justify-between items-center mb-2">
+<span class="text-[10px] font-mono text-primary font-bold tracking-widest uppercase">Input Test</span>
+<span class="material-symbols-outlined text-primary text-[14px]">mic</span>
+</div>
+<div class="h-10 w-full bg-[#050505] rounded border border-white/10 flex items-center justify-center gap-[2px] overflow-hidden px-2">
+<div class="w-[2px] bg-primary/20 h-2 rounded-full"></div>
+<div class="w-[2px] bg-primary/30 h-3 rounded-full"></div>
+<div class="w-[2px] bg-primary h-5 rounded-full"></div>
+<div class="w-[2px] bg-primary h-2 rounded-full"></div>
+<div class="w-[2px] bg-primary h-3 rounded-full"></div>
+<div class="w-[2px] bg-primary h-1 rounded-full"></div>
+</div>
+</div>
+</div>
+</aside>
+
+</body></html>

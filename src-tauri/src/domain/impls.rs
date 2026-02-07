@@ -1,4 +1,5 @@
 use crate::{audio::AudioRecorder, clipboard, format_text, settings, transcribe};
+use crate::transcribe::TranscriptionResult;
 
 use super::ports::{Formatter, Paster, Recorder, SettingsStore, Transcriber};
 use crate::settings::AppSettings;
@@ -70,7 +71,7 @@ impl Transcriber for OpenAiCompatibleTranscriber {
     settings: &AppSettings,
     audio_wav: Vec<u8>,
     prompt: Option<&str>,
-  ) -> Result<String, String> {
+  ) -> Result<TranscriptionResult, String> {
     transcribe::transcribe(
       &settings.base_url,
       &settings.api_key,

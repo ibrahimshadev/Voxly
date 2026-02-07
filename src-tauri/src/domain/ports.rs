@@ -1,4 +1,5 @@
 use crate::settings::AppSettings;
+use crate::transcribe::TranscriptionResult;
 
 #[async_trait::async_trait]
 pub trait Formatter: Send + Sync {
@@ -34,5 +35,5 @@ pub trait Transcriber: Send + Sync {
     settings: &AppSettings,
     audio_wav: Vec<u8>,
     prompt: Option<&str>,
-  ) -> Result<String, String>;
+  ) -> Result<TranscriptionResult, String>;
 }

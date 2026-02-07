@@ -6,14 +6,22 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
-const MAX_HISTORY_ITEMS: usize = 50;
+const MAX_HISTORY_ITEMS: usize = 10_000;
 static LAST_HISTORY_ERROR: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscriptionHistoryItem {
     pub id: String,
     pub text: String,
     pub created_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_text: Option<String>,
 }
 
 fn history_path() -> Result<PathBuf, String> {
@@ -91,7 +99,15 @@ pub fn load_history() -> Result<Vec<TranscriptionHistoryItem>, String> {
     load_history_from(&path)
 }
 
-pub fn append_item(text: &str, max_items: usize) -> Result<(), String> {
+pub struct AppendItemParams {
+    pub text: String,
+    pub duration_secs: Option<f64>,
+    pub language: Option<String>,
+    pub mode_name: Option<String>,
+    pub original_text: Option<String>,
+}
+
+pub fn append_item(params: AppendItemParams) -> Result<(), String> {
     let path = history_path()?;
     let mut items = load_history_from(&path)?;
 
@@ -102,12 +118,16 @@ pub fn append_item(text: &str, max_items: usize) -> Result<(), String> {
 
     let item = TranscriptionHistoryItem {
         id: uuid::Uuid::new_v4().to_string(),
-        text: text.to_string(),
+        text: params.text,
         created_at_ms: now_ms,
+        duration_secs: params.duration_secs,
+        language: params.language,
+        mode_name: params.mode_name,
+        original_text: params.original_text,
     };
 
     items.insert(0, item);
-    items.truncate(max_items);
+    items.truncate(MAX_HISTORY_ITEMS);
 
     save_history_to(&path, &items)
 }
@@ -158,6 +178,7 @@ mod tests {
             id: "test-1".to_string(),
             text: "Hello world".to_string(),
             created_at_ms: 1000,
+            ..Default::default()
         }];
         save_history_to(&path, &items).unwrap();
         let loaded = load_history_from(&path).unwrap();
@@ -176,6 +197,7 @@ mod tests {
                 id: uuid::Uuid::new_v4().to_string(),
                 text: format!("item {i}"),
                 created_at_ms: i as i64,
+                ..Default::default()
             };
             items.insert(0, item);
             items.truncate(3);
@@ -197,11 +219,13 @@ mod tests {
                 id: "a".to_string(),
                 text: "two".to_string(),
                 created_at_ms: 2,
+                ..Default::default()
             },
             TranscriptionHistoryItem {
                 id: "b".to_string(),
                 text: "one".to_string(),
                 created_at_ms: 1,
+                ..Default::default()
             },
         ];
         save_history_to(&path, &items).unwrap();
@@ -223,6 +247,7 @@ mod tests {
             id: "a".to_string(),
             text: "hello".to_string(),
             created_at_ms: 1,
+            ..Default::default()
         }];
         save_history_to(&path, &items).unwrap();
         save_history_to(&path, &[]).unwrap();
@@ -244,19 +269,20 @@ mod tests {
     #[test]
     fn load_truncates_to_max_items() {
         let path = test_path();
+        let count = MAX_HISTORY_ITEMS + 25;
         let mut items = Vec::new();
-        for i in 0..75 {
+        for i in 0..count {
             items.push(TranscriptionHistoryItem {
                 id: format!("item-{i}"),
                 text: format!("entry {i}"),
                 created_at_ms: i as i64,
+                ..Default::default()
             });
         }
         save_history_to(&path, &items).unwrap();
         let loaded = load_history_from(&path).unwrap();
-        assert_eq!(loaded.len(), 50);
-        assert_eq!(loaded[0].id, "item-74");
-        assert_eq!(loaded[49].id, "item-25");
+        assert_eq!(loaded.len(), MAX_HISTORY_ITEMS);
+        assert_eq!(loaded[0].id, format!("item-{}", count - 1));
         let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
     }
 }

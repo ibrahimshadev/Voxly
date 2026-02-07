@@ -34,6 +34,10 @@ export type TranscriptionHistoryItem = {
   id: string;
   text: string;
   created_at_ms: number;
+  duration_secs?: number;
+  language?: string;
+  mode_name?: string;
+  original_text?: string;
 };
 
 export type DictationUpdate = {

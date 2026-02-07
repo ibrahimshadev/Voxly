@@ -2,6 +2,7 @@ import { Show, Switch, Match } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
 import { Motion, Presence } from 'solid-motionone';
 import type { Tab, Settings, Mode, VocabularyEntry, TranscriptionHistoryItem } from '../../types';
+import { APP_NAME } from '../../branding';
 import SettingsTab from './SettingsTab';
 import VocabularyTab from './VocabularyTab';
 import HistoryTab from './HistoryTab';
@@ -59,7 +60,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         >
           {/* Header */}
           <header class="settings-header">
-            <span class="settings-title">dikt</span>
+            <span class="settings-title">{APP_NAME}</span>
             <button class="collapse-button" onClick={props.onCollapse} title="Collapse">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="6 9 12 15 18 9" />

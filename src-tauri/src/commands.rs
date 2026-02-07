@@ -5,8 +5,6 @@ use crate::settings::AppSettings;
 use crate::state::AppState;
 use crate::transcription_history::TranscriptionHistoryItem;
 
-const SETTINGS_WINDOW_GAP: i32 = 8;
-
 #[cfg(target_os = "windows")]
 static CURSOR_PASSTHROUGH: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
@@ -131,7 +129,42 @@ pub async fn test_connection(settings: AppSettings) -> Result<String, String> {
         return Err("Missing model".to_string());
     }
 
-    Ok("Settings look valid.".to_string())
+    let trimmed = settings.base_url.trim_end_matches('/');
+    let url = format!("{trimmed}/models");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .bearer_auth(&settings.api_key)
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Connection timed out — check your base URL.".to_string()
+            } else if e.is_connect() {
+                format!("Connection failed — could not reach {trimmed}")
+            } else {
+                format!("Request failed: {e}")
+            }
+        })?;
+
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Authentication failed — check your API key.".to_string());
+    }
+    if status == reqwest::StatusCode::FORBIDDEN {
+        return Err("Access denied — your API key may lack permissions.".to_string());
+    }
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("API returned {status}: {body}"));
+    }
+
+    Ok("Connection successful — API key is valid.".to_string())
 }
 
 #[tauri::command]
@@ -161,13 +194,6 @@ pub fn clear_transcription_history() -> Result<(), String> {
     crate::transcription_history::clear_history()
 }
 
-fn clamp_i32(value: i32, min: i32, max: i32) -> i32 {
-    if max < min {
-        return min;
-    }
-    value.clamp(min, max)
-}
-
 #[tauri::command]
 pub fn position_window_bottom(window: WebviewWindow) -> Result<(), String> {
     position_window_bottom_internal(&window)
@@ -181,17 +207,6 @@ pub fn show_settings_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn hide_settings_window(app: AppHandle) -> Result<(), String> {
     hide_settings_window_internal(&app)
-}
-
-#[tauri::command]
-pub fn sync_settings_window_position(app: AppHandle) -> Result<(), String> {
-    if let Some(settings_window) = app.get_webview_window("settings") {
-        if settings_window.is_visible().unwrap_or(false) {
-            position_settings_window_internal(&app)?;
-        }
-    }
-
-    Ok(())
 }
 
 #[tauri::command]
@@ -299,8 +314,6 @@ fn cursor_position() -> Option<(i32, i32)> {
 }
 
 pub fn show_settings_window_internal(app: &AppHandle) -> Result<(), String> {
-    position_settings_window_internal(app)?;
-
     let settings_window = app
         .get_webview_window("settings")
         .ok_or("Settings window not found".to_string())?;
@@ -344,32 +357,6 @@ pub fn position_window_bottom_internal(window: &WebviewWindow) -> Result<(), Str
 
     window
         .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-fn position_settings_window_internal(app: &AppHandle) -> Result<(), String> {
-    let main_window = app
-        .get_webview_window("main")
-        .ok_or("Main window not found".to_string())?;
-    let settings_window = app
-        .get_webview_window("settings")
-        .ok_or("Settings window not found".to_string())?;
-
-    let main_pos = main_window.outer_position().map_err(|e| e.to_string())?;
-    let main_size = main_window.outer_size().map_err(|e| e.to_string())?;
-    let settings_size = settings_window.outer_size().map_err(|e| e.to_string())?;
-
-    let mut x = main_pos.x + (main_size.width as i32 - settings_size.width as i32) / 2;
-    let mut y = main_pos.y - settings_size.height as i32 - SETTINGS_WINDOW_GAP;
-
-    let (min_x, min_y, max_x, max_y) = work_area_bounds(&main_window)?;
-    x = clamp_i32(x, min_x, max_x - settings_size.width as i32);
-    y = clamp_i32(y, min_y, max_y - settings_size.height as i32);
-
-    settings_window
-        .set_position(PhysicalPosition::new(x, y))
         .map_err(|e| e.to_string())?;
 
     Ok(())

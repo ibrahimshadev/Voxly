@@ -44,18 +44,20 @@
       },
       {
         "label": "settings",
-        "title": "Dikt Settings",
-        "width": 340,
-        "height": 580,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "visible": false,
-        "center": false,
+        "title": "Dikt",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 1080,
+        "minHeight": 640,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "visible": true,
+        "center": true,
         "dragDropEnabled": false,
-        "shadow": false
+        "shadow": true
       }
     ]
   }

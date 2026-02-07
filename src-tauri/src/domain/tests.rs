@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use crate::settings::AppSettings;
+use crate::transcribe::TranscriptionResult;
 
 use super::{
   manager::DictationSessionManager,
@@ -98,14 +99,19 @@ impl SettingsStore for MockSettingsStore {
 
 struct MockTranscriber {
   transcribe_called: AtomicUsize,
-  result: Mutex<Result<String, String>>,
+  result: Mutex<Result<TranscriptionResult, String>>,
 }
 
 impl MockTranscriber {
-  fn new(result: &str) -> Self {
+  fn new(text: &str) -> Self {
     Self {
       transcribe_called: AtomicUsize::new(0),
-      result: Mutex::new(Ok(result.to_string())),
+      result: Mutex::new(Ok(TranscriptionResult {
+        text: text.to_string(),
+        duration_secs: Some(1.5),
+        language: Some("english".to_string()),
+        segments: None,
+      })),
     }
   }
 
@@ -124,7 +130,7 @@ impl Transcriber for MockTranscriber {
     _settings: &AppSettings,
     _audio_wav: Vec<u8>,
     _prompt: Option<&str>,
-  ) -> Result<String, String> {
+  ) -> Result<TranscriptionResult, String> {
     self.transcribe_called.fetch_add(1, Ordering::SeqCst);
     self.result.lock().unwrap().clone()
   }

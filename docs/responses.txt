@@ -1,0 +1,347 @@
+
+--- OPENAI (whisper-1) ---
+POST https://api.openai.com/v1/audio/transcriptions
+File: harvard.wav (3249924 bytes)
+
+Status: 200 OK
+
+Response JSON:
+{
+  "task": "transcribe",
+  "language": "english",
+  "duration": 18.350000381469727,
+  "text": "The stale smell of old beer lingers. It takes heat to bring out the odor. A cold dip restores health and zest. A salt pickle tastes fine with ham. Tacos al pastor are my favorite. A zestful food is the hot cross bun.",
+  "segments": [
+    {
+      "id": 0,
+      "seek": 0,
+      "start": 0,
+      "end": 4.519999980926514,
+      "text": " The stale smell of old beer lingers.",
+      "tokens": [
+        50364,
+        440,
+        342,
+        1220,
+        4316,
+        295,
+        1331,
+        8795,
+        22949,
+        433,
+        13,
+        50590
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.27849528193473816,
+      "compression_ratio": 1.4210525751113892,
+      "no_speech_prob": 0.02000819519162178
+    },
+    {
+      "id": 1,
+      "seek": 0,
+      "start": 4.519999980926514,
+      "end": 7.039999961853027,
+      "text": " It takes heat to bring out the odor.",
+      "tokens": [
+        50590,
+        467,
+        2516,
+        3738,
+        281,
+        1565,
+        484,
+        264,
+        41176,
+        13,
+        50716
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.27849528193473816,
+      "compression_ratio": 1.4210525751113892,
+      "no_speech_prob": 0.02000819519162178
+    },
+    {
+      "id": 2,
+      "seek": 0,
+      "start": 7.039999961853027,
+      "end": 9.979999542236328,
+      "text": " A cold dip restores health and zest.",
+      "tokens": [
+        50716,
+        316,
+        3554,
+        10460,
+        1472,
+        2706,
+        1585,
+        293,
+        37889,
+        13,
+        50863
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.27849528193473816,
+      "compression_ratio": 1.4210525751113892,
+      "no_speech_prob": 0.02000819519162178
+    },
+    {
+      "id": 3,
+      "seek": 0,
+      "start": 9.979999542236328,
+      "end": 12.960000038146973,
+      "text": " A salt pickle tastes fine with ham.",
+      "tokens": [
+        50863,
+        316,
+        5139,
+        31433,
+        8666,
+        2489,
+        365,
+        7852,
+        13,
+        51012
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.27849528193473816,
+      "compression_ratio": 1.4210525751113892,
+      "no_speech_prob": 0.02000819519162178
+    },
+    {
+      "id": 4,
+      "seek": 0,
+      "start": 12.960000038146973,
+      "end": 15.119999885559082,
+      "text": " Tacos al pastor are my favorite.",
+      "tokens": [
+        51012,
+        38848,
+        329,
+        419,
+        21193,
+        366,
+        452,
+        2954,
+        13,
+        51120
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.27849528193473816,
+      "compression_ratio": 1.4210525751113892,
+      "no_speech_prob": 0.02000819519162178
+    },
+    {
+      "id": 5,
+      "seek": 0,
+      "start": 15.119999885559082,
+      "end": 17.639999389648438,
+      "text": " A zestful food is the hot cross bun.",
+      "tokens": [
+        51120,
+        316,
+        37889,
+        906,
+        1755,
+        307,
+        264,
+        2368,
+        3278,
+        6702,
+        13,
+        51246
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.27849528193473816,
+      "compression_ratio": 1.4210525751113892,
+      "no_speech_prob": 0.02000819519162178
+    }
+  ],
+  "usage": {
+    "type": "duration",
+    "seconds": 19
+  }
+}
+
+--- Key Fields ---
+text:     "The stale smell of old beer lingers. It takes heat to bring out the odor. A cold..."
+duration: 18.350000381469727
+language: english
+segments: 6 segment(s)
+
+First segment keys: id, seek, start, end, text, tokens, temperature, avg_logprob, compression_ratio, no_speech_prob
+
+
+--- GROQ (whisper-large-v3) ---
+POST https://api.groq.com/openai/v1/audio/transcriptions
+File: harvard.wav (3249924 bytes)
+
+Status: 200 OK
+
+Response JSON:
+{
+  "task": "transcribe",
+  "language": "English",
+  "duration": 18.35,
+  "text": " The stale smell of old beer lingers. It takes heat to bring out the odor. A cold dip restores health and zest. A salt pickle tastes fine with ham. Tacos al pastor are my favorite. A zestful food is the hot cross bun.",
+  "segments": [
+    {
+      "id": 0,
+      "seek": 0,
+      "start": 0,
+      "end": 3.6,
+      "text": " The stale smell of old beer lingers.",
+      "tokens": [
+        50365,
+        440,
+        342,
+        1220,
+        4316,
+        295,
+        1331,
+        8795,
+        22949,
+        433,
+        13,
+        50545
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.22860804,
+      "compression_ratio": 1.4210526,
+      "no_speech_prob": 0.0051379646
+    },
+    {
+      "id": 1,
+      "seek": 0,
+      "start": 4.3,
+      "end": 6.2,
+      "text": " It takes heat to bring out the odor.",
+      "tokens": [
+        50580,
+        467,
+        2516,
+        3738,
+        281,
+        1565,
+        484,
+        264,
+        41176,
+        13,
+        50675
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.22860804,
+      "compression_ratio": 1.4210526,
+      "no_speech_prob": 0.0051379646
+    },
+    {
+      "id": 2,
+      "seek": 0,
+      "start": 7.02,
+      "end": 9.36,
+      "text": " A cold dip restores health and zest.",
+      "tokens": [
+        50716,
+        316,
+        3554,
+        10460,
+        1472,
+        2706,
+        1585,
+        293,
+        37889,
+        13,
+        50833
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.22860804,
+      "compression_ratio": 1.4210526,
+      "no_speech_prob": 0.0051379646
+    },
+    {
+      "id": 3,
+      "seek": 0,
+      "start": 9.9,
+      "end": 12.06,
+      "text": " A salt pickle tastes fine with ham.",
+      "tokens": [
+        50860,
+        316,
+        5139,
+        31433,
+        8666,
+        2489,
+        365,
+        7852,
+        13,
+        50968
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.22860804,
+      "compression_ratio": 1.4210526,
+      "no_speech_prob": 0.0051379646
+    },
+    {
+      "id": 4,
+      "seek": 0,
+      "start": 12.66,
+      "end": 14.36,
+      "text": " Tacos al pastor are my favorite.",
+      "tokens": [
+        50998,
+        38848,
+        329,
+        419,
+        21193,
+        366,
+        452,
+        2954,
+        13,
+        51083
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.22860804,
+      "compression_ratio": 1.4210526,
+      "no_speech_prob": 0.0051379646
+    },
+    {
+      "id": 5,
+      "seek": 0,
+      "start": 15.12,
+      "end": 17.5,
+      "text": " A zestful food is the hot cross bun.",
+      "tokens": [
+        51121,
+        316,
+        37889,
+        906,
+        1755,
+        307,
+        264,
+        2368,
+        3278,
+        6702,
+        13,
+        51240
+      ],
+      "temperature": 0,
+      "avg_logprob": -0.22860804,
+      "compression_ratio": 1.4210526,
+      "no_speech_prob": 0.0051379646
+    }
+  ],
+  "x_groq": {
+    "id": "req_01kgvhwep6fz6rt9t7t36shn49"
+  }
+}
+
+--- Key Fields ---
+text:     " The stale smell of old beer lingers. It takes heat to bring out the odor. A col..."
+duration: 18.35
+language: English
+segments: 6 segment(s)
+
+First segment keys: id, seek, start, end, text, tokens, temperature, avg_logprob, compression_ratio, no_speech_prob
+
+
+

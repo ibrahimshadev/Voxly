@@ -1,0 +1,108 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "material-symbols/outlined.css";
+
+@theme {
+  --color-primary: #10b77f;
+  --color-primary-dark: #059669;
+  --color-background-dark: #0a0a0a;
+  --color-surface-dark: #111111;
+  --color-surface-hover: #1a1e23;
+  --color-border-dark: #333333;
+  --color-accent-dark: #1c1c1c;
+  --color-sidebar: #0d0e12;
+  --color-input-bg: #0a0a0a;
+
+  /* Border radius — set all to 4px for clean look (revert by removing these lines) */
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
+  --radius-3xl: 4px;
+  --radius-4xl: 4px;
+
+  --font-display: "Inter Variable", "Inter", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+/* Material Symbols — match Google Fonts CDN defaults */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Filled icon variant for inline metadata */
+.icon-meta {
+  font-variation-settings: 'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+}
+
+/* Scrollbar hide utility */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Grid dot pattern (extracted from inline style for theme override) */
+.grid-dots {
+  background-image: radial-gradient(#ffffff 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Custom range slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  background: transparent;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #10b77f;
+  cursor: pointer;
+  margin-top: -6px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: #333;
+  border-radius: 2px;
+}
+
+/* ═══ Light theme ═══ */
+.light {
+  /* Custom theme colors */
+  --color-background-dark: #f5f5f5;
+  --color-surface-dark: #ffffff;
+  --color-surface-hover: #f0f1f3;
+  --color-sidebar: #f8f9fb;
+  --color-input-bg: #f8f8f8;
+  --color-border-dark: #e0e0e0;
+  --color-accent-dark: #f0f0f0;
+
+  /* Flip white → near-black (affects text-white, bg-white/*, border-white/*) */
+  --color-white: #1a1a1a;
+
+  /* Invert gray luminance scale */
+  --color-gray-200: oklch(27.8% 0.033 256.848);
+  --color-gray-300: oklch(37.3% 0.034 259.733);
+  --color-gray-400: oklch(44.6% 0.03 256.802);
+  --color-gray-500: oklch(55.1% 0.027 264.364);
+  --color-gray-600: oklch(70.7% 0.022 261.325);
+  --color-gray-700: oklch(87.2% 0.01 258.338);
+}
+
+.light .grid-dots {
+  background-image: radial-gradient(#000000 1px, transparent 1px);
+}
+
+.light input[type="range"]::-webkit-slider-runnable-track {
+  background: #d1d5db;
+}

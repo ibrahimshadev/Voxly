@@ -42,10 +42,6 @@ fn main() {
                         app.exit(0);
                     }
                     "settings" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
                         let _ = commands::show_settings_window_internal(app);
                     }
                     "reset_position" => {
@@ -53,7 +49,6 @@ fn main() {
                             let _ = window.show();
                             let _ = commands::position_window_bottom_internal(&window);
                         }
-                        let _ = commands::sync_settings_window_position(app.clone());
                     }
                     _ => {}
                 })
@@ -64,16 +59,7 @@ fn main() {
                         ..
                     } = event
                     {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = commands::hide_settings_window_internal(&app);
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        let _ = commands::show_settings_window_internal(tray.app_handle());
                     }
                 })
                 .build(app)?;
@@ -84,7 +70,16 @@ fn main() {
                 commands::init_click_through(&window);
             }
             commands::start_cursor_tracker(app.handle());
-            let _ = commands::hide_settings_window_internal(app.handle());
+
+            if let Some(settings_window) = app.get_webview_window("settings") {
+                let app_handle = app.handle().clone();
+                settings_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = commands::hide_settings_window_internal(&app_handle);
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -98,7 +93,6 @@ fn main() {
             commands::position_window_bottom,
             commands::show_settings_window,
             commands::hide_settings_window,
-            commands::sync_settings_window_position,
             commands::set_cursor_passthrough,
             commands::fetch_provider_models,
             commands::get_transcription_history,

@@ -17,20 +17,27 @@ export default function App() {
 
   let isHolding = false;
   let registeredHotkey = DEFAULT_SETTINGS.hotkey;
+  const hotkeyRegistrationMessage = 'Could not register hotkey - it may be in use by another app. Change it in Settings.';
 
-  const registerHotkey = async (hotkey: string) => {
+  const registerHotkey = async (hotkey: string): Promise<boolean> => {
     if (registeredHotkey) {
       await unregister(registeredHotkey).catch(() => {});
     }
 
-    await register(hotkey, (event) => {
-      if (event.state === 'Pressed') {
-        void handlePressed();
-      } else if (event.state === 'Released') {
-        void handleReleased();
-      }
-    });
-    registeredHotkey = hotkey;
+    try {
+      await register(hotkey, (event) => {
+        if (event.state === 'Pressed') {
+          void handlePressed();
+        } else if (event.state === 'Released') {
+          void handleReleased();
+        }
+      });
+      registeredHotkey = hotkey;
+      return true;
+    } catch (err) {
+      console.error('Failed to register global hotkey:', err);
+      return false;
+    }
   };
 
   const handlePressed = async () => {
@@ -102,10 +109,20 @@ export default function App() {
       const result = await invoke<Settings>('get_settings');
       const merged = { ...DEFAULT_SETTINGS, ...result };
       setSettings(merged);
-      await registerHotkey(merged.hotkey);
+      const registered = await registerHotkey(merged.hotkey);
+      if (!registered) {
+        setError(hotkeyRegistrationMessage);
+      } else {
+        setError('');
+      }
     } catch (err) {
-      setError(String(err));
-      await registerHotkey(DEFAULT_SETTINGS.hotkey);
+      const settingsError = String(err);
+      const registered = await registerHotkey(DEFAULT_SETTINGS.hotkey);
+      if (!registered) {
+        setError(`${settingsError}\n${hotkeyRegistrationMessage}`);
+        return;
+      }
+      setError(settingsError);
     }
   };
 
@@ -127,11 +144,6 @@ export default function App() {
 
     e.preventDefault();
     await getCurrentWindow().startDragging();
-    try {
-      await invoke('sync_settings_window_position');
-    } catch {
-      // No-op when settings window is hidden.
-    }
   };
 
   const isActive = () =>

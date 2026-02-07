@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dikt History - Modern Chat Style</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1fc762",
+                        "primary-focus": "#22c55e",
+                        "background-dark": "#0d0f12",
+                        "surface-dark": "#13161b",
+                        "surface-hover": "#1a1e23",
+                        "text-muted": "#9ca3af",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #13161b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2d343f; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3e4756; 
+        }
+    </style>
+</head>
+<body class="bg-background-dark text-white font-display min-h-screen flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
+<!-- Top Navigation (Reused & Adapted) -->
+<header class="flex-none flex items-center justify-between whitespace-nowrap border-b border-white/5 bg-surface-dark px-10 py-3 z-20">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4 text-white">
+<div class="size-8 text-primary">
+<svg class="w-full h-full" fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M24 45.8096C19.6865 45.8096 15.4698 44.5305 11.8832 42.134C8.29667 39.7376 5.50128 36.3314 3.85056 32.3462C2.19985 28.361 1.76794 23.9758 2.60947 19.7452C3.451 15.5145 5.52816 11.6284 8.57829 8.5783C11.6284 5.52817 15.5145 3.45101 19.7452 2.60948C23.9758 1.76795 28.361 2.19986 32.3462 3.85057C36.3314 5.50129 39.7376 8.29668 42.134 11.8833C44.5305 15.4698 45.8096 19.6865 45.8096 24L24 24L24 45.8096Z" fill="currentColor"></path>
+</svg>
+</div>
+<h2 class="text-white text-xl font-bold leading-tight tracking-[-0.015em]">Dikt</h2>
+</div>
+<nav class="flex items-center gap-9 hidden md:flex">
+<a class="text-text-muted hover:text-white transition-colors text-sm font-medium leading-normal" href="#">Dashboard</a>
+<a class="text-white text-sm font-medium leading-normal" href="#">History</a>
+<a class="text-text-muted hover:text-white transition-colors text-sm font-medium leading-normal" href="#">Settings</a>
+</nav>
+</div>
+<div class="flex flex-1 justify-end gap-6 items-center">
+<div class="hidden sm:flex bg-center bg-no-repeat bg-cover rounded-full size-9 border border-white/10" data-alt="User profile picture placeholder showing abstract portrait" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCEqCq7TuWxTgQ-DWZr4A8H-a4Pc5nIw75V1vHRxiAJnKu5bO7cdG0bZAILR6rwvfSINv8SmEB79XTz1vkhmuoz5r1DyVwk90mlmqiNfL5nbZff_EQBnDMmNCwuN03WfpLdfKYb_CuOHPVuVAh2yt8JKJEJWMgKYOnwnF2lpAdBZMev-5hmfy68-z1l3S5TJxTnWEuXTdTee5F8DpColG3GVIrESQfHIN8E8e45U1KzlLOYM47hd9sURmpCxwxq_QXo4zCOYkefdb4");'></div>
+</div>
+</header>
+<!-- Sub-Header: Title, Stats & Search -->
+<div class="flex-none bg-background-dark/80 backdrop-blur-md sticky top-0 z-10 border-b border-white/5 px-6 sm:px-10 py-5">
+<div class="max-w-5xl mx-auto w-full flex flex-col md:flex-row md:items-center justify-between gap-6">
+<div class="flex flex-col gap-3">
+<div class="flex items-baseline gap-4">
+<h1 class="text-white text-3xl font-bold tracking-tight">History</h1>
+<!-- Integrated Stats Bar -->
+<div class="flex items-center gap-4 text-xs sm:text-sm text-text-muted/80 ml-2 border-l border-white/10 pl-4">
+<div class="flex items-center gap-1.5" title="Total Entries">
+<span class="material-symbols-outlined text-primary text-[18px]">library_books</span>
+<span class="font-semibold text-white">1,242</span>
+<span class="hidden sm:inline">Entries</span>
+</div>
+<div class="flex items-center gap-1.5 ml-2" title="Today's Entries">
+<span class="material-symbols-outlined text-primary text-[18px]">today</span>
+<span class="font-semibold text-white">14</span>
+<span class="hidden sm:inline">Today</span>
+</div>
+<div class="flex items-center gap-1.5 ml-2" title="Total Audio Duration">
+<span class="material-symbols-outlined text-primary text-[18px]">graphic_eq</span>
+<span class="font-semibold text-white">4h 23m</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Search Bar -->
+<div class="relative w-full md:w-80 group">
+<div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-text-muted group-focus-within:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">search</span>
+</div>
+<input class="block w-full p-2.5 pl-10 text-sm text-white bg-surface-dark border border-white/10 rounded-lg focus:ring-1 focus:ring-primary-focus focus:border-primary-focus placeholder-text-muted/50 transition-all outline-none" placeholder="Search transcriptions..." type="text"/>
+</div>
+</div>
+</div>
+<!-- Main Content Area: Scrollable List -->
+<main class="flex-1 overflow-y-auto px-4 sm:px-10 py-6">
+<div class="max-w-4xl mx-auto flex flex-col gap-8 pb-10">
+<!-- Date Group: Today -->
+<section>
+<div class="flex items-center gap-4 mb-4">
+<h3 class="text-primary font-medium text-sm uppercase tracking-wider">Today</h3>
+<div class="h-px bg-white/5 flex-1"></div>
+</div>
+<div class="flex flex-col gap-1">
+<!-- Entry Item 1 -->
+<div class="group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex flex-col gap-2">
+<!-- Content -->
+<div class="pr-12">
+<p class="text-white text-lg font-normal leading-relaxed">
+                                Meeting notes regarding the Q3 roadmap. We need to prioritize the backend refactor before scaling the new feature set. Also, remind the design team to finalize the dark mode palette by Friday.
+                            </p>
+</div>
+<!-- Metadata Row -->
+<div class="flex items-center gap-4 mt-1 text-xs text-text-muted/70 select-none">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">timer</span>
+<span>2m 15s</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">auto_fix</span>
+<span>Auto-fix</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span>2 mins ago</span>
+</div>
+</div>
+<!-- Hover Actions -->
+<div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+<button class="p-2 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors" title="Copy text">
+<span class="material-symbols-outlined text-[20px]">content_copy</span>
+</button>
+<button class="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Delete entry">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+<!-- Entry Item 2 -->
+<div class="group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex flex-col gap-2">
+<div class="pr-12">
+<p class="text-white text-lg font-normal leading-relaxed">
+                                Reminder to call the dentist and reschedule for next Tuesday morning.
+                            </p>
+</div>
+<div class="flex items-center gap-4 mt-1 text-xs text-text-muted/70 select-none">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">timer</span>
+<span>12s</span>
+</div>
+<!-- Mode: Raw (Example of different mode) -->
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">mic</span>
+<span>Raw</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span>1 hour ago</span>
+</div>
+</div>
+<!-- Hover Actions -->
+<div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+<button class="p-2 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">content_copy</span>
+</button>
+<button class="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+<!-- Entry Item 3 (with Original Text Toggle) -->
+<div class="group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex flex-col gap-2">
+<div class="pr-12">
+<p class="text-white text-lg font-normal leading-relaxed">
+                                Draft for the client email: Hi Sarah, attached is the revised proposal. Let me know if you have any feedback on the pricing section. Thanks, John.
+                            </p>
+<!-- Toggle for Original Text -->
+<details class="group/details mt-3">
+<summary class="cursor-pointer text-xs text-primary font-medium hover:text-primary-focus transition-colors list-none flex items-center gap-1 w-fit select-none">
+                                    Show original
+                                    <span class="material-symbols-outlined text-[14px] group-open/details:rotate-180 transition-transform">expand_more</span>
+</summary>
+<div class="mt-2 p-3 bg-black/20 rounded-md border-l-2 border-white/10 text-text-muted text-sm font-mono whitespace-pre-wrap">
+Draft for the client email hi Sarah attached is the revised proposal let me know if you have any feedback on the pricing section thanks John
+                                </div>
+</details>
+</div>
+<div class="flex items-center gap-4 mt-1 text-xs text-text-muted/70 select-none">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">timer</span>
+<span>45s</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">auto_fix</span>
+<span>Auto-fix</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span>3 hours ago</span>
+</div>
+</div>
+<!-- Hover Actions -->
+<div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+<button class="p-2 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">content_copy</span>
+</button>
+<button class="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Date Group: Yesterday -->
+<section>
+<div class="flex items-center gap-4 mb-4">
+<h3 class="text-text-muted font-medium text-sm uppercase tracking-wider">Yesterday</h3>
+<div class="h-px bg-white/5 flex-1"></div>
+</div>
+<div class="flex flex-col gap-1">
+<!-- Entry Item 4 (French) -->
+<div class="group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex flex-col gap-2">
+<div class="pr-12">
+<p class="text-white text-lg font-normal leading-relaxed italic">
+                                "C'est une bonne idée, mais il faut vérifier le budget avant de commencer."
+                            </p>
+</div>
+<div class="flex items-center gap-4 mt-1 text-xs text-text-muted/70 select-none">
+<div class="bg-white/10 text-white/90 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wide">
+                                FR
+                            </div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">timer</span>
+<span>8s</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">translate</span>
+<span>Dictation</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span>Yesterday, 4:30 PM</span>
+</div>
+</div>
+<!-- Hover Actions -->
+<div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+<button class="p-2 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">content_copy</span>
+</button>
+<button class="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+<!-- Entry Item 5 -->
+<div class="group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex flex-col gap-2">
+<div class="pr-12">
+<p class="text-white text-lg font-normal leading-relaxed">
+                                Grocery list: Milk, eggs, bread, spinach, chicken breast, and olive oil. Don't forget the sparkling water.
+                            </p>
+</div>
+<div class="flex items-center gap-4 mt-1 text-xs text-text-muted/70 select-none">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">timer</span>
+<span>30s</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">auto_fix</span>
+<span>Auto-fix</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span>Yesterday, 9:15 AM</span>
+</div>
+</div>
+<!-- Hover Actions -->
+<div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+<button class="p-2 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">content_copy</span>
+</button>
+<button class="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Minimal Pagination Footer -->
+<footer class="flex-none bg-surface-dark border-t border-white/5 py-3 px-6 z-10">
+<div class="max-w-4xl mx-auto flex items-center justify-between text-sm">
+<button class="flex items-center gap-1 text-text-muted hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+                Prev
+            </button>
+<div class="flex items-center gap-2">
+<button class="size-8 rounded-lg bg-primary text-black font-bold flex items-center justify-center">1</button>
+<button class="size-8 rounded-lg hover:bg-white/5 text-text-muted hover:text-white transition-colors flex items-center justify-center">2</button>
+<button class="size-8 rounded-lg hover:bg-white/5 text-text-muted hover:text-white transition-colors flex items-center justify-center">3</button>
+<span class="text-text-muted px-1">...</span>
+<button class="size-8 rounded-lg hover:bg-white/5 text-text-muted hover:text-white transition-colors flex items-center justify-center">12</button>
+</div>
+<button class="flex items-center gap-1 text-text-muted hover:text-white transition-colors">
+                Next
+                <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</footer>
+</body></html>

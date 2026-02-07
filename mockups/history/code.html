@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>dikt History - Transcription Log</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#10b77f",
+                        "background-light": "#f6f8f7",
+                        "background-dark": "#10221c",
+                        "sidebar-bg": "#111111",
+                        "main-bg": "#0a0a0a",
+                        "card-bg": "#151515",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: white;
+            overflow: hidden; /* Prevent full page scroll, handle in panels */
+        }
+        
+        /* Custom scrollbar for the center panel */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #333;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body class="flex h-screen w-full bg-main-bg text-white overflow-hidden">
+<!-- LEFT SIDEBAR -->
+<aside class="flex w-64 flex-col justify-between bg-sidebar-bg border-r border-white/10 h-full shrink-0">
+<div class="flex flex-col p-4 gap-6">
+<!-- Header -->
+<div class="flex items-center gap-3 px-2">
+<div class="bg-gradient-to-br from-emerald-500 to-emerald-900 aspect-square rounded-lg w-10 h-10 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-emerald-900/20">
+                    d
+                </div>
+<div class="flex flex-col">
+<h1 class="text-white text-lg font-bold leading-none tracking-tight">dikt</h1>
+<span class="text-emerald-500/80 text-xs font-medium tracking-wide">PRO v2.1</span>
+</div>
+</div>
+<!-- Navigation -->
+<nav class="flex flex-col gap-2 mt-2">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform">settings</span>
+<span class="text-sm font-medium">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-900/10" href="#">
+<span class="material-symbols-outlined text-[20px] filled">history</span>
+<span class="text-sm font-medium">History</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform">menu_book</span>
+<span class="text-sm font-medium">Vocabulary</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform">layers</span>
+<span class="text-sm font-medium">Modes</span>
+</a>
+</nav>
+</div>
+<!-- Footer -->
+<div class="p-4 border-t border-white/5 flex flex-col gap-4 bg-[#111111]">
+<!-- Theme Toggle (Visual Only) -->
+<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-[#1a1a1a] border border-white/5">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-gray-400">dark_mode</span>
+<span class="text-xs text-gray-400 font-medium">Dark Mode</span>
+</div>
+<div class="w-8 h-4 bg-emerald-600 rounded-full relative cursor-pointer">
+<div class="absolute right-0.5 top-0.5 w-3 h-3 bg-white rounded-full shadow-sm"></div>
+</div>
+</div>
+<div class="flex items-center gap-3 px-2">
+<div class="w-9 h-9 rounded-full bg-gray-700 overflow-hidden ring-2 ring-emerald-500/20">
+<img alt="Profile picture of Alex Chen" class="w-full h-full object-cover" data-alt="Portrait of a young professional man" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxs66b92W_-XD6hq1bRR4w9ygTbXIgDijHiyobFiKcduYumusMPqJKafsQoEekd-7SxcBValcXXuFEnac2F3_cZRGQsoA3yrRMaihrFnRSaQcxaVJxFSFTz1U7x0x2neLV0LJe1BKNjgINNBjwttDKUD_WyDRJTCzK2v9O7Ri-oAWfA9K6VyxvGEuOnjSP5zJ0CyIwKytfJmXcxA8LHLqkuxM47luwRF8wQ7cXkW3YwktH1ozJL-VtApUADQ12MpgI_x90B5calOk"/>
+</div>
+<div class="flex flex-col min-w-0">
+<p class="text-white text-sm font-medium truncate">Alex Chen</p>
+<p class="text-gray-500 text-xs truncate">alex@dikt.app</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- CENTER PANEL (MAIN FEED) -->
+<main class="flex-1 flex flex-col bg-main-bg h-full min-w-0 relative overflow-hidden">
+<div class="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-main-bg to-transparent pointer-events-none z-10"></div>
+<div class="absolute bottom-0 left-0 w-full h-24 bg-gradient-to-t from-main-bg to-transparent pointer-events-none z-10"></div>
+<!-- Scrollable Area -->
+<div class="flex-1 overflow-y-auto custom-scrollbar p-8 pb-32">
+<!-- Header Section -->
+<header class="mb-8 mt-4">
+<h1 class="text-3xl font-bold text-white mb-2 tracking-tight">History</h1>
+<p class="text-gray-400 text-sm">Your recent transcriptions and dictation activity.</p>
+</header>
+<!-- Search & Filter Bar -->
+<div class="flex flex-col sm:flex-row gap-4 mb-6 items-stretch sm:items-center">
+<div class="relative flex-1 group">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-gray-500 group-focus-within:text-emerald-500 transition-colors">search</span>
+</div>
+<input class="block w-full pl-10 pr-3 py-2.5 border border-white/10 rounded-lg leading-5 bg-[#151515] text-gray-300 placeholder-gray-500 focus:outline-none focus:bg-[#1a1a1a] focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 sm:text-sm transition-all" placeholder="Search logs..." type="text"/>
+</div>
+<div class="flex items-center justify-between sm:justify-end gap-4 min-w-[200px]">
+<span class="text-sm font-semibold text-gray-400">12 entries</span>
+<button class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-md transition-colors border border-red-500/10">
+<span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                        Clear all
+                    </button>
+</div>
+</div>
+<!-- Transcription List -->
+<div class="flex flex-col gap-3">
+<!-- Card 1 -->
+<div class="group relative flex flex-col gap-2 p-4 rounded-xl bg-card-bg border border-white/5 hover:border-emerald-500/30 hover:bg-[#1a1a1a] transition-all duration-200">
+<div class="flex justify-between items-start gap-4">
+<p class="text-gray-200 text-sm leading-relaxed line-clamp-2">
+                            Hey team, I wanted to follow up on yesterday's standup regarding the deployment pipeline issues. I think we've identified the bottleneck in the CI/CD process...
+                        </p>
+<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<button class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
+                            Dictation
+                        </span>
+<span class="text-xs text-gray-500">2 mins ago</span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="group relative flex flex-col gap-2 p-4 rounded-xl bg-card-bg border border-white/5 hover:border-emerald-500/30 hover:bg-[#1a1a1a] transition-all duration-200">
+<div class="flex justify-between items-start gap-4">
+<p class="text-gray-200 text-sm leading-relaxed line-clamp-2">
+                            Note to self: remember to update the deployment configuration env variables before the Friday release. Also check the Redis connection strings.
+                        </p>
+<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<button class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/10">
+                            Memo
+                        </span>
+<span class="text-xs text-gray-500">1 hour ago</span>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="group relative flex flex-col gap-2 p-4 rounded-xl bg-card-bg border border-white/5 hover:border-emerald-500/30 hover:bg-[#1a1a1a] transition-all duration-200">
+<div class="flex justify-between items-start gap-4">
+<p class="text-gray-200 text-sm leading-relaxed line-clamp-2">
+                            The client meeting went well. They approved the new dashboard design but asked for a darker theme option. We need to schedule a follow-up next Tuesday to review the mockups.
+                        </p>
+<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<button class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/10">
+                            Dictation
+                        </span>
+<span class="text-xs text-gray-500">Yesterday</span>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="group relative flex flex-col gap-2 p-4 rounded-xl bg-card-bg border border-white/5 hover:border-emerald-500/30 hover:bg-[#1a1a1a] transition-all duration-200">
+<div class="flex justify-between items-start gap-4">
+<p class="text-gray-200 text-sm leading-relaxed line-clamp-2">
+                            Quick reminder: schedule the code review for the authentication module. Need to invite Sarah and Mike.
+                        </p>
+<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<button class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/10">
+                            Memo
+                        </span>
+<span class="text-xs text-gray-500">Yesterday</span>
+</div>
+</div>
+<!-- Card 5 -->
+<div class="group relative flex flex-col gap-2 p-4 rounded-xl bg-card-bg border border-white/5 hover:border-emerald-500/30 hover:bg-[#1a1a1a] transition-all duration-200">
+<div class="flex justify-between items-start gap-4">
+<p class="text-gray-200 text-sm leading-relaxed line-clamp-2">
+                            Draft email: Hi Marcus, thanks for sending over the contract. I've reviewed the terms and everything looks good on our end. Just one question about section 4.2 regarding the liability cap.
+                        </p>
+<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<button class="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/10">
+                            Email
+                        </span>
+<span class="text-xs text-gray-500">2 days ago</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- RIGHT PANEL (STATS) -->
+<aside class="hidden lg:flex w-80 flex-col bg-sidebar-bg border-l border-white/10 h-full p-6 shrink-0 overflow-y-auto">
+<div class="mb-6 flex items-center justify-between">
+<h2 class="text-sm font-bold text-gray-400 tracking-wider uppercase">Session Stats</h2>
+<button class="text-emerald-500 hover:text-emerald-400 text-xs font-medium transition-colors">View Report</button>
+</div>
+<!-- 2x2 Grid -->
+<div class="grid grid-cols-2 gap-3 mb-8">
+<!-- Stat 1 -->
+<div class="bg-card-bg rounded-lg p-4 border border-white/5 flex flex-col gap-1">
+<span class="text-2xl font-bold text-white">247</span>
+<span class="text-[11px] text-gray-500 font-medium uppercase tracking-wide">Transcriptions</span>
+</div>
+<!-- Stat 2 -->
+<div class="bg-card-bg rounded-lg p-4 border border-white/5 flex flex-col gap-1">
+<span class="text-2xl font-bold text-emerald-400">12.4k</span>
+<span class="text-[11px] text-gray-500 font-medium uppercase tracking-wide">Words</span>
+</div>
+<!-- Stat 3 -->
+<div class="bg-card-bg rounded-lg p-4 border border-white/5 flex flex-col gap-1">
+<span class="text-2xl font-bold text-white">98%</span>
+<span class="text-[11px] text-gray-500 font-medium uppercase tracking-wide">Accuracy</span>
+</div>
+<!-- Stat 4 -->
+<div class="bg-card-bg rounded-lg p-4 border border-white/5 flex flex-col gap-1">
+<span class="text-2xl font-bold text-emerald-400">3.2h</span>
+<span class="text-[11px] text-gray-500 font-medium uppercase tracking-wide">Time Saved</span>
+</div>
+</div>
+<!-- Activity Chart Section -->
+<div class="flex flex-col gap-4 mb-auto">
+<div class="flex items-center justify-between">
+<h3 class="text-sm font-semibold text-white">Weekly Activity</h3>
+<span class="text-xs text-gray-500">Last 7 Days</span>
+</div>
+<div class="bg-card-bg border border-white/5 rounded-xl p-5">
+<div class="flex items-end justify-between h-32 gap-2">
+<!-- Bar 1 -->
+<div class="w-full bg-emerald-500/20 rounded-t-sm h-[40%] relative group hover:bg-emerald-500/30 transition-colors">
+<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap border border-white/10">Mon: 42</div>
+</div>
+<!-- Bar 2 -->
+<div class="w-full bg-emerald-500/20 rounded-t-sm h-[65%] relative group hover:bg-emerald-500/30 transition-colors">
+<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap border border-white/10">Tue: 68</div>
+</div>
+<!-- Bar 3 -->
+<div class="w-full bg-emerald-500/20 rounded-t-sm h-[30%] relative group hover:bg-emerald-500/30 transition-colors">
+<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap border border-white/10">Wed: 30</div>
+</div>
+<!-- Bar 4 -->
+<div class="w-full bg-emerald-500/20 rounded-t-sm h-[85%] relative group hover:bg-emerald-500/30 transition-colors">
+<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap border border-white/10">Thu: 92</div>
+</div>
+<!-- Bar 5 -->
+<div class="w-full bg-emerald-500/20 rounded-t-sm h-[50%] relative group hover:bg-emerald-500/30 transition-colors">
+<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap border border-white/10">Fri: 54</div>
+</div>
+<!-- Bar 6 (Weekend - lower) -->
+<div class="w-full bg-emerald-500/10 rounded-t-sm h-[20%] relative group hover:bg-emerald-500/20 transition-colors">
+<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap border border-white/10">Sat: 12</div>
+</div>
+<!-- Bar 7 (Today - Active) -->
+<div class="w-full bg-emerald-500 rounded-t-sm h-[75%] relative group shadow-[0_0_15px_rgba(16,183,127,0.4)]">
+<div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded pointer-events-none whitespace-nowrap border border-white/10">Sun: 84</div>
+</div>
+</div>
+<div class="flex justify-between mt-2 text-[10px] text-gray-500 font-medium uppercase">
+<span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span class="text-emerald-500">S</span>
+</div>
+</div>
+</div>
+<!-- Last Session Card -->
+<div class="mt-auto pt-6 border-t border-white/5">
+<div class="bg-gradient-to-r from-[#1a1a1a] to-[#151515] border border-white/5 rounded-xl p-4 flex items-center justify-between group cursor-pointer hover:border-emerald-500/30 transition-colors">
+<div class="flex flex-col">
+<span class="text-xs text-gray-400 mb-0.5 font-medium">Last Session</span>
+<span class="text-sm font-semibold text-white">Today, 10:42 AM</span>
+</div>
+<div class="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+<div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,183,127,0.8)] animate-pulse"></div>
+<span class="text-[10px] font-bold text-emerald-500 uppercase tracking-wide">Online</span>
+</div>
+</div>
+</div>
+</aside>
+</body></html>

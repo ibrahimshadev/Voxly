@@ -1,16 +1,26 @@
 import { render } from 'solid-js/web';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import App from './App';
-import SettingsApp from './SettingsApp';
-import './style.css';
+import { APP_NAME } from './branding';
 
-let isSettingsWindow = false;
-try {
-  isSettingsWindow = getCurrentWindow().label === 'settings';
-} catch {
-  // Running outside Tauri (e.g. plain browser preview) falls back to main UI.
+async function boot() {
+  document.title = APP_NAME;
+
+  let isSettingsWindow = false;
+  try {
+    isSettingsWindow = getCurrentWindow().label === 'settings';
+  } catch {
+    // Running outside Tauri (e.g. plain browser preview) falls back to main UI.
+  }
+
+  if (isSettingsWindow) {
+    await import('./settings.css');
+    const { default: SettingsApp } = await import('./SettingsApp');
+    render(() => <SettingsApp />, document.getElementById('root')!);
+  } else {
+    await import('./style.css');
+    const { default: App } = await import('./App');
+    render(() => <App />, document.getElementById('root')!);
+  }
 }
 
-const Root = isSettingsWindow ? SettingsApp : App;
-
-render(() => <Root />, document.getElementById('root')!);
+boot();

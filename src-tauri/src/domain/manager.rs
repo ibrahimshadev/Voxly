@@ -130,11 +130,18 @@ impl DictationSessionManager {
         .clone();
 
       let prompt = build_vocabulary_prompt(&settings.vocabulary);
-      let text = self
+      let transcription_result = self
         .transcriber
         .transcribe(&settings, wav_data, prompt.as_deref())
         .await?;
-      let text = apply_vocabulary_replacements(&text, &settings.vocabulary);
+
+      let duration_secs = transcription_result.duration_secs;
+      let language = transcription_result.language;
+
+      let text = apply_vocabulary_replacements(&transcription_result.text, &settings.vocabulary);
+
+      let mut mode_name: Option<String> = None;
+      let mut original_text: Option<String> = None;
 
       let text = if let Some(ref mode_id) = settings.active_mode_id {
         if let Some(mode) = settings.modes.iter().find(|m| &m.id == mode_id) {
@@ -151,7 +158,13 @@ impl DictationSessionManager {
             )
             .await
           {
-            Ok(formatted) => formatted,
+            Ok(formatted) => {
+              mode_name = Some(mode.name.clone());
+              if formatted != text {
+                original_text = Some(text);
+              }
+              formatted
+            }
             Err(e) => {
               eprintln!("Formatting failed, using original text: {e}");
               text
@@ -164,7 +177,15 @@ impl DictationSessionManager {
         text
       };
 
-      if let Err(e) = crate::transcription_history::append_item(&text, 50) {
+      if let Err(e) = crate::transcription_history::append_item(
+        crate::transcription_history::AppendItemParams {
+          text: text.clone(),
+          duration_secs,
+          language,
+          mode_name,
+          original_text,
+        },
+      ) {
         eprintln!("Failed to save transcription history: {e}");
         crate::transcription_history::record_runtime_error(format!(
           "Failed to save transcription history: {e}"

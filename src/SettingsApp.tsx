@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo, on, onCleanup, onMount } from 'solid-js';
+import { createSignal, createEffect, createMemo, on, onCleanup, onMount, Switch, Match } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 
@@ -9,7 +9,8 @@ import {
   MAX_REPLACEMENTS_PER_ENTRY,
   MAX_VOCABULARY_ENTRIES
 } from './constants';
-import { SettingsPanel } from './components';
+import { Layout, SettingsPage, RightPanel, HistoryPage } from './components/Settings';
+import type { HistoryStats } from './components/Settings';
 
 const createVocabularyId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -51,10 +52,20 @@ export default function SettingsApp() {
 
   const [history, setHistory] = createSignal<TranscriptionHistoryItem[]>([]);
   const [historyMessage, setHistoryMessage] = createSignal('');
+  const [historySearchQuery, setHistorySearchQuery] = createSignal('');
+  let historyMessageTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const flashHistoryMessage = (msg: string, ms = 2000) => {
+    clearTimeout(historyMessageTimer);
+    setHistoryMessage(msg);
+    historyMessageTimer = setTimeout(() => setHistoryMessage(''), ms);
+  };
 
   const [modelsList, setModelsList] = createSignal<string[]>([]);
   const [modelsLoading, setModelsLoading] = createSignal(false);
   const [modelsError, setModelsError] = createSignal('');
+
+  const [isDark, setIsDark] = createSignal(true);
 
   const [isVocabularyEditorOpen, setIsVocabularyEditorOpen] = createSignal(false);
   const [editingVocabularyId, setEditingVocabularyId] = createSignal<string | null>(null);
@@ -82,6 +93,18 @@ export default function SettingsApp() {
     } catch (err) {
       setTestMessage(String(err));
     }
+  };
+
+  const saveSettingsQuiet = async () => {
+    try {
+      const sanitizedSettings = {
+        ...settings(),
+        vocabulary: sanitizeVocabulary(settings().vocabulary)
+      };
+      await invoke('save_settings', { settings: sanitizedSettings });
+      setSettings(sanitizedSettings);
+      await emit('settings-updated');
+    } catch (_) { /* silent */ }
   };
 
   const saveSettings = async () => {
@@ -140,7 +163,7 @@ export default function SettingsApp() {
     try {
       await invoke('delete_transcription_history_item', { id });
       setHistory((prev) => prev.filter((item) => item.id !== id));
-      setHistoryMessage('Entry deleted.');
+      flashHistoryMessage('Entry deleted.');
     } catch (err) {
       setHistoryMessage(String(err));
     }
@@ -150,7 +173,7 @@ export default function SettingsApp() {
     try {
       await invoke('clear_transcription_history');
       setHistory([]);
-      setHistoryMessage('History cleared.');
+      flashHistoryMessage('History cleared.');
     } catch (err) {
       setHistoryMessage(String(err));
     }
@@ -159,17 +182,76 @@ export default function SettingsApp() {
   const copyHistoryText = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setHistoryMessage('Copied to clipboard.');
+      flashHistoryMessage('Copied to clipboard.');
     } catch (err) {
       setHistoryMessage('Failed to copy: ' + String(err));
     }
   };
+
+  const filteredHistory = createMemo(() => {
+    const query = historySearchQuery().trim().toLowerCase();
+    if (!query) return history();
+
+    return history().filter((item) =>
+      item.text.toLowerCase().includes(query) ||
+      (item.original_text?.toLowerCase().includes(query) ?? false) ||
+      (item.mode_name?.toLowerCase().includes(query) ?? false)
+    );
+  });
+
+  const historyStats = createMemo<HistoryStats>(() => {
+    const allItems = history();
+    const now = Date.now();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const todayStartMs = startOfToday.getTime();
+    const weekStartMs = now - (7 * 24 * 60 * 60 * 1000);
+
+    let todayCount = 0;
+    let weekCount = 0;
+    let latestAt: number | null = null;
+    let totalAudioSecs = 0;
+    let audioCount = 0;
+
+    for (const item of allItems) {
+      const timestamp = item.created_at_ms;
+      if (!Number.isFinite(timestamp)) continue;
+
+      if (latestAt === null || timestamp > latestAt) {
+        latestAt = timestamp;
+      }
+      if (timestamp >= todayStartMs) {
+        todayCount += 1;
+      }
+      if (timestamp >= weekStartMs) {
+        weekCount += 1;
+      }
+      if (item.duration_secs != null && Number.isFinite(item.duration_secs)) {
+        totalAudioSecs += item.duration_secs;
+        audioCount += 1;
+      }
+    }
+
+    return {
+      filteredCount: filteredHistory().length,
+      totalCount: allItems.length,
+      todayCount,
+      weekCount,
+      latestAt,
+      totalAudioSecs,
+      averageAudioSecs: audioCount > 0 ? totalAudioSecs / audioCount : 0,
+    };
+  });
 
   const switchToTab = (tab: Tab) => {
     setActiveTab(tab);
     setTestMessage('');
     setVocabularyMessage('');
     setHistoryMessage('');
+    if (tab !== 'history') {
+      setHistorySearchQuery('');
+    }
   };
 
   const fetchModels = async () => {
@@ -326,6 +408,13 @@ export default function SettingsApp() {
     setVocabularyMessage('');
   };
 
+  const toggleTheme = () => {
+    const next = !isDark();
+    setIsDark(next);
+    localStorage.setItem('dikt-theme', next ? 'dark' : 'light');
+    document.documentElement.classList.toggle('light', !next);
+  };
+
   const provider = createMemo(() => settings().provider);
 
   createEffect(on(
@@ -338,7 +427,11 @@ export default function SettingsApp() {
   ));
 
   onMount(async () => {
-    document.body.classList.add('window-settings');
+    const savedTheme = localStorage.getItem('dikt-theme');
+    const dark = savedTheme !== 'light';
+    setIsDark(dark);
+    document.documentElement.classList.toggle('light', !dark);
+
     await loadSettings();
     await loadHistory();
 
@@ -356,50 +449,55 @@ export default function SettingsApp() {
     });
 
     onCleanup(() => {
-      document.body.classList.remove('window-settings');
       void unlistenOpened();
       void unlistenHistoryError();
     });
   });
 
+  const isHistoryTab = () => activeTab() === 'history';
+
   return (
-    <div class="window-settings-root">
-      <SettingsPanel
-        visible={() => true}
-        activeTab={activeTab}
-        settings={settings}
-        setSettings={setSettings}
-        testMessage={testMessage}
-        vocabularyMessage={vocabularyMessage}
-        saving={saving}
-        isVocabularyEditorOpen={isVocabularyEditorOpen}
-        editorWord={editorWord}
-        setEditorWord={setEditorWord}
-        editorReplacements={editorReplacements}
-        setEditorReplacements={setEditorReplacements}
-        onCollapse={closeSettingsWindow}
-        onTabChange={switchToTab}
-        onTest={testConnection}
-        onSave={saveSettings}
-        onVocabularyOpenCreate={openCreateVocabularyEditor}
-        onVocabularyEdit={openEditVocabularyEditor}
-        onVocabularySave={saveVocabularyEntry}
-        onVocabularyCancel={cancelVocabularyEditor}
-        onVocabularyToggleEnabled={toggleVocabularyEntryEnabled}
-        onVocabularyDelete={deleteVocabularyEntry}
-        history={history}
-        historyMessage={historyMessage}
-        onHistoryCopy={copyHistoryText}
-        onHistoryDelete={deleteHistoryItem}
-        onHistoryClearAll={clearHistory}
-        modelsList={modelsList}
-        modelsLoading={modelsLoading}
-        modelsError={modelsError}
-        onUpdateMode={updateMode}
-        onSetActiveModeId={setActiveModeId}
-        onAddMode={addMode}
-        onDeleteMode={deleteMode}
-      />
-    </div>
+    <Layout
+      activeTab={activeTab}
+      onTabChange={switchToTab}
+      rightPanel={isHistoryTab() ? undefined : <RightPanel activeTab={activeTab} />}
+      fullBleed={isHistoryTab()}
+      isDark={isDark}
+      onToggleTheme={toggleTheme}
+    >
+      <Switch>
+        <Match when={activeTab() === 'settings'}>
+          <SettingsPage
+            settings={settings}
+            setSettings={setSettings}
+            testMessage={testMessage}
+            saving={saving}
+            onTest={testConnection}
+            onSave={saveSettings}
+            onSaveQuiet={saveSettingsQuiet}
+          />
+        </Match>
+        <Match when={isHistoryTab()}>
+          <HistoryPage
+            history={filteredHistory}
+            totalCount={() => history().length}
+            todayCount={() => historyStats().todayCount}
+            totalAudioSecs={() => historyStats().totalAudioSecs}
+            message={historyMessage}
+            searchQuery={historySearchQuery}
+            onSearchQueryChange={(value) => setHistorySearchQuery(value)}
+            onCopy={copyHistoryText}
+            onDelete={deleteHistoryItem}
+            onClearAll={clearHistory}
+          />
+        </Match>
+        <Match when={activeTab() === 'vocabulary'}>
+          <div class="py-20 text-center text-gray-500">Vocabulary is coming soon.</div>
+        </Match>
+        <Match when={activeTab() === 'modes'}>
+          <div class="py-20 text-center text-gray-500">Modes is coming soon.</div>
+        </Match>
+      </Switch>
+    </Layout>
   );
 }

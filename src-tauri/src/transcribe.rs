@@ -1,4 +1,21 @@
 use reqwest::multipart;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionSegment {
+  pub start: f64,
+  pub end: f64,
+  pub text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TranscriptionResult {
+  pub text: String,
+  pub duration_secs: Option<f64>,
+  pub language: Option<String>,
+  #[allow(dead_code)] // Parsed from API, not yet stored in history — future use
+  pub segments: Option<Vec<TranscriptionSegment>>,
+}
 
 pub async fn transcribe(
   base_url: &str,
@@ -7,7 +24,7 @@ pub async fn transcribe(
   provider: &str,
   audio_data: Vec<u8>,
   prompt: Option<&str>,
-) -> Result<String, String> {
+) -> Result<TranscriptionResult, String> {
   if api_key.trim().is_empty() {
     return Err("Missing API key".to_string());
   }
@@ -24,24 +41,49 @@ pub async fn transcribe(
       model,
       audio_data.clone(),
       Some(prompt_value),
+      true,
     )
     .await;
     match first_attempt {
-      Ok(text) => return Ok(text),
+      Ok(result) => return Ok(result),
       Err(error) => {
         if should_retry_without_prompt(&error) {
-          return send_transcription_request(&client, &url, api_key, model, audio_data, None)
+          return send_transcription_request(&client, &url, api_key, model, audio_data, None, true)
             .await
             .map_err(|retry_error| retry_error.to_string());
+        }
+        // If verbose_json caused the error, retry without it
+        if should_retry_without_verbose(&error) {
+          return send_transcription_request(
+            &client,
+            &url,
+            api_key,
+            model,
+            audio_data,
+            Some(prompt_value),
+            false,
+          )
+          .await
+          .map_err(|retry_error| retry_error.to_string());
         }
         return Err(error.to_string());
       }
     }
   }
 
-  send_transcription_request(&client, &url, api_key, model, audio_data, None)
-    .await
-    .map_err(|error| error.to_string())
+  let result = send_transcription_request(&client, &url, api_key, model, audio_data.clone(), None, true).await;
+  match result {
+    Ok(result) => Ok(result),
+    Err(error) => {
+      if should_retry_without_verbose(&error) {
+        send_transcription_request(&client, &url, api_key, model, audio_data, None, false)
+          .await
+          .map_err(|retry_error| retry_error.to_string())
+      } else {
+        Err(error.to_string())
+      }
+    }
+  }
 }
 
 fn build_transcription_url(base_url: &str) -> String {
@@ -60,6 +102,23 @@ fn supports_prompt(provider: &str, model: &str) -> bool {
     "custom" => true,
     _ => false,
   }
+}
+
+fn should_retry_without_verbose(error: &ApiError) -> bool {
+  let Some(status) = error.status else {
+    return false;
+  };
+
+  if !matches!(status.as_u16(), 400 | 404 | 415 | 422) {
+    return false;
+  }
+
+  let body = error.body.to_ascii_lowercase();
+  body.contains("response_format")
+    || body.contains("verbose")
+    || body.contains("unknown parameter")
+    || body.contains("not allowed")
+    || body.contains("unexpected field")
 }
 
 fn should_retry_without_prompt(error: &ApiError) -> bool {
@@ -85,7 +144,8 @@ async fn send_transcription_request(
   model: &str,
   audio_data: Vec<u8>,
   prompt: Option<&str>,
-) -> Result<String, ApiError> {
+  verbose: bool,
+) -> Result<TranscriptionResult, ApiError> {
   let mut form = multipart::Form::new()
     .part(
       "file",
@@ -95,6 +155,10 @@ async fn send_transcription_request(
         .map_err(|error| ApiError::transport(error.to_string()))?,
     )
     .text("model", model.to_string());
+
+  if verbose {
+    form = form.text("response_format", "verbose_json");
+  }
 
   if let Some(prompt_value) = prompt {
     form = form.text("prompt", prompt_value.to_string());
@@ -120,7 +184,28 @@ async fn send_transcription_request(
 
   let json: serde_json::Value = serde_json::from_str(&body)
     .map_err(|error| ApiError::transport(error.to_string()))?;
-  Ok(json["text"].as_str().unwrap_or("").to_string())
+
+  let text = json["text"].as_str().unwrap_or("").to_string();
+  let duration_secs = json["duration"].as_f64();
+  let language = json["language"].as_str().map(|s| s.to_lowercase());
+  let segments = json["segments"].as_array().map(|arr| {
+    arr.iter()
+      .filter_map(|seg| {
+        Some(TranscriptionSegment {
+          start: seg["start"].as_f64()?,
+          end: seg["end"].as_f64()?,
+          text: seg["text"].as_str().unwrap_or("").to_string(),
+        })
+      })
+      .collect()
+  });
+
+  Ok(TranscriptionResult {
+    text,
+    duration_secs,
+    language,
+    segments,
+  })
 }
 
 #[derive(Debug)]
