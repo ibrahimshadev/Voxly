@@ -144,7 +144,7 @@ export default function SettingsPage(props: SettingsPageProps) {
                     </span>
                     <Show when={isActive()}>
                       <div class="absolute top-2 right-2">
-                        <span class="material-symbols-outlined text-primary text-[18px]">check_circle</span>
+                        <span class="material-symbols-outlined text-primary text-[14px]">check_circle</span>
                       </div>
                     </Show>
                   </button>

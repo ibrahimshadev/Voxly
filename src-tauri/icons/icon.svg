@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Green rounded square background -->
+  <rect x="16" y="16" width="480" height="480" rx="108" ry="108" fill="#10b77f"/>
+
+  <!-- Filled mic icon, centered in the square -->
+  <g transform="translate(256, 248) scale(0.34) translate(-480, 480)">
+    <path d="M395-435q-35-35-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35q-50 0-85-35Zm45 315v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Z"
+      fill="#000000"/>
+  </g>
+</svg>

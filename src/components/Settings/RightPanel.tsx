@@ -186,29 +186,31 @@ function SettingsPanel(props: RightPanelProps) {
         </For>
       </div>
 
-      {/* Enhancements */}
-      <div class="mb-auto">
-        <h3 class="text-xs font-semibold text-gray-500 mb-4 px-1">ENHANCEMENTS</h3>
-        <div class="bg-surface-dark rounded-xl border border-white/5 p-4 space-y-4">
-          {/* Auto-Punctuation */}
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-gray-300">Auto-Punctuation</span>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input checked type="checkbox" class="sr-only peer" />
-              <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
-            </label>
-          </div>
+      {/* Enhancements (disabled) */}
+      {false && (
+        <div class="mb-auto">
+          <h3 class="text-xs font-semibold text-gray-500 mb-4 px-1">ENHANCEMENTS</h3>
+          <div class="bg-surface-dark rounded-xl border border-white/5 p-4 space-y-4">
+            {/* Auto-Punctuation */}
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-300">Auto-Punctuation</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input checked type="checkbox" class="sr-only peer" />
+                <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
+              </label>
+            </div>
 
-          {/* Vocabulary Boost */}
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-gray-300">Vocabulary Boost</span>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" class="sr-only peer" />
-              <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
-            </label>
+            {/* Vocabulary Boost */}
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-300">Vocabulary Boost</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" class="sr-only peer" />
+                <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
+              </label>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Mic Visualizer */}
       <MicVisualizer audioLevel={props.audioLevel} />

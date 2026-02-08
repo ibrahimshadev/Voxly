@@ -78,7 +78,7 @@ export default function Sidebar(props: SidebarProps) {
             <div class="w-7 h-7 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 overflow-hidden shrink-0" />
             <div class="flex flex-col overflow-hidden">
               <span class="text-xs font-medium truncate text-gray-200">Alex Chen</span>
-              <span class="text-[10px] text-gray-500 truncate">alex@dikt.app</span>
+              <span class="text-[10px] text-gray-500 truncate">alex@voxly.app</span>
             </div>
             <span class="material-symbols-outlined text-gray-600 text-[14px] ml-auto">unfold_more</span>
           </div>

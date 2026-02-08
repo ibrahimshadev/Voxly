@@ -396,7 +396,7 @@ export default function ModesPage(props: ModesPageProps) {
             {/* Footer tip */}
             <div class="mt-8 text-center border-t border-white/5 pt-6">
               <p class="text-xs text-zinc-600">
-                Modes are applied automatically after transcription is complete. Local processing is used unless a cloud model is selected.
+                Modes are applied automatically after transcription completes. Mode processing uses your configured API provider.
               </p>
             </div>
           </div>
