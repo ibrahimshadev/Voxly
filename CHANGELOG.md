@@ -1,3 +1,10 @@
+## [1.16.1](https://github.com/ibrahimshadev/dikt/compare/v1.16.0...v1.16.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* **icons:** redesign app icon for crisp taskbar rendering ([622d524](https://github.com/ibrahimshadev/dikt/commit/622d524a6c1e5a953a1cd57a119e3bb0e002b434))
+
 # [1.16.0](https://github.com/ibrahimshadev/dikt/compare/v1.15.0...v1.16.0) (2026-02-08)
 
 
