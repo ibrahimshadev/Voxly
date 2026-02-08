@@ -1,6 +1,13 @@
-# Dikt
+# Voxly
 
-A minimalist voice-to-text application. Hold a hotkey, speak, and your words are transcribed and pasted into any app.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/Tested_on-Windows-0078D6.svg)](#platform-support)
+[![Built with Tauri](https://img.shields.io/badge/Built_with-Tauri_2-FFC131.svg)](https://tauri.app/)
+
+Hold a hotkey, speak, release. Your words are transcribed, cleaned up by AI, and pasted into whatever app you're using.
+
+<!-- Replace with your GIF once recorded -->
+<!-- ![Voxly Demo](assets/demo.gif) -->
 
 ## Quick Start
 
@@ -16,7 +23,7 @@ A minimalist voice-to-text application. Hold a hotkey, speak, and your words are
 
 ### Voice Transcription
 
-Hold your hotkey, speak, release. Dikt records audio from your microphone, sends it to an OpenAI-compatible transcription API, and pastes the result into whatever app has focus. The entire flow happens in a few seconds.
+Hold your hotkey, speak, release. Voxly records audio from your microphone, sends it to an OpenAI-compatible transcription API, and pastes the result into whatever app has focus. The entire flow happens in a few seconds.
 
 Two hotkey modes are available:
 - **Hold to talk** (default) — hold the hotkey while speaking, release to transcribe
@@ -28,9 +35,10 @@ Output can be configured to either paste directly (preserving your existing clip
 
 Modes let you run a second LLM call on the transcribed text before it gets pasted. Each mode has a name, a system prompt, and a chat model. The transcription is sent as the user message, and the LLM's response replaces the raw transcription.
 
-Two starter modes are included:
-- **Grammar & Punctuation** — fixes grammar, spelling, and punctuation while preserving meaning
-- **Email Draft** — rewrites dictation as a professional email body
+Three built-in modes are included:
+- **Clean Draft** — removes filler words and fixes grammar while preserving your tone
+- **Email Composer** — converts spoken draft into a professional email with subject and body
+- **Developer Mode** — formats speech into clear instructions for coding agents (like Claude Code, Cursor, etc.)
 
 You can create custom modes with any system prompt. Activate a mode to use it, or deactivate all modes to paste raw transcriptions. The model list is fetched live from your provider's `/models` endpoint.
 
@@ -42,15 +50,15 @@ Useful for names, technical jargon, or domain-specific terms that speech-to-text
 
 ### History
 
-Every transcription is saved locally with a timestamp. The History tab shows recent transcriptions with relative timestamps (e.g. "5m ago") and exact times on hover. You can copy any past transcription to the clipboard or delete individual entries. A "Clear all" option removes the entire history.
+Every transcription is saved locally with a timestamp. The History tab shows recent transcriptions with relative timestamps (e.g. "5m ago") and exact times on hover. If a mode was active, both the original and formatted versions are shown. You can copy any past transcription to the clipboard or delete individual entries.
 
 ### Floating Overlay
 
-A minimal glassmorphism pill sits at the bottom of your screen showing the current state: recording, transcribing, formatting (when a mode is active), or done. It stays on top of all windows and passes through mouse clicks when not hovered.
+A minimal pill sits at the bottom of your screen showing the current state: recording, transcribing, formatting (when a mode is active), or done. It stays on top of all windows and passes through mouse clicks when not hovered.
 
 ### System Tray
 
-Dikt minimizes to the system tray. Right-click for quick access to Settings, Reset Position, or Quit. Left-click toggles the overlay visibility.
+Voxly minimizes to the system tray. Right-click for quick access to Settings, Reset Position, or Quit. Left-click toggles the overlay visibility.
 
 ## Supported Providers
 
@@ -60,17 +68,21 @@ Dikt minimizes to the system tray. Right-click for quick access to Settings, Res
 | OpenAI | `https://api.openai.com/v1` | Pay per use |
 | Custom | Any OpenAI-compatible endpoint | Varies |
 
-Dikt uses the OpenAI-compatible API format. Any provider that supports `/audio/transcriptions` (for speech-to-text) and `/chat/completions` (for modes) will work with the Custom provider option.
+Voxly uses the OpenAI-compatible API format. Any provider that supports `/audio/transcriptions` (for speech-to-text) and `/chat/completions` (for modes) will work with the Custom provider option.
+
+## Platform Support
+
+Voxly is built to be cross-platform (Windows, macOS, Linux), but has only been tested on **Windows** so far. If you're on macOS or Linux and want to help test, bug reports and feedback are very welcome.
 
 ## Security & Data Storage
 
 - **Audio** is recorded locally and sent to your configured API endpoint for transcription. No audio is stored on disk.
 - **Transcription history** is stored in a local JSON file alongside settings.
-- **Paste behavior**: Dikt writes the transcript to the system clipboard and triggers paste (`Ctrl+V` on Windows/Linux, `Cmd+V` on macOS). Clipboard managers may record these changes.
+- **Paste behavior**: Voxly writes the transcript to the system clipboard and triggers paste (`Ctrl+V` on Windows/Linux, `Cmd+V` on macOS). Clipboard managers may record these changes.
 - **Settings** (provider, base URL, model, hotkey, vocabulary, modes) are stored in a local JSON file:
   - Windows: `%APPDATA%\dikt\settings.json`
   - Linux/macOS: `$XDG_CONFIG_HOME/dikt/settings.json` (or `~/.config/dikt/settings.json`)
-- **API key** is stored using the OS credential manager via `keyring` when available. If unavailable, Dikt falls back to an obfuscated value in `settings.json`. This is not strong encryption.
+- **API key** is stored using the OS credential manager via `keyring` when available. If unavailable, Voxly falls back to an obfuscated value in `settings.json`.
 
 ## Development
 
@@ -114,7 +126,7 @@ npm run tauri build
 ### Tech Stack
 
 - **Framework**: [Tauri 2.x](https://tauri.app/)
-- **Frontend**: [SolidJS](https://solidjs.com/) + CSS
+- **Frontend**: [SolidJS](https://solidjs.com/) + Tailwind CSS
 - **Backend**: Rust
 - **Audio**: [cpal](https://github.com/RustAudio/cpal)
 - **Transcription**: OpenAI Whisper API (cloud)
