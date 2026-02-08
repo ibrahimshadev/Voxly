@@ -20,7 +20,7 @@ type RightPanelProps = {
   onSetActiveModeId: (id: string | null) => void;
 };
 
-const PANEL_MODE_IDS = ['clean-draft', 'meeting-notes', 'email-composer', 'developer-log'] as const;
+const PANEL_MODE_IDS = ['clean-draft', 'email-composer', 'developer-log'] as const;
 
 const promptPreview = (systemPrompt: string): string => {
   const firstLine = systemPrompt

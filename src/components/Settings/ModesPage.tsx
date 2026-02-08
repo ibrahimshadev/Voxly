@@ -1,4 +1,4 @@
-import { For, Show, createSignal, createMemo } from 'solid-js';
+import { Index, Show, createSignal, createMemo } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import type { Mode } from '../../types';
 import { MODE_ICONS, MODE_COLORS, MODE_DESCRIPTIONS, DEFAULT_MODE_IDS } from '../../defaultModes';
@@ -364,34 +364,34 @@ export default function ModesPage(props: ModesPageProps) {
             </Show>
 
             {/* Mode cards */}
-            <For each={props.modes()}>
+            <Index each={props.modes()}>
               {(mode) => (
                 <Show
-                  when={editingModeId() === mode.id}
+                  when={editingModeId() === mode().id}
                   fallback={
                     <CollapsedModeCard
-                      mode={mode}
-                      isActive={props.activeModeId() === mode.id}
+                      mode={mode()}
+                      isActive={props.activeModeId() === mode().id}
                       isEditing={false}
-                      onEdit={() => setEditingModeId(mode.id)}
-                      onActivate={() => props.onSetActiveModeId(mode.id)}
+                      onEdit={() => setEditingModeId(mode().id)}
+                      onActivate={() => props.onSetActiveModeId(mode().id)}
                       onDeactivate={() => props.onSetActiveModeId(null)}
-                      onDelete={() => handleDelete(mode.id)}
+                      onDelete={() => handleDelete(mode().id)}
                     />
                   }
                 >
                   <ExpandedModeCard
-                    mode={mode}
+                    mode={mode()}
                     modelOptions={modelOptions()}
-                    onUpdateMode={(field, value) => props.onUpdateMode(mode.id, field, value)}
+                    onUpdateMode={(field, value) => props.onUpdateMode(mode().id, field, value)}
                     onCancel={() => setEditingModeId(null)}
                     onSave={handleSave}
-                    onDelete={() => handleDelete(mode.id)}
+                    onDelete={() => handleDelete(mode().id)}
                     saving={props.saving()}
                   />
                 </Show>
               )}
-            </For>
+            </Index>
 
             {/* Footer tip */}
             <div class="mt-8 text-center border-t border-white/5 pt-6">

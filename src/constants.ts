@@ -2,7 +2,7 @@ import type { Provider, Settings } from './types';
 import { DEFAULT_MODES } from './defaultModes';
 
 export const CHAT_MODELS: Record<Provider, string[]> = {
-  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b'],
   openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano'],
   custom: []
 };
@@ -11,12 +11,12 @@ export const PROVIDERS: Record<Provider, { label: string; base_url: string; mode
   groq: {
     label: 'Groq',
     base_url: 'https://api.groq.com/openai/v1',
-    models: ['whisper-large-v3-turbo', 'whisper-large-v3', 'distil-whisper-large-v3-en']
+    models: ['whisper-large-v3-turbo', 'whisper-large-v3']
   },
   openai: {
     label: 'OpenAI',
     base_url: 'https://api.openai.com/v1',
-    models: ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe']
+    models: ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'gpt-4o-transcribe-diarize', 'whisper-1']
   },
   custom: {
     label: 'Custom',

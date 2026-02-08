@@ -23,7 +23,6 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  ClipboardList,
   Mail,
   Code,
 } from 'lucide-solid';
@@ -33,7 +32,6 @@ import { MODE_NAME_COLORS } from '../../defaultModes';
 
 const MODE_NAME_LUCIDE: Record<string, Component<{ size: number }>> = {
   'Clean Draft': Sparkles,
-  'Meeting Notes': ClipboardList,
   'Email Composer': Mail,
   'Developer Mode': Code,
   'Developer Log': Code,

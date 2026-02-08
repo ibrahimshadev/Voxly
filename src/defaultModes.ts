@@ -1,12 +1,11 @@
 import type { Mode } from './types';
 
 // IDs of built-in default modes (not deletable)
-export const DEFAULT_MODE_IDS = new Set(['clean-draft', 'meeting-notes', 'email-composer', 'developer-log']);
+export const DEFAULT_MODE_IDS = new Set(['clean-draft', 'email-composer', 'developer-log']);
 
 // Icon mapping for the modes page UI (Material Symbols names)
 export const MODE_ICONS: Record<string, string> = {
   'clean-draft': 'auto_awesome',
-  'meeting-notes': 'assignment',
   'email-composer': 'mail',
   'developer-log': 'code',
 };
@@ -14,7 +13,6 @@ export const MODE_ICONS: Record<string, string> = {
 // Name-to-icon mapping for history items (keyed by mode name as stored in history)
 export const MODE_NAME_ICONS: Record<string, string> = {
   'Clean Draft': 'auto_awesome',
-  'Meeting Notes': 'assignment',
   'Email Composer': 'mail',
   'Developer Mode': 'code',
 };
@@ -22,7 +20,6 @@ export const MODE_NAME_ICONS: Record<string, string> = {
 // Per-mode colors (translucent backgrounds + muted foreground text)
 export const MODE_COLORS: Record<string, { bg: string; text: string }> = {
   'clean-draft':    { bg: 'bg-violet-500/8', text: 'text-violet-400/60' },
-  'meeting-notes':  { bg: 'bg-sky-500/8',    text: 'text-sky-400/60' },
   'email-composer': { bg: 'bg-amber-500/8',   text: 'text-amber-400/60' },
   'developer-log':  { bg: 'bg-emerald-500/8', text: 'text-emerald-400/60' },
 };
@@ -30,7 +27,6 @@ export const MODE_COLORS: Record<string, { bg: string; text: string }> = {
 // Same colors keyed by mode name (for history items)
 export const MODE_NAME_COLORS: Record<string, string> = {
   'Clean Draft':    'text-violet-400/60',
-  'Meeting Notes':  'text-sky-400/60',
   'Email Composer': 'text-amber-400/60',
   'Developer Mode': 'text-emerald-400/60',
   'Developer Log':  'text-emerald-400/60',
@@ -39,7 +35,6 @@ export const MODE_NAME_COLORS: Record<string, string> = {
 // Short descriptions shown in collapsed mode cards
 export const MODE_DESCRIPTIONS: Record<string, string> = {
   'clean-draft': 'Removes filler words and fixes grammar while preserving your tone.',
-  'meeting-notes': 'Summarizes key points, decisions, and action items.',
   'email-composer': 'Converts spoken draft into a professional email.',
   'developer-log': 'Formats speech into clear instructions for coding agents.',
 };
@@ -61,35 +56,6 @@ Rules:
 - If the speaker dictated punctuation verbally (e.g., "comma", "period", "new line"), convert it to the actual punctuation mark.
 
 Output only the cleaned text. No commentary, no explanations, no preamble.`,
-    model: 'llama-3.3-70b-versatile',
-  },
-  {
-    id: 'meeting-notes',
-    name: 'Meeting Notes',
-    system_prompt: `You are a skilled note-taker that converts raw dictated meeting audio transcriptions into structured, scannable meeting notes.
-
-Analyze the transcription and produce notes in this format:
-
-## Summary
-A 1-3 sentence overview of what was discussed.
-
-## Key Points
-- Bullet points capturing the main topics and decisions made.
-
-## Action Items
-- [ ] Task description - @Owner (if mentioned)
-- List every commitment, to-do, or follow-up mentioned, with the responsible person if identifiable.
-
-## Decisions
-- Any explicit decisions or agreements reached during the meeting.
-
-Rules:
-- Extract signal from noise: ignore filler, small talk, and off-topic tangents.
-- Preserve specific details: names, dates, numbers, deadlines, and technical terms exactly as spoken.
-- Use concise, professional language. Each bullet should be one clear sentence.
-- If no action items or decisions were identified, omit that section rather than writing "None."
-- Do not fabricate information that was not in the transcription.
-- Do not include a greeting or sign-off. Output only the structured notes.`,
     model: 'llama-3.3-70b-versatile',
   },
   {
