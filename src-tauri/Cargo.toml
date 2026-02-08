@@ -1,6 +1,6 @@
 [package]
 name = "dikt"
-version = "1.16.1"
+version = "1.16.2"
 edition = "2021"
 
 [build-dependencies]

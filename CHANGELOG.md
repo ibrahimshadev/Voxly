@@ -1,3 +1,10 @@
+## [1.16.2](https://github.com/ibrahimshadev/dikt/compare/v1.16.1...v1.16.2) (2026-02-08)
+
+
+### Bug Fixes
+
+* **settings:** improve modes UX and developer prompt ([a93cc5f](https://github.com/ibrahimshadev/dikt/commit/a93cc5fba922de9d5d29df553a1eb8568637d688))
+
 ## [1.16.1](https://github.com/ibrahimshadev/dikt/compare/v1.16.0...v1.16.1) (2026-02-08)
 
 
