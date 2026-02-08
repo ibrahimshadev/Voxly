@@ -356,9 +356,18 @@ export default function ModesPage(props: ModesPageProps) {
             {/* Active mode indicator */}
             <Show when={activeMode()}>
               {(mode) => (
-                <div class="flex items-center gap-2 text-xs font-semibold tracking-wider text-primary/80 uppercase mb-2">
-                  <span class="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                  Active: {mode().name}
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2 text-xs font-semibold tracking-wider text-primary/80 uppercase">
+                    <span class="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                    Active: {mode().name}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => props.onSetActiveModeId(null)}
+                    class="px-2.5 py-1 rounded text-[11px] font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    Deactivate
+                  </button>
                 </div>
               )}
             </Show>

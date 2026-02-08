@@ -148,12 +148,23 @@ function SettingsPanel(props: RightPanelProps) {
       <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-0.5">
         AI Configuration
       </h2>
-      <p class="text-xs text-gray-500 leading-relaxed mb-5">
-        Click a mode to activate it. Click the active mode again to deactivate it.
-      </p>
+      <div class="flex items-center justify-between mb-5">
+        <p class="text-xs text-gray-500 leading-relaxed">
+          Click a mode to activate. Click again to deactivate.
+        </p>
+        <Show when={props.activeModeId()}>
+          <button
+            type="button"
+            onClick={() => props.onSetActiveModeId(null)}
+            class="text-[11px] font-medium text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 ml-3"
+          >
+            Deactivate
+          </button>
+        </Show>
+      </div>
 
       {/* Transcription Modes */}
-      <div class="space-y-3 mb-8">
+      <div class="space-y-3 mb-auto">
         <For each={panelModes()}>
           {(mode) => {
             const modeActive = () => props.activeModeId() === mode.id;

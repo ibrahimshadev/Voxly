@@ -2,6 +2,7 @@ import { Show, For, createSignal } from 'solid-js';
 import type { Accessor, Setter, JSX } from 'solid-js';
 import type { Settings, Provider } from '../../types';
 import { CHAT_MODELS, PROVIDERS } from '../../constants';
+import { CircleCheck } from 'lucide-solid';
 import Select from './Select';
 
 /** In-memory model selection per provider. Resets on app start so defaults apply. */
@@ -143,8 +144,8 @@ export default function SettingsPage(props: SettingsPageProps) {
                       {option.label}
                     </span>
                     <Show when={isActive()}>
-                      <div class="absolute top-2 right-2">
-                        <span class="material-symbols-outlined text-primary text-[14px]">check_circle</span>
+                      <div class="absolute top-1.5 right-1.5">
+                        <CircleCheck size={18} class="text-primary" fill="currentColor" stroke="black" />
                       </div>
                     </Show>
                   </button>
