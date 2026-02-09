@@ -494,5 +494,135 @@
 </div>
 </footer>
 
+<!-- Sticky Draggable Pill -->
+<div id="demo-pill" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;cursor:grab;user-select:none;">
+    <div id="pill-body" style="display:flex;align-items:center;justify-content:center;gap:8px;min-width:48px;height:20px;padding:0 8px;background:rgba(24,24,24,0.9);border:1px solid rgba(255,255,255,0.08);border-radius:10px;transition:min-width 0.3s ease,height 0.3s ease,border-radius 0.3s ease,background 0.15s ease,border-color 0.15s ease;">
+        <!-- Idle dots -->
+        <div id="pill-idle" style="display:flex;gap:2px;align-items:center;">
+            <span style="width:5px;height:5px;background:rgba(255,255,255,0.8);border-radius:50%;display:block;"></span>
+            <span style="width:5px;height:5px;background:rgba(255,255,255,0.8);border-radius:50%;display:block;"></span>
+            <span style="width:5px;height:5px;background:rgba(255,255,255,0.8);border-radius:50%;display:block;"></span>
+            <span style="width:5px;height:5px;background:rgba(255,255,255,0.8);border-radius:50%;display:block;"></span>
+            <span style="width:5px;height:5px;background:rgba(255,255,255,0.8);border-radius:50%;display:block;"></span>
+        </div>
+        <!-- SiriWave canvas container -->
+        <div id="pill-wave" style="display:none;line-height:0;overflow:hidden;"><style>#pill-wave canvas{transform:translateY(5px);}</style></div>
+        <!-- Done check -->
+        <div id="pill-done" style="display:none;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+    </div>
+</div>
+
+<!-- SiriWave library -->
+<script src="https://unpkg.com/siriwave@2.4.0/dist/siriwave.umd.min.js"></script>
+
+<script>
+(function() {
+    const pill = document.getElementById('demo-pill');
+    const pillBody = document.getElementById('pill-body');
+    const pillIdle = document.getElementById('pill-idle');
+    const pillWave = document.getElementById('pill-wave');
+    const pillDone = document.getElementById('pill-done');
+
+    // --- Drag logic ---
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    let pillX = 0;
+    let pillY = 0;
+    let hasMoved = false;
+
+    function initPosition() {
+        const rect = pill.getBoundingClientRect();
+        pillX = rect.left;
+        pillY = rect.top;
+        pill.style.left = pillX + 'px';
+        pill.style.top = pillY + 'px';
+        pill.style.transform = 'none';
+    }
+
+    pill.addEventListener('mousedown', function(e) {
+        if (pill.style.transform !== 'none') initPosition();
+        isDragging = true;
+        hasMoved = false;
+        dragOffsetX = e.clientX - pillX;
+        dragOffsetY = e.clientY - pillY;
+        pill.style.cursor = 'grabbing';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        hasMoved = true;
+        pillX = e.clientX - dragOffsetX;
+        pillY = e.clientY - dragOffsetY;
+        pill.style.left = pillX + 'px';
+        pill.style.top = pillY + 'px';
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (!isDragging) return;
+        isDragging = false;
+        pill.style.cursor = 'grab';
+    });
+
+    // --- State cycle: idle -> recording -> done -> idle ---
+    let siriWave = null;
+    let state = 'idle'; // idle | recording | done
+
+    function setState(newState) {
+        state = newState;
+        pillIdle.style.display = 'none';
+        pillWave.style.display = 'none';
+        pillDone.style.display = 'none';
+
+        if (newState === 'idle') {
+            pillBody.style.minWidth = '48px';
+            pillBody.style.height = '20px';
+            pillBody.style.borderRadius = '10px';
+            pillIdle.style.display = 'flex';
+            if (siriWave) { siriWave.dispose(); siriWave = null; }
+        } else if (newState === 'recording') {
+            pillBody.style.minWidth = '90px';
+            pillBody.style.height = '28px';
+            pillBody.style.borderRadius = '14px';
+            pillWave.style.display = 'block';
+            if (!siriWave) {
+                siriWave = new SiriWave({
+                    container: pillWave,
+                    width: 90,
+                    height: 35,
+                    style: 'ios9',
+                    speed: 0.06,
+                    amplitude: 4,
+                    autostart: true,
+                });
+            }
+        } else if (newState === 'done') {
+            pillBody.style.minWidth = '48px';
+            pillBody.style.height = '20px';
+            pillBody.style.borderRadius = '10px';
+            pillDone.style.display = 'flex';
+            if (siriWave) { siriWave.dispose(); siriWave = null; }
+        }
+    }
+
+    // Auto-cycle every few seconds
+    function cycle() {
+        if (state === 'idle') {
+            setTimeout(function() { setState('recording'); cycle(); }, 3000);
+        } else if (state === 'recording') {
+            setTimeout(function() { setState('done'); cycle(); }, 4000);
+        } else if (state === 'done') {
+            setTimeout(function() { setState('idle'); cycle(); }, 2000);
+        }
+    }
+
+    setState('idle');
+    cycle();
+})();
+</script>
+
 </body>
 </html>
