@@ -1,3 +1,10 @@
+## [1.16.3](https://github.com/ibrahimshadev/dikt/compare/v1.16.2...v1.16.3) (2026-02-09)
+
+
+### Bug Fixes
+
+* **pill:** simplify click-through with reactive hover tracking ([6d8cb1d](https://github.com/ibrahimshadev/dikt/commit/6d8cb1d2da54ee5dd87a15e389e6326cf11b743b))
+
 ## [1.16.2](https://github.com/ibrahimshadev/dikt/compare/v1.16.1...v1.16.2) (2026-02-08)
 
 
