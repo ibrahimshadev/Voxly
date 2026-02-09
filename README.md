@@ -6,8 +6,7 @@
 
 Hold a hotkey, speak, release. Your words are transcribed, cleaned up by AI, and pasted into whatever app you're using.
 
-<!-- Replace with your GIF once recorded -->
-<!-- ![Voxly Demo](assets/demo.gif) -->
+![Voxly Demo](https://github.com/user-attachments/assets/6471857f-9b21-4ce8-8c39-e5ed89deb242)
 
 ## Quick Start
 
