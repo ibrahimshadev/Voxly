@@ -223,11 +223,12 @@ export default function App() {
     });
   });
 
-  // Passthrough (click-through) only during idle.
-  // During active states, disable passthrough so WebView2 repaints properly.
+  // Passthrough (click-through) only when idle and not hovered.
+  // During hover/active states, disable passthrough so hover UI stays reachable.
   createEffect(() => {
     const s = status();
-    void invoke('set_cursor_passthrough', { ignore: s === 'idle' });
+    const hovered = isHovered();
+    void invoke('set_cursor_passthrough', { ignore: s === 'idle' && !hovered });
   });
 
   onCleanup(() => {
@@ -237,26 +238,12 @@ export default function App() {
   return (
     <div
       class="app-container"
-      onMouseMove={() => {
-        if (status() === 'idle' && !isHovered()) {
-          void invoke('set_cursor_passthrough', { ignore: true });
-        }
-      }}
-      onMouseLeave={() => {
-        if (status() === 'idle') {
-          void invoke('set_cursor_passthrough', { ignore: true });
-        }
-      }}
+      onMouseLeave={() => setIsHovered(false)}
     >
       <div
         class="pill-area"
         onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => {
-          setIsHovered(false);
-          if (status() === 'idle') {
-            void invoke('set_cursor_passthrough', { ignore: true });
-          }
-        }}
+        onMouseLeave={() => setIsHovered(false)}
       >
         <Tooltip
           visible={isHovered() && !isActive() && !isSettingsOpen()}
