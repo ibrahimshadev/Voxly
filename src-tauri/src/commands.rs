@@ -11,107 +11,23 @@ struct AudioLevelPayload {
     peak_db: f32,
 }
 
-#[cfg(target_os = "windows")]
-static CURSOR_PASSTHROUGH: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(true);
-
-/// Whether the app is in an active state (recording, transcribing, etc.).
-/// Set by the frontend via the `set_app_active` command.
-/// When active, the cursor tracker keeps passthrough disabled so the pill is interactive.
-#[cfg(target_os = "windows")]
-static APP_ACTIVE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Whether the frontend is actively being hovered (pill-area onPointerEnter/Leave).
-/// When true, the cursor tracker keeps passthrough disabled so the user can
-/// interact with the tooltip (which may extend beyond the cursor hot zone).
-#[cfg(target_os = "windows")]
-static HOVER_ACTIVE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Toggle only WS_EX_TRANSPARENT on an HWND.
-/// Unlike tao's set_ignore_cursor_events, this never touches WS_EX_LAYERED,
-/// preventing the WebView2 rendering surface corruption that occurs when
-/// WS_EX_LAYERED is repeatedly added/removed without SetLayeredWindowAttributes.
-#[cfg(target_os = "windows")]
-unsafe fn toggle_ex_transparent(hwnd: windows::Win32::Foundation::HWND, enable: bool) {
-    use windows::Win32::UI::WindowsAndMessaging::*;
-    let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    let new_style = if enable {
-        ex_style | WS_EX_TRANSPARENT.0 as isize
-    } else {
-        ex_style & !(WS_EX_TRANSPARENT.0 as isize)
-    };
-    if new_style != ex_style {
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
-    }
-}
-
-/// Extract the raw HWND value from a WebviewWindow.
-#[cfg(target_os = "windows")]
-fn get_hwnd_value(window: &WebviewWindow) -> Option<isize> {
-    window.hwnd().ok().map(|h| h.0 as isize)
-}
-
-/// Re-apply WS_EX_LAYERED + SetLayeredWindowAttributes on a raw HWND.
-/// Safe to call repeatedly — idempotent. This is the core recovery mechanism
-/// for the WebView2 transparent-window invisibility bug.
-#[cfg(target_os = "windows")]
-unsafe fn ensure_layered_visible(hwnd: windows::Win32::Foundation::HWND) {
-    use windows::Win32::Foundation::COLORREF;
-    use windows::Win32::UI::WindowsAndMessaging::*;
-
-    let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    if ex_style & WS_EX_LAYERED.0 as isize == 0 {
-        SetWindowLongPtrW(
-            hwnd,
-            GWL_EXSTYLE,
-            ex_style | WS_EX_LAYERED.0 as isize,
-        );
-    }
-    // Pin the layered window at full opacity so it stays visible.
-    let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
-}
-
-/// Initialize click-through for the main window.
-/// Ensures WS_EX_LAYERED is set once (with SetLayeredWindowAttributes to keep
-/// the window visible), then adds WS_EX_TRANSPARENT for click-through.
-/// WS_EX_LAYERED is never removed — only WS_EX_TRANSPARENT is toggled later.
-#[allow(unused_variables)]
-pub fn init_click_through(window: &WebviewWindow) {
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(hwnd_val) = get_hwnd_value(window) {
-            let hwnd = windows::Win32::Foundation::HWND(hwnd_val);
-            unsafe {
-                ensure_layered_visible(hwnd);
-                toggle_ex_transparent(hwnd, true);
-            }
-            CURSOR_PASSTHROUGH.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-}
-
 /// Full recovery for the main window: re-apply layered attributes, ensure
 /// always-on-top, and show the window. Called by reset_position and the
-/// periodic watchdog in the cursor tracker.
-#[allow(unused_variables)]
+/// periodic watchdog.
 pub fn ensure_main_visible(window: &WebviewWindow) {
     let _ = window.show();
     let _ = window.set_always_on_top(true);
+    crate::click_through::ensure_visible(window);
+}
 
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(hwnd_val) = get_hwnd_value(window) {
-            let hwnd = windows::Win32::Foundation::HWND(hwnd_val);
-            unsafe {
-                ensure_layered_visible(hwnd);
-                // Force Windows to repaint the window
-                use windows::Win32::Graphics::Gdi::InvalidateRect;
-                let _ = InvalidateRect(hwnd, None, true);
-            }
-        }
-    }
+#[tauri::command]
+pub fn update_hit_region(
+    window: WebviewWindow,
+    rects: Vec<crate::click_through::HitRect>,
+) -> Result<(), String> {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    crate::click_through::update_region(rects, scale, &window);
+    Ok(())
 }
 
 #[tauri::command]
@@ -260,46 +176,6 @@ pub fn hide_settings_window(app: AppHandle) -> Result<(), String> {
     hide_settings_window_internal(&app)
 }
 
-#[tauri::command]
-pub fn set_cursor_passthrough(window: WebviewWindow, ignore: bool) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use std::sync::atomic::Ordering;
-        let current = CURSOR_PASSTHROUGH.load(Ordering::Relaxed);
-        if current != ignore {
-            if let Some(hwnd_val) = get_hwnd_value(&window) {
-                let hwnd = windows::Win32::Foundation::HWND(hwnd_val);
-                unsafe {
-                    toggle_ex_transparent(hwnd, ignore);
-                }
-                CURSOR_PASSTHROUGH.store(ignore, Ordering::Relaxed);
-            }
-        }
-    }
-    let _ = (&window, ignore);
-    Ok(())
-}
-
-/// Called by the frontend to communicate active/idle state.
-/// The cursor tracker uses this to decide passthrough behavior.
-#[tauri::command]
-pub fn set_app_active(_active: bool) {
-    #[cfg(target_os = "windows")]
-    {
-        APP_ACTIVE.store(_active, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-/// Called by the frontend when the pill-area hover state changes.
-/// Keeps passthrough disabled while the user interacts with the tooltip.
-#[tauri::command]
-pub fn set_hover_active(_hovered: bool) {
-    #[cfg(target_os = "windows")]
-    {
-        HOVER_ACTIVE.store(_hovered, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
 /// Background thread that broadcasts audio level events at ~20 FPS while recording.
 /// Both the main window and settings window can subscribe to `audio:level`.
 /// Exits when the main window is destroyed (app shutting down).
@@ -318,121 +194,6 @@ pub fn start_audio_level_emitter(app: &AppHandle) {
             let _ = app.emit("audio:level", AudioLevelPayload { rms_db, peak_db });
         }
     });
-}
-
-/// Background thread that is the SINGLE AUTHORITY for click-through state.
-/// Polls cursor position and toggles WS_EX_TRANSPARENT based on:
-///   - APP_ACTIVE: when true, passthrough is always OFF (pill is interactive)
-///   - Hot zone: when idle and cursor is near the pill, passthrough is OFF
-///   - Otherwise: passthrough is ON (clicks pass through the transparent window)
-///
-/// Also acts as a watchdog: periodically re-applies SetLayeredWindowAttributes
-/// to prevent the window from becoming invisible due to WebView2 compositor
-/// surface loss. Only active on Windows.
-#[allow(unused_variables)]
-pub fn start_cursor_tracker(app: &AppHandle) {
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::{HWND, RECT};
-        use windows::Win32::UI::WindowsAndMessaging::*;
-
-        let hwnd_val = match app
-            .get_webview_window("main")
-            .and_then(|w| get_hwnd_value(&w))
-        {
-            Some(v) => v,
-            None => return,
-        };
-
-        std::thread::spawn(move || {
-            let hwnd = HWND(hwnd_val);
-            // Watchdog: re-apply SetLayeredWindowAttributes every ~30 seconds
-            // (600 ticks × 50ms) to recover from compositor surface loss.
-            let mut tick: u32 = 0;
-            const WATCHDOG_INTERVAL: u32 = 600;
-
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-
-                if !unsafe { IsWindow(hwnd).as_bool() } {
-                    break;
-                }
-
-                tick = tick.wrapping_add(1);
-
-                if tick % WATCHDOG_INTERVAL == 0 {
-                    unsafe {
-                        ensure_layered_visible(hwnd);
-                    }
-                }
-
-                if !unsafe { IsWindowVisible(hwnd).as_bool() } {
-                    continue;
-                }
-
-                let active = APP_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
-                let passthrough = CURSOR_PASSTHROUGH.load(std::sync::atomic::Ordering::Relaxed);
-
-                let hovered = HOVER_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
-
-                // Determine if passthrough should be ON or OFF.
-                // Passthrough OFF when: active, or JS is hovering, or cursor in hot zone.
-                // Passthrough ON otherwise.
-                let want_passthrough = if active || hovered {
-                    false
-                } else {
-                    // Idle and not hovering: check cursor position.
-                    let mut rect = RECT::default();
-                    if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
-                        continue;
-                    }
-
-                    let cursor = match cursor_position() {
-                        Some(p) => p,
-                        None => continue,
-                    };
-
-                    // Hot zone: tight around the pill (max 90×28 expanded).
-                    let win_w = rect.right - rect.left;
-                    let zone_w = 110;
-                    let zone_h = 40;
-                    let zone_left = rect.left + (win_w - zone_w) / 2;
-                    let zone_right = zone_left + zone_w;
-                    let zone_top = rect.bottom - zone_h;
-                    let zone_bottom = rect.bottom;
-
-                    let in_hot_zone = cursor.0 >= zone_left
-                        && cursor.0 <= zone_right
-                        && cursor.1 >= zone_top
-                        && cursor.1 <= zone_bottom;
-
-                    !in_hot_zone
-                };
-
-                if want_passthrough && !passthrough {
-                    unsafe { toggle_ex_transparent(hwnd, true); }
-                    CURSOR_PASSTHROUGH.store(true, std::sync::atomic::Ordering::Relaxed);
-                } else if !want_passthrough && passthrough {
-                    unsafe { toggle_ex_transparent(hwnd, false); }
-                    CURSOR_PASSTHROUGH.store(false, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-        });
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn cursor_position() -> Option<(i32, i32)> {
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-
-    let mut point = POINT::default();
-    let ok = unsafe { GetCursorPos(&mut point) };
-    if ok.is_ok() {
-        Some((point.x, point.y))
-    } else {
-        None
-    }
 }
 
 pub fn show_settings_window_internal(app: &AppHandle) -> Result<(), String> {

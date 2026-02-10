@@ -4,6 +4,7 @@
 )]
 
 mod audio;
+mod click_through;
 mod clipboard;
 mod commands;
 mod domain;
@@ -71,13 +72,12 @@ fn main() {
                 let _ = window.set_icon(icon.clone());
             }
 
-            // Position window at bottom center, enable click-through
+            // Position window at bottom center, enable per-pixel hit testing
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_icon(icon);
                 let _ = commands::position_window_bottom_internal(&window);
-                commands::init_click_through(&window);
+                click_through::setup(&window);
             }
-            commands::start_cursor_tracker(app.handle());
             commands::start_audio_level_emitter(app.handle());
 
             if let Some(settings_window) = app.get_webview_window("settings") {
@@ -102,9 +102,7 @@ fn main() {
             commands::position_window_bottom,
             commands::show_settings_window,
             commands::hide_settings_window,
-            commands::set_cursor_passthrough,
-            commands::set_app_active,
-            commands::set_hover_active,
+            commands::update_hit_region,
             commands::fetch_provider_models,
             commands::get_transcription_history,
             commands::delete_transcription_history_item,

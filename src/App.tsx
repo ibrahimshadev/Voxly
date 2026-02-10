@@ -223,19 +223,42 @@ export default function App() {
     });
   });
 
-  // Notify Rust about active/idle state so the cursor tracker
-  // (the single authority for click-through) can adjust passthrough.
-  createEffect(() => {
-    const active = isActive();
-    void invoke('set_app_active', { active });
-  });
-
-  // Notify Rust about hover state so the cursor tracker keeps passthrough
-  // disabled while the user interacts with the tooltip (which extends
-  // beyond the cursor hot zone).
+  // Send interactive hit regions to Rust for per-pixel click-through.
+  // The OS hit-test handler uses these rects to decide which areas
+  // are interactive vs transparent (pass clicks through).
   createEffect(() => {
     const hovered = isHovered();
-    void invoke('set_hover_active', { hovered });
+    const active = isActive();
+    const settingsOpen = isSettingsOpen();
+
+    const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
+
+    // Pill area with approach margin.
+    // Window: 360x100, pill centered at bottom with 8px padding.
+    // Margin must be large enough for the 50ms cursor tracker to catch
+    // an approaching cursor before it reaches the pill (~15px at normal speed).
+    const pillW = active ? 90 : 48;
+    const pillH = active ? 28 : 20;
+    const pillX = (360 - pillW) / 2;
+    const pillY = 100 - 8 - pillH;
+    const margin = 15;
+    rects.push({
+      x: pillX - margin,
+      y: pillY - margin,
+      w: pillW + 2 * margin,
+      h: pillH + margin + 8,
+    });
+
+    // Tooltip area when visible
+    if (hovered && !active && !settingsOpen) {
+      const tooltipW = 220;
+      const tooltipH = 36;
+      const tooltipX = (360 - tooltipW) / 2;
+      const tooltipY = pillY - 8 - tooltipH;
+      rects.push({ x: tooltipX, y: tooltipY, w: tooltipW, h: tooltipH });
+    }
+
+    void invoke('update_hit_region', { rects });
   });
 
   onCleanup(() => {

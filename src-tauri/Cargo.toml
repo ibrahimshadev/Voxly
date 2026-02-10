@@ -30,3 +30,13 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.56", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSGeometry"] }
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+gdk = "0.18"
+cairo-rs = "0.18"
