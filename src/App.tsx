@@ -223,12 +223,19 @@ export default function App() {
     });
   });
 
-  // Passthrough (click-through) only when idle and not hovered.
-  // During hover/active states, disable passthrough so hover UI stays reachable.
+  // Notify Rust about active/idle state so the cursor tracker
+  // (the single authority for click-through) can adjust passthrough.
   createEffect(() => {
-    const s = status();
+    const active = isActive();
+    void invoke('set_app_active', { active });
+  });
+
+  // Notify Rust about hover state so the cursor tracker keeps passthrough
+  // disabled while the user interacts with the tooltip (which extends
+  // beyond the cursor hot zone).
+  createEffect(() => {
     const hovered = isHovered();
-    void invoke('set_cursor_passthrough', { ignore: s === 'idle' && !hovered });
+    void invoke('set_hover_active', { hovered });
   });
 
   onCleanup(() => {
@@ -238,12 +245,13 @@ export default function App() {
   return (
     <div
       class="app-container"
-      onMouseLeave={() => setIsHovered(false)}
+      onPointerLeave={() => setIsHovered(false)}
     >
       <div
         class="pill-area"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onPointerEnter={() => setIsHovered(true)}
+        onPointerMove={() => { if (!isHovered()) setIsHovered(true); }}
+        onPointerLeave={() => setIsHovered(false)}
       >
         <Tooltip
           visible={isHovered() && !isActive() && !isSettingsOpen()}

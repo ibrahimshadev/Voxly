@@ -15,6 +15,20 @@ struct AudioLevelPayload {
 static CURSOR_PASSTHROUGH: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
+/// Whether the app is in an active state (recording, transcribing, etc.).
+/// Set by the frontend via the `set_app_active` command.
+/// When active, the cursor tracker keeps passthrough disabled so the pill is interactive.
+#[cfg(target_os = "windows")]
+static APP_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the frontend is actively being hovered (pill-area onPointerEnter/Leave).
+/// When true, the cursor tracker keeps passthrough disabled so the user can
+/// interact with the tooltip (which may extend beyond the cursor hot zone).
+#[cfg(target_os = "windows")]
+static HOVER_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Toggle only WS_EX_TRANSPARENT on an HWND.
 /// Unlike tao's set_ignore_cursor_events, this never touches WS_EX_LAYERED,
 /// preventing the WebView2 rendering surface corruption that occurs when
@@ -266,6 +280,26 @@ pub fn set_cursor_passthrough(window: WebviewWindow, ignore: bool) -> Result<(),
     Ok(())
 }
 
+/// Called by the frontend to communicate active/idle state.
+/// The cursor tracker uses this to decide passthrough behavior.
+#[tauri::command]
+pub fn set_app_active(_active: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        APP_ACTIVE.store(_active, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Called by the frontend when the pill-area hover state changes.
+/// Keeps passthrough disabled while the user interacts with the tooltip.
+#[tauri::command]
+pub fn set_hover_active(_hovered: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        HOVER_ACTIVE.store(_hovered, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// Background thread that broadcasts audio level events at ~20 FPS while recording.
 /// Both the main window and settings window can subscribe to `audio:level`.
 /// Exits when the main window is destroyed (app shutting down).
@@ -286,11 +320,15 @@ pub fn start_audio_level_emitter(app: &AppHandle) {
     });
 }
 
-/// Background thread that polls cursor position and re-enables cursor events
-/// when the cursor enters the pill's hot zone. Also acts as a watchdog:
-/// periodically re-applies SetLayeredWindowAttributes to prevent the window
-/// from becoming invisible due to WebView2 compositor surface loss.
-/// Only active on Windows.
+/// Background thread that is the SINGLE AUTHORITY for click-through state.
+/// Polls cursor position and toggles WS_EX_TRANSPARENT based on:
+///   - APP_ACTIVE: when true, passthrough is always OFF (pill is interactive)
+///   - Hot zone: when idle and cursor is near the pill, passthrough is OFF
+///   - Otherwise: passthrough is ON (clicks pass through the transparent window)
+///
+/// Also acts as a watchdog: periodically re-applies SetLayeredWindowAttributes
+/// to prevent the window from becoming invisible due to WebView2 compositor
+/// surface loss. Only active on Windows.
 #[allow(unused_variables)]
 pub fn start_cursor_tracker(app: &AppHandle) {
     #[cfg(target_os = "windows")]
@@ -317,56 +355,65 @@ pub fn start_cursor_tracker(app: &AppHandle) {
                 std::thread::sleep(std::time::Duration::from_millis(50));
 
                 if !unsafe { IsWindow(hwnd).as_bool() } {
-                    // Window handle became invalid (app shutting down).
                     break;
                 }
 
                 tick = tick.wrapping_add(1);
 
-                // Watchdog: periodically re-pin layered attributes to prevent
-                // the window from silently becoming invisible.
                 if tick % WATCHDOG_INTERVAL == 0 {
                     unsafe {
                         ensure_layered_visible(hwnd);
                     }
                 }
 
-                if !CURSOR_PASSTHROUGH.load(std::sync::atomic::Ordering::Relaxed) {
-                    continue;
-                }
-
                 if !unsafe { IsWindowVisible(hwnd).as_bool() } {
                     continue;
                 }
 
-                let mut rect = RECT::default();
-                if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
-                    continue;
-                }
+                let active = APP_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+                let passthrough = CURSOR_PASSTHROUGH.load(std::sync::atomic::Ordering::Relaxed);
 
-                let cursor = match cursor_position() {
-                    Some(p) => p,
-                    None => continue,
+                let hovered = HOVER_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+
+                // Determine if passthrough should be ON or OFF.
+                // Passthrough OFF when: active, or JS is hovering, or cursor in hot zone.
+                // Passthrough ON otherwise.
+                let want_passthrough = if active || hovered {
+                    false
+                } else {
+                    // Idle and not hovering: check cursor position.
+                    let mut rect = RECT::default();
+                    if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
+                        continue;
+                    }
+
+                    let cursor = match cursor_position() {
+                        Some(p) => p,
+                        None => continue,
+                    };
+
+                    // Hot zone: tight around the pill (max 90×28 expanded).
+                    let win_w = rect.right - rect.left;
+                    let zone_w = 110;
+                    let zone_h = 40;
+                    let zone_left = rect.left + (win_w - zone_w) / 2;
+                    let zone_right = zone_left + zone_w;
+                    let zone_top = rect.bottom - zone_h;
+                    let zone_bottom = rect.bottom;
+
+                    let in_hot_zone = cursor.0 >= zone_left
+                        && cursor.0 <= zone_right
+                        && cursor.1 >= zone_top
+                        && cursor.1 <= zone_bottom;
+
+                    !in_hot_zone
                 };
 
-                // Hot zone: tight around the pill (max 90×28 expanded).
-                // Small margin so hover is detected just before reaching the pill.
-                let win_w = rect.right - rect.left;
-                let zone_w = 110;
-                let zone_h = 40;
-                let zone_left = rect.left + (win_w - zone_w) / 2;
-                let zone_right = zone_left + zone_w;
-                let zone_top = rect.bottom - zone_h;
-                let zone_bottom = rect.bottom;
-
-                if cursor.0 >= zone_left
-                    && cursor.0 <= zone_right
-                    && cursor.1 >= zone_top
-                    && cursor.1 <= zone_bottom
-                {
-                    unsafe {
-                        toggle_ex_transparent(hwnd, false);
-                    }
+                if want_passthrough && !passthrough {
+                    unsafe { toggle_ex_transparent(hwnd, true); }
+                    CURSOR_PASSTHROUGH.store(true, std::sync::atomic::Ordering::Relaxed);
+                } else if !want_passthrough && passthrough {
+                    unsafe { toggle_ex_transparent(hwnd, false); }
                     CURSOR_PASSTHROUGH.store(false, std::sync::atomic::Ordering::Relaxed);
                 }
             }

@@ -103,6 +103,8 @@ fn main() {
             commands::show_settings_window,
             commands::hide_settings_window,
             commands::set_cursor_passthrough,
+            commands::set_app_active,
+            commands::set_hover_active,
             commands::fetch_provider_models,
             commands::get_transcription_history,
             commands::delete_transcription_history_item,
