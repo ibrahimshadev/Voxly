@@ -82,7 +82,10 @@ pub fn setup(window: &tauri::WebviewWindow) {
         };
 
         // Override hitTest: method
-        builder.add_method(sel!(hitTest:), hit_test_override);
+        builder.add_method(
+            sel!(hitTest:),
+            hit_test_override as extern "C" fn(_, _, _) -> _,
+        );
 
         let new_class = builder.register();
 
