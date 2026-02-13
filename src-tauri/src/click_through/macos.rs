@@ -80,10 +80,7 @@ pub fn setup(window: &tauri::WebviewWindow) {
         };
 
         // Override hitTest: method
-        builder.add_method(
-            sel!(hitTest:),
-            hit_test_override as unsafe extern "C" fn(&AnyObject, Sel, objc2_foundation::NSPoint) -> *mut AnyObject,
-        );
+        builder.add_method(sel!(hitTest:), hit_test_override);
 
         let new_class = builder.register();
 
