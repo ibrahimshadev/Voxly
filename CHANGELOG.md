@@ -1,3 +1,10 @@
+## [1.17.8](https://github.com/ibrahimshadev/Voxly/compare/v1.17.7...v1.17.8) (2026-02-13)
+
+
+### Bug Fixes
+
+* **linux:** add deb, appimage, rpm to bundle targets ([8ebaf58](https://github.com/ibrahimshadev/Voxly/commit/8ebaf58fc28b560c15a65a3b22f8c31feabbf2b7))
+
 ## [1.17.7](https://github.com/ibrahimshadev/Voxly/compare/v1.17.6...v1.17.7) (2026-02-13)
 
 
