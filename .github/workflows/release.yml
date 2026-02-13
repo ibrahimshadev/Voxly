@@ -128,19 +128,26 @@ jobs:
 
       - name: Build Tauri app (Linux)
         if: matrix.platform == 'ubuntu-22.04'
-        run: npx tauri build --target x86_64-unknown-linux-gnu
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
 
       - name: Find Linux bundle artifacts
         if: matrix.platform == 'ubuntu-22.04'
-        run: find src-tauri/target -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) | head -20
+        id: linux-artifacts
+        run: |
+          echo "Searching for artifacts..."
+          find src-tauri/target -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) ! -name "*.sig" ! -name "*.tar.gz" | tee /tmp/artifacts.txt
+          echo "artifact_count=$(wc -l < /tmp/artifacts.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Upload Linux artifacts to release
         if: matrix.platform == 'ubuntu-22.04'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "v${{ needs.release.outputs.new_release_version }}" \
-            $(find src-tauri/target -type f -name "*.deb" ! -name "*.sig") \
-            $(find src-tauri/target -type f -name "*.AppImage" ! -name "*.sig" ! -name "*.tar.gz") \
-            $(find src-tauri/target -type f -name "*.rpm" ! -name "*.sig") \
-            --clobber
+          while IFS= read -r file; do
+            echo "Uploading: $file"
+            gh release upload "v${{ needs.release.outputs.new_release_version }}" "$file" --clobber
+          done < /tmp/artifacts.txt

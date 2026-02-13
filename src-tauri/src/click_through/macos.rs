@@ -12,27 +12,29 @@ static WINDOW_HEIGHT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU6
 
 /// Override `hitTest:` on the content view to enable per-pixel click-through.
 /// Returns nil (transparent) for points outside interactive rects, original result otherwise.
-unsafe extern "C" fn hit_test_override(
+extern "C" fn hit_test_override(
     this: &AnyObject,
     _sel: Sel,
     point: objc2_foundation::NSPoint,
 ) -> *mut AnyObject {
-    // Get the view bounds height for Y-flip
-    let bounds: objc2_foundation::NSRect = msg_send![this, bounds];
-    let view_height = bounds.size.height;
+    unsafe {
+        // Get the view bounds height for Y-flip
+        let bounds: objc2_foundation::NSRect = msg_send![this, bounds];
+        let view_height = bounds.size.height;
 
-    // Flip Y: NSView Y=0 is at bottom, CSS Y=0 is at top
-    let css_x = point.x;
-    let css_y = view_height - point.y;
+        // Flip Y: NSView Y=0 is at bottom, CSS Y=0 is at top
+        let css_x = point.x;
+        let css_y = view_height - point.y;
 
-    if super::point_in_hit_region_css(css_x, css_y) {
-        // Interactive area — call superclass hitTest:
-        let superclass: *const AnyClass = msg_send![this, superclass];
-        let result: *mut AnyObject = msg_send![super(this, &*superclass), hitTest: point];
-        result
-    } else {
-        // Transparent — return nil to pass clicks through
-        std::ptr::null_mut()
+        if super::point_in_hit_region_css(css_x, css_y) {
+            // Interactive area — call superclass hitTest:
+            let superclass: *const AnyClass = msg_send![this, superclass];
+            let result: *mut AnyObject = msg_send![super(this, &*superclass), hitTest: point];
+            result
+        } else {
+            // Transparent — return nil to pass clicks through
+            std::ptr::null_mut()
+        }
     }
 }
 
