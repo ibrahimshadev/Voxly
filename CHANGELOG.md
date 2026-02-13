@@ -1,3 +1,10 @@
+## [1.17.4](https://github.com/ibrahimshadev/Voxly/compare/v1.17.3...v1.17.4) (2026-02-13)
+
+
+### Bug Fixes
+
+* **macos:** upgrade enigo 0.2→0.6 to resolve dual objc2 version conflict ([676e700](https://github.com/ibrahimshadev/Voxly/commit/676e7001f96a637c7e13b0546a62bf5d5ae7d9d1))
+
 ## [1.17.3](https://github.com/ibrahimshadev/Voxly/compare/v1.17.2...v1.17.3) (2026-02-13)
 
 
