@@ -18,7 +18,7 @@ cpal = "0.15"
 hound = "3.5"
 reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls"] }
 arboard = "3"
-enigo = "0.2"
+enigo = "0.6"
 keyring = "3"
 once_cell = "1"
 base64 = "0.22"

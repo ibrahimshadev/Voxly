@@ -130,13 +130,17 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: npx tauri build --target x86_64-unknown-linux-gnu
 
+      - name: Find Linux bundle artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        run: find src-tauri/target -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) | head -20
+
       - name: Upload Linux artifacts to release
         if: matrix.platform == 'ubuntu-22.04'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "v${{ needs.release.outputs.new_release_version }}" \
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb \
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage \
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm \
+            $(find src-tauri/target -type f -name "*.deb" ! -name "*.sig") \
+            $(find src-tauri/target -type f -name "*.AppImage" ! -name "*.sig" ! -name "*.tar.gz") \
+            $(find src-tauri/target -type f -name "*.rpm" ! -name "*.sig") \
             --clobber
