@@ -1,3 +1,10 @@
+## [1.17.7](https://github.com/ibrahimshadev/Voxly/compare/v1.17.6...v1.17.7) (2026-02-13)
+
+
+### Bug Fixes
+
+* **ci:** unify build step, continue-on-error for Linux upload ([754e4d6](https://github.com/ibrahimshadev/Voxly/commit/754e4d6fb09b002c280ca9113f978704144a131d))
+
 ## [1.17.6](https://github.com/ibrahimshadev/Voxly/compare/v1.17.5...v1.17.6) (2026-02-13)
 
 
