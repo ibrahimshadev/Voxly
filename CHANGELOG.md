@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/ibrahimshadev/Voxly/compare/v1.17.8...v1.18.0) (2026-05-20)
+
+
+### Features
+
+* **meetings:** add meeting recording ([aab1b71](https://github.com/ibrahimshadev/Voxly/commit/aab1b71515f4456d70acf5c3939444ae6b39bbc3))
+
 ## [1.17.8](https://github.com/ibrahimshadev/Voxly/compare/v1.17.7...v1.17.8) (2026-02-13)
 
 
