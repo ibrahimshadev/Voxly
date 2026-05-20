@@ -110,12 +110,56 @@ body.window-main {
 
 .pill.recording,
 .pill.transcribing,
+.pill.meeting,
 .pill.error {
   min-width: 90px;
   height: 28px;
   background: rgba(24, 24, 24, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
+}
+
+.pill.meeting {
+  min-width: 118px;
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.meeting-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #f4f4f5;
+}
+
+.meeting-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: meetingPulse 1.1s ease-in-out infinite;
+}
+
+.meeting-label {
+  color: #fca5a5;
+}
+
+.meeting-time {
+  font-variant-numeric: tabular-nums;
+  color: #d4d4d8;
+}
+
+@keyframes meetingPulse {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* Idle dots - tiny indicator */
@@ -213,4 +257,3 @@ body.window-main {
   font-size: 16px;
   font-weight: bold;
 }
-

@@ -9,6 +9,7 @@ mod clipboard;
 mod commands;
 mod domain;
 mod format_text;
+mod meeting;
 mod models_api;
 mod settings;
 mod state;
@@ -107,6 +108,12 @@ fn main() {
             commands::get_transcription_history,
             commands::delete_transcription_history_item,
             commands::clear_transcription_history,
+            commands::start_meeting,
+            commands::stop_meeting,
+            commands::list_meetings,
+            commands::get_meeting,
+            commands::delete_meeting,
+            commands::list_meeting_devices,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

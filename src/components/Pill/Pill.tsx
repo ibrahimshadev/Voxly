@@ -9,6 +9,7 @@ import GearButton from './GearButton';
 type PillProps = {
   status: Accessor<Status>;
   error: Accessor<string>;
+  meetingElapsed?: Accessor<number>;
   onMouseDown: (e: MouseEvent) => void;
   onSettingsClick: () => void;
 };
@@ -23,12 +24,20 @@ export function formatHotkey(hotkey: string): string {
 }
 
 export default function Pill(props: PillProps) {
+  const meetingTime = () => {
+    const total = props.meetingElapsed?.() ?? 0;
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
   return (
     <div
       class="pill"
       classList={{
         recording: props.status() === 'recording',
         transcribing: props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting',
+        meeting: props.status() === 'meeting',
         error: props.status() === 'error',
       }}
       onMouseDown={props.onMouseDown}
@@ -43,6 +52,14 @@ export default function Pill(props: PillProps) {
 
       <Show when={props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting'}>
         <LoadingDots />
+      </Show>
+
+      <Show when={props.status() === 'meeting'}>
+        <div class="meeting-indicator">
+          <span class="meeting-dot" />
+          <span class="meeting-label">REC</span>
+          <span class="meeting-time">{meetingTime()}</span>
+        </div>
       </Show>
 
       <Show when={props.status() === 'done'}>

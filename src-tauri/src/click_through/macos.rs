@@ -1,6 +1,6 @@
+use objc2::declare::ClassBuilder;
 use objc2::runtime::{AnyClass, AnyObject, Sel};
 use objc2::{msg_send, sel};
-use objc2::declare::ClassBuilder;
 use std::ffi::CString;
 use std::sync::atomic::{AtomicBool, Ordering};
 

@@ -30,6 +30,16 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$DATA/dikt/meetings/**",
+          "$CONFIG/dikt/meetings/**",
+          "$HOME/.config/dikt/meetings/**"
+        ]
+      }
+    },
     "windows": [
       {
         "label": "main",

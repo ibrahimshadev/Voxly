@@ -1,6 +1,9 @@
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewWindow};
 
 use crate::domain::types::VocabularyEntry;
+use crate::meeting::{
+    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingUpdate,
+};
 use crate::settings::AppSettings;
 use crate::state::AppState;
 use crate::transcription_history::TranscriptionHistoryItem;
@@ -162,6 +165,91 @@ pub fn clear_transcription_history() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn start_meeting(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    opts: MeetingStartOptions,
+) -> Result<MeetingMeta, String> {
+    let settings = state.manager.get_settings()?;
+    let meta = state.meeting_manager.start(app.clone(), &settings, opts)?;
+    let _ = app.emit(
+        "meeting:update",
+        MeetingUpdate {
+            state: "recording".to_string(),
+            meeting_id: Some(meta.id.clone()),
+            message: None,
+            elapsed_secs: Some(0),
+            file_size_bytes: meta.file_size_bytes,
+        },
+    );
+    let _ = app.emit("meetings-updated", ());
+    Ok(meta)
+}
+
+#[tauri::command]
+pub fn stop_meeting(app: AppHandle, state: State<'_, AppState>) -> Result<MeetingMeta, String> {
+    match state.meeting_manager.stop() {
+        Ok(meta) => {
+            let _ = app.emit(
+                "meeting:update",
+                MeetingUpdate {
+                    state: "stopped".to_string(),
+                    meeting_id: Some(meta.id.clone()),
+                    message: None,
+                    elapsed_secs: meta.duration_secs.map(|value| value.round() as u64),
+                    file_size_bytes: meta.file_size_bytes,
+                },
+            );
+            let _ = app.emit("meetings-updated", ());
+            Ok(meta)
+        }
+        Err(error) => {
+            let _ = app.emit(
+                "meeting:update",
+                MeetingUpdate {
+                    state: "error".to_string(),
+                    meeting_id: None,
+                    message: Some(error.clone()),
+                    elapsed_secs: None,
+                    file_size_bytes: None,
+                },
+            );
+            let _ = app.emit("meetings-updated", ());
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+pub fn list_meetings(state: State<'_, AppState>) -> Result<Vec<MeetingMeta>, String> {
+    state.meeting_manager.list()
+}
+
+#[tauri::command]
+pub fn get_meeting(id: String, state: State<'_, AppState>) -> Result<MeetingDetail, String> {
+    state.meeting_manager.get(&id)
+}
+
+#[tauri::command]
+pub fn delete_meeting(
+    id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.meeting_manager.delete(&id)?;
+    let _ = app.emit("meetings-updated", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_meeting_devices(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<MeetingDevices, String> {
+    Ok(state.meeting_manager.devices(&app))
+}
+
+#[tauri::command]
 pub fn position_window_bottom(window: WebviewWindow) -> Result<(), String> {
     position_window_bottom_internal(&window)
 }
@@ -181,18 +269,16 @@ pub fn hide_settings_window(app: AppHandle) -> Result<(), String> {
 /// Exits when the main window is destroyed (app shutting down).
 pub fn start_audio_level_emitter(app: &AppHandle) {
     let app = app.clone();
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if app.get_webview_window("main").is_none() {
-                break;
-            }
-            if !crate::audio::is_recording() {
-                continue;
-            }
-            let (rms_db, peak_db) = crate::audio::current_level();
-            let _ = app.emit("audio:level", AudioLevelPayload { rms_db, peak_db });
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        if app.get_webview_window("main").is_none() {
+            break;
         }
+        if !crate::audio::is_recording() {
+            continue;
+        }
+        let (rms_db, peak_db) = crate::audio::current_level();
+        let _ = app.emit("audio:level", AudioLevelPayload { rms_db, peak_db });
     });
 }
 

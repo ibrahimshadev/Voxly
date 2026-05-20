@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { Toaster } from 'solid-sonner';
 
-import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, Mode } from './types';
+import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, Mode, MeetingMeta, MeetingDetail, MeetingDevices } from './types';
 import {
   CHAT_MODELS,
   DEFAULT_SETTINGS,
@@ -11,7 +11,7 @@ import {
   MAX_VOCABULARY_ENTRIES
 } from './constants';
 import { DEFAULT_MODES } from './defaultModes';
-import { Layout, SettingsPage, RightPanel, HistoryPage, DictionaryPage, ModesPage } from './components/Settings';
+import { Layout, SettingsPage, RightPanel, HistoryPage, DictionaryPage, ModesPage, MeetingsPage } from './components/Settings';
 import type { HistoryStats } from './components/Settings';
 import { notifyError, notifyInfo, notifySuccess } from './lib/notify';
 
@@ -54,6 +54,11 @@ export default function SettingsApp() {
 
   const [history, setHistory] = createSignal<TranscriptionHistoryItem[]>([]);
   const [historySearchQuery, setHistorySearchQuery] = createSignal('');
+  const [meetings, setMeetings] = createSignal<MeetingMeta[]>([]);
+  const [selectedMeetingId, setSelectedMeetingId] = createSignal<string | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = createSignal<MeetingDetail | null>(null);
+  const [meetingDevices, setMeetingDevices] = createSignal<MeetingDevices | null>(null);
+  const meetingRecording = createMemo(() => meetings().some((meeting) => meeting.status === 'recording'));
 
   const [modelsList, setModelsList] = createSignal<string[]>([]);
   const [modelsLoading, setModelsLoading] = createSignal(false);
@@ -67,6 +72,8 @@ export default function SettingsApp() {
   const [editingVocabularyId, setEditingVocabularyId] = createSignal<string | null>(null);
   const [editorWord, setEditorWord] = createSignal('');
   const [editorReplacements, setEditorReplacements] = createSignal('');
+  let meetingsLoadSeq = 0;
+  let meetingDetailLoadSeq = 0;
 
   type SaveSettingsQuietOptions = {
     notifyOnError?: boolean;
@@ -190,6 +197,142 @@ export default function SettingsApp() {
     }
   };
 
+  const loadMeetings = async () => {
+    const seq = ++meetingsLoadSeq;
+    try {
+      const items = await invoke<MeetingMeta[]>('list_meetings');
+      if (seq !== meetingsLoadSeq) return;
+      setMeetings(items);
+      const selected = selectedMeetingId();
+      if (selected && items.some((item) => item.id === selected)) {
+        await loadMeetingDetail(selected);
+      } else if (items[0]) {
+        setSelectedMeetingId(items[0].id);
+        await loadMeetingDetail(items[0].id);
+      } else {
+        setSelectedMeetingId(null);
+        setSelectedMeeting(null);
+      }
+    } catch (err) {
+      notifyError(err, 'Failed to load meetings.');
+    }
+  };
+
+  const upsertMeetingMeta = (meta: MeetingMeta) => {
+    setMeetings((current) => {
+      const next = [meta, ...current.filter((item) => item.id !== meta.id)];
+      next.sort((a, b) => b.started_at_ms - a.started_at_ms);
+      return next;
+    });
+    setSelectedMeeting((current) => (
+      current?.meta.id === meta.id ? { ...current, meta } : current
+    ));
+  };
+
+  const loadMeetingDetail = async (id: string) => {
+    const seq = ++meetingDetailLoadSeq;
+    try {
+      const detail = await invoke<MeetingDetail>('get_meeting', { id });
+      if (seq !== meetingDetailLoadSeq || selectedMeetingId() !== id) return;
+      setSelectedMeeting(detail);
+    } catch (err) {
+      notifyError(err, 'Failed to load meeting.');
+    }
+  };
+
+  const selectMeeting = (id: string) => {
+    setSelectedMeetingId(id);
+    void loadMeetingDetail(id);
+  };
+
+  const deleteMeeting = async (id: string) => {
+    if (!window.confirm('Delete this meeting recording and its source file?')) return;
+    try {
+      await invoke('delete_meeting', { id });
+      notifySuccess('Meeting deleted.');
+      await loadMeetings();
+    } catch (err) {
+      notifyError(err, 'Failed to delete meeting.');
+    }
+  };
+
+  const loadMeetingDevices = async () => {
+    try {
+      const devices = await invoke<MeetingDevices>('list_meeting_devices');
+      setMeetingDevices(devices);
+      setSettings((current) => ({
+        ...current,
+        meeting_mic_device: current.meeting_mic_device ?? devices.audio_devices[0] ?? null,
+        meeting_system_audio_device:
+          current.meeting_system_audio_device &&
+          devices.system_audio_devices.includes(current.meeting_system_audio_device)
+            ? current.meeting_system_audio_device
+            : null,
+        meeting_record_system_audio:
+          devices.system_audio_devices.length > 0 ? current.meeting_record_system_audio : false,
+      }));
+      if (devices.message) {
+        notifyInfo(devices.message);
+      }
+    } catch (err) {
+      notifyError(err, 'Failed to list meeting devices.');
+    }
+  };
+
+  const startMeetingRecording = async () => {
+    if (!settings().meeting_consent_acknowledged) {
+      notifyError('Acknowledge meeting recording consent before recording.');
+      return;
+    }
+
+    const saved = await saveSettingsQuiet({
+      notifyOnError: true,
+      errorMessage: 'Failed to save meeting capture settings before recording.',
+    });
+    if (!saved) return;
+
+    try {
+      const devices = meetingDevices();
+      const systemAudioDevice =
+        settings().meeting_record_system_audio &&
+        settings().meeting_system_audio_device &&
+        (devices?.system_audio_devices.includes(settings().meeting_system_audio_device) ?? false)
+          ? settings().meeting_system_audio_device
+          : null;
+
+      const meta = await invoke<MeetingMeta>('start_meeting', {
+        opts: {
+          record_video: settings().meeting_record_video,
+          record_mic: settings().meeting_record_mic,
+          record_system_audio: settings().meeting_record_system_audio,
+          video_preset: settings().meeting_video_preset,
+          mic_device: settings().meeting_mic_device,
+          system_audio_device: systemAudioDevice,
+        },
+      });
+      upsertMeetingMeta(meta);
+      setSelectedMeetingId(meta.id);
+      await loadMeetingDetail(meta.id);
+      notifySuccess('Meeting recording started.');
+    } catch (err) {
+      notifyError(err, 'Failed to start meeting recording.');
+    }
+  };
+
+  const stopMeetingRecording = async () => {
+    try {
+      const meta = await invoke<MeetingMeta>('stop_meeting');
+      upsertMeetingMeta(meta);
+      setSelectedMeetingId(meta.id);
+      await loadMeetingDetail(meta.id);
+      notifySuccess('Meeting recording saved.');
+      void loadMeetings();
+    } catch (err) {
+      await loadMeetings();
+      notifyError(err, 'Failed to stop meeting recording.');
+    }
+  };
+
   const deleteHistoryItem = async (id: string) => {
     try {
       await invoke('delete_transcription_history_item', { id });
@@ -282,6 +425,10 @@ export default function SettingsApp() {
     }
     if (tab !== 'dictionary') {
       cancelVocabularyEditor();
+    }
+    if (tab === 'meetings') {
+      void loadMeetings();
+      void loadMeetingDevices();
     }
   };
 
@@ -477,6 +624,8 @@ export default function SettingsApp() {
     await loadSettings();
     setSettingsLoaded(true);
     await loadHistory();
+    await loadMeetings();
+    await loadMeetingDevices();
 
     const unlistenOpened = await listen('settings-window-opened', () => {
       void loadSettings();
@@ -485,6 +634,10 @@ export default function SettingsApp() {
 
     const unlistenHistoryUpdated = await listen('transcription-history-updated', () => {
       void loadHistory();
+    });
+
+    const unlistenMeetingsUpdated = await listen('meetings-updated', () => {
+      void loadMeetings();
     });
 
     const unlistenHistoryError = await listen<string>('transcription-history-error', (event) => {
@@ -501,13 +654,14 @@ export default function SettingsApp() {
     onCleanup(() => {
       void unlistenOpened();
       void unlistenHistoryUpdated();
+      void unlistenMeetingsUpdated();
       void unlistenHistoryError();
       void unlistenAudioLevel();
       clearTimeout(audioLevelTimer);
     });
   });
 
-  const isFullBleedTab = () => activeTab() === 'history' || activeTab() === 'dictionary' || activeTab() === 'modes';
+  const isFullBleedTab = () => activeTab() === 'history' || activeTab() === 'dictionary' || activeTab() === 'modes' || activeTab() === 'meetings';
 
   return (
     <>
@@ -591,6 +745,26 @@ export default function SettingsApp() {
             onResetModes={resetModes}
             onSave={saveModes}
             saving={saving}
+          />
+        </Match>
+        <Match when={activeTab() === 'meetings'}>
+          <MeetingsPage
+            meetings={meetings}
+            selectedMeetingId={selectedMeetingId}
+            selectedMeeting={selectedMeeting}
+            devices={meetingDevices}
+            settings={settings}
+            setSettings={setSettings}
+            onSelectMeeting={selectMeeting}
+            onDeleteMeeting={deleteMeeting}
+            onRefreshDevices={loadMeetingDevices}
+            meetingRecording={meetingRecording}
+            onStartRecording={startMeetingRecording}
+            onStopRecording={stopMeetingRecording}
+            onSaveSettings={() => saveSettingsQuiet({
+              notifyOnError: true,
+              errorMessage: 'Failed to save meeting capture settings.',
+            })}
           />
         </Match>
       </Switch>

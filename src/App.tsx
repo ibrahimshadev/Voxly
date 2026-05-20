@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-import type { DictationUpdate, Settings, Status } from './types';
+import type { DictationUpdate, MeetingMeta, MeetingUpdate, Settings, Status } from './types';
 import { DEFAULT_SETTINGS } from './constants';
 import { Pill, Tooltip } from './components';
 
@@ -14,15 +14,26 @@ export default function App() {
   const [settings, setSettings] = createSignal<Settings>(DEFAULT_SETTINGS);
   const [isHovered, setIsHovered] = createSignal(false);
   const [isSettingsOpen, setIsSettingsOpen] = createSignal(false);
+  const [meetingActive, setMeetingActive] = createSignal(false);
+  const [meetingId, setMeetingId] = createSignal<string | null>(null);
+  const [meetingElapsed, setMeetingElapsed] = createSignal(0);
+  const isActive = () =>
+    status() === 'recording' ||
+    status() === 'transcribing' ||
+    status() === 'formatting' ||
+    status() === 'pasting' ||
+    status() === 'meeting';
+  const isMeetingBusy = () => meetingActive() || status() === 'meeting';
 
   let isHolding = false;
-  let registeredHotkey = DEFAULT_SETTINGS.hotkey;
+  let registeredHotkey: string | null = null;
+  let registeredMeetingHotkey: string | null = null;
+  let lastStoppedMeetingId: string | null = null;
   const hotkeyRegistrationMessage = 'Could not register hotkey - it may be in use by another app. Change it in Settings.';
 
   const registerHotkey = async (hotkey: string): Promise<boolean> => {
-    if (registeredHotkey) {
-      await unregister(registeredHotkey).catch(() => {});
-    }
+    const previousHotkey = registeredHotkey;
+    if (previousHotkey === hotkey) return true;
 
     try {
       await register(hotkey, (event) => {
@@ -32,6 +43,9 @@ export default function App() {
           void handleReleased();
         }
       });
+      if (previousHotkey) {
+        await unregister(previousHotkey).catch(() => {});
+      }
       registeredHotkey = hotkey;
       return true;
     } catch (err) {
@@ -40,7 +54,30 @@ export default function App() {
     }
   };
 
+  const registerMeetingHotkey = async (hotkey: string): Promise<boolean> => {
+    const previousHotkey = registeredMeetingHotkey;
+    if (previousHotkey === hotkey) return true;
+
+    try {
+      await register(hotkey, (event) => {
+        if (event.state === 'Pressed') {
+          void toggleMeetingRecording();
+        }
+      });
+      if (previousHotkey) {
+        await unregister(previousHotkey).catch(() => {});
+      }
+      registeredMeetingHotkey = hotkey;
+      return true;
+    } catch (err) {
+      console.error('Failed to register meeting hotkey:', err);
+      return false;
+    }
+  };
+
   const handlePressed = async () => {
+    if (isMeetingBusy()) return;
+
     if (settings().hotkey_mode === 'hold') {
       if (isHolding || status() === 'recording') return;
       isHolding = true;
@@ -79,6 +116,8 @@ export default function App() {
       try {
         await invoke('start_recording');
       } catch (err) {
+        setMeetingActive(false);
+        setMeetingElapsed(0);
         setStatus('error');
         setError(String(err));
       }
@@ -86,6 +125,7 @@ export default function App() {
   };
 
   const handleReleased = async () => {
+    if (isMeetingBusy()) return;
     if (settings().hotkey_mode !== 'hold' || !isHolding) return;
 
     isHolding = false;
@@ -104,21 +144,78 @@ export default function App() {
     }
   };
 
+  const toggleMeetingRecording = async () => {
+    if (isMeetingBusy()) {
+      try {
+        const meta = await invoke<MeetingMeta>('stop_meeting');
+        lastStoppedMeetingId = meta.id;
+        setMeetingActive(false);
+        setMeetingId(null);
+        setMeetingElapsed(0);
+        setStatus('idle');
+      } catch (err) {
+        setMeetingActive(false);
+        setMeetingId(null);
+        setMeetingElapsed(0);
+        setStatus('error');
+        setError(String(err));
+      }
+      return;
+    }
+
+    if (isActive()) {
+      setError('Finish the current dictation before starting a meeting recording.');
+      return;
+    }
+
+    if (!settings().meeting_consent_acknowledged) {
+      setError('Acknowledge meeting recording consent in Settings before recording.');
+      await invoke('show_settings_window').catch(() => {});
+      return;
+    }
+
+    try {
+      const meta = await invoke<MeetingMeta>('start_meeting', {
+        opts: {
+          record_video: settings().meeting_record_video,
+          record_mic: settings().meeting_record_mic,
+          record_system_audio: settings().meeting_record_system_audio,
+          video_preset: settings().meeting_video_preset,
+          mic_device: settings().meeting_mic_device,
+          system_audio_device: settings().meeting_system_audio_device,
+        },
+      });
+      lastStoppedMeetingId = null;
+      setError('');
+      setMeetingActive(true);
+      setMeetingId(meta.id);
+      setMeetingElapsed(0);
+      setStatus('meeting');
+    } catch (err) {
+      setStatus('error');
+      setError(String(err));
+    }
+  };
+
   const loadSettings = async () => {
     try {
       const result = await invoke<Settings>('get_settings');
       const merged = { ...DEFAULT_SETTINGS, ...result };
       setSettings(merged);
       const registered = await registerHotkey(merged.hotkey);
+      const registeredMeeting = await registerMeetingHotkey(merged.meeting_hotkey);
       if (!registered) {
         setError(hotkeyRegistrationMessage);
+      } else if (!registeredMeeting) {
+        setError('Could not register meeting hotkey - it may be in use by another app. Change it in Settings.');
       } else {
         setError('');
       }
     } catch (err) {
       const settingsError = String(err);
       const registered = await registerHotkey(DEFAULT_SETTINGS.hotkey);
-      if (!registered) {
+      const registeredMeeting = await registerMeetingHotkey(DEFAULT_SETTINGS.meeting_hotkey);
+      if (!registered || !registeredMeeting) {
         setError(`${settingsError}\n${hotkeyRegistrationMessage}`);
         return;
       }
@@ -146,19 +243,14 @@ export default function App() {
     await getCurrentWindow().startDragging();
   };
 
-  const isActive = () =>
-    status() === 'recording' ||
-    status() === 'transcribing' ||
-    status() === 'formatting' ||
-    status() === 'pasting';
-
   onMount(async () => {
     document.body.classList.add('window-main');
     await loadSettings();
 
     const unlistenDictation = await listen<DictationUpdate>('dictation:update', (event) => {
-        const payload = event.payload;
-        switch (payload.state) {
+      if (isMeetingBusy()) return;
+      const payload = event.payload;
+      switch (payload.state) {
         case 'recording': {
           setError('');
           setStatus('recording');
@@ -214,12 +306,39 @@ export default function App() {
       void loadSettings();
     });
 
+    const unlistenMeetingUpdate = await listen<MeetingUpdate>('meeting:update', (event) => {
+      const payload = event.payload;
+      if (payload.state === 'recording') {
+        if (payload.meeting_id && payload.meeting_id === lastStoppedMeetingId) return;
+        if (payload.meeting_id && meetingId() && payload.meeting_id !== meetingId()) return;
+        if (payload.meeting_id) setMeetingId(payload.meeting_id);
+        lastStoppedMeetingId = null;
+        setMeetingActive(true);
+        setMeetingElapsed(payload.elapsed_secs ?? meetingElapsed());
+        setStatus('meeting');
+      } else if (payload.state === 'stopped') {
+        lastStoppedMeetingId = payload.meeting_id ?? meetingId();
+        setMeetingActive(false);
+        setMeetingId(null);
+        setMeetingElapsed(0);
+        if (status() === 'meeting') setStatus('idle');
+      } else if (payload.state === 'error') {
+        lastStoppedMeetingId = payload.meeting_id ?? meetingId();
+        setMeetingActive(false);
+        setMeetingId(null);
+        setMeetingElapsed(0);
+        setStatus('error');
+        setError(payload.message ?? 'Meeting recording failed.');
+      }
+    });
+
     onCleanup(() => {
       document.body.classList.remove('window-main');
       void unlistenDictation();
       void unlistenSettingsOpened();
       void unlistenSettingsClosed();
       void unlistenSettingsUpdated();
+      void unlistenMeetingUpdate();
     });
   });
 
@@ -237,7 +356,7 @@ export default function App() {
     // Window: 360x100, pill centered at bottom with 8px padding.
     // Margin must be large enough for the 50ms cursor tracker to catch
     // an approaching cursor before it reaches the pill (~15px at normal speed).
-    const pillW = active ? 90 : 48;
+    const pillW = status() === 'meeting' ? 118 : active ? 90 : 48;
     const pillH = active ? 28 : 20;
     const pillX = (360 - pillW) / 2;
     const pillY = 100 - 8 - pillH;
@@ -262,7 +381,8 @@ export default function App() {
   });
 
   onCleanup(() => {
-    void unregister(registeredHotkey);
+    if (registeredHotkey) void unregister(registeredHotkey);
+    if (registeredMeetingHotkey) void unregister(registeredMeetingHotkey);
   });
 
   return (
@@ -286,6 +406,7 @@ export default function App() {
         <Pill
           status={status}
           error={error}
+          meetingElapsed={meetingElapsed}
           onMouseDown={startDrag}
           onSettingsClick={toggleSettingsWindow}
         />

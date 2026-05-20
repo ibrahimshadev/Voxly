@@ -72,7 +72,9 @@ pub fn setup(window: &tauri::WebviewWindow) {
 
             tick = tick.wrapping_add(1);
             if tick % WATCHDOG_INTERVAL == 0 {
-                unsafe { ensure_layered_visible(hwnd); }
+                unsafe {
+                    ensure_layered_visible(hwnd);
+                }
             }
 
             if !unsafe { IsWindowVisible(hwnd).as_bool() } {
@@ -102,10 +104,14 @@ pub fn setup(window: &tauri::WebviewWindow) {
             let want_passthrough = !in_hit_region;
 
             if want_passthrough && !passthrough {
-                unsafe { toggle_ex_transparent(hwnd, true); }
+                unsafe {
+                    toggle_ex_transparent(hwnd, true);
+                }
                 PASSTHROUGH.store(true, Ordering::Relaxed);
             } else if !want_passthrough && passthrough {
-                unsafe { toggle_ex_transparent(hwnd, false); }
+                unsafe {
+                    toggle_ex_transparent(hwnd, false);
+                }
                 PASSTHROUGH.store(false, Ordering::Relaxed);
             }
         }
