@@ -1,3 +1,10 @@
+## [1.18.1](https://github.com/ibrahimshadev/Voxly/compare/v1.18.0...v1.18.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* **meetings:** hide ffmpeg console window ([8589cbb](https://github.com/ibrahimshadev/Voxly/commit/8589cbb2f5664f3c444ca72d710b616c5cee7b2f))
+
 # [1.18.0](https://github.com/ibrahimshadev/Voxly/compare/v1.17.8...v1.18.0) (2026-05-20)
 
 
