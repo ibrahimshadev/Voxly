@@ -1,9 +1,9 @@
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use tauri::AppHandle;
 
-use crate::meeting::recorder::{ffmpeg_available, ffmpeg_program};
+use crate::meeting::recorder::{ffmpeg_available, ffmpeg_program, hidden_command};
 use crate::meeting::types::MeetingDevices;
 
 pub fn list_devices(app: &AppHandle) -> MeetingDevices {
@@ -34,7 +34,7 @@ pub fn list_devices(app: &AppHandle) -> MeetingDevices {
         };
     }
 
-    let output = Command::new(ffmpeg_program(app))
+    let output = hidden_command(ffmpeg_program(app))
         .args([
             "-hide_banner",
             "-list_devices",

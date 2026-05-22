@@ -13,6 +13,8 @@ use crate::meeting::types::{MeetingStartOptions, MeetingUpdate};
 const MEETING_AUDIO_GAIN_FILTER: &str = "volume=2.0";
 const MEETING_MIC_GAIN_FILTER: &str = "volume=3.0";
 const MEETING_AUDIO_LIMITER_FILTER: &str = "alimiter=limit=0.95";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub struct RunningRecorder {
     child: Option<Child>,
@@ -168,7 +170,8 @@ fn spawn_ffmpeg(
     ffmpeg: &Path,
     args: &[String],
 ) -> Result<SpawnedFfmpeg, String> {
-    let mut child = Command::new(ffmpeg)
+    let mut command = hidden_command(ffmpeg);
+    let mut child = command
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -310,7 +313,7 @@ fn mux_outputs(
         final_path.to_string_lossy().to_string(),
     ]);
 
-    let output = Command::new(ffmpeg)
+    let output = hidden_command(ffmpeg)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -412,7 +415,7 @@ fn promote_primary_capture(primary_path: &Path, final_path: &Path) -> Result<(),
 }
 
 pub fn ffmpeg_available(app: &AppHandle) -> bool {
-    Command::new(ffmpeg_program(app))
+    hidden_command(ffmpeg_program(app))
         .arg("-version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -420,6 +423,22 @@ pub fn ffmpeg_available(app: &AppHandle) -> bool {
         .map(|status| status.success())
         .unwrap_or(false)
 }
+
+pub fn hidden_command<P: AsRef<std::ffi::OsStr>>(program: P) -> Command {
+    let mut command = Command::new(program);
+    hide_console_window(&mut command);
+    command
+}
+
+#[cfg(windows)]
+fn hide_console_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_console_window(_command: &mut Command) {}
 
 pub fn ffmpeg_program(app: &AppHandle) -> PathBuf {
     if let Ok(path) = std::env::var("VOXLY_FFMPEG") {
