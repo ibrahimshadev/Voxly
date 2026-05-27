@@ -1,3 +1,10 @@
+# [1.19.0](https://github.com/ibrahimshadev/Voxly/compare/v1.18.1...v1.19.0) (2026-05-27)
+
+
+### Features
+
+* **audio:** preprocess dictation audio with ffmpeg ([f3a9440](https://github.com/ibrahimshadev/Voxly/commit/f3a94406bce50ded896b80fe543af2a72392d0e4))
+
 ## [1.18.1](https://github.com/ibrahimshadev/Voxly/compare/v1.18.0...v1.18.1) (2026-05-22)
 
 
