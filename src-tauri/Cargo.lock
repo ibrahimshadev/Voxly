@@ -705,7 +705,7 @@ dependencies = [
 
 [[package]]
 name = "dikt"
-version = "1.17.8"
+version = "1.19.0"
 dependencies = [
  "arboard",
  "async-trait",

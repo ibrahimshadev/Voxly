@@ -197,7 +197,7 @@ async fn send_transcription_request(
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|error| ApiError::transport(error.to_string()))?;
 
-    let text = json["text"].as_str().unwrap_or("").to_string();
+    let text = json["text"].as_str().unwrap_or("").trim().to_string();
     let duration_secs = json["duration"].as_f64();
     let language = json["language"].as_str().map(|s| s.to_lowercase());
     let segments = json["segments"].as_array().map(|arr| {
