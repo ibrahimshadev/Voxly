@@ -4,6 +4,7 @@
 )]
 
 mod audio;
+mod audio_preprocess;
 mod click_through;
 mod clipboard;
 mod commands;
@@ -79,6 +80,7 @@ fn main() {
                 let _ = commands::position_window_bottom_internal(&window);
                 click_through::setup(&window);
             }
+            crate::audio_preprocess::init(app.handle());
             commands::start_audio_level_emitter(app.handle());
 
             if let Some(settings_window) = app.get_webview_window("settings") {
