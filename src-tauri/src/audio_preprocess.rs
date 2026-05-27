@@ -103,12 +103,29 @@ fn process_with_ffmpeg(path: &Path, audio_wav: &[u8]) -> Option<Vec<u8>> {
     }
 
     let wav = wrap_s16le_as_wav(&output.stdout);
+    let in_secs = input_wav_duration_secs(audio_wav).unwrap_or(0.0);
+    let out_secs = output.stdout.len() as f64 / BYTE_RATE as f64;
     eprintln!(
-        "[audio_preprocess] ok in_bytes={} out_bytes={} exit=0",
+        "[audio_preprocess] ok in_bytes={} in_secs={:.2} out_bytes={} out_secs={:.2} exit=0",
         in_bytes,
-        wav.len()
+        in_secs,
+        wav.len(),
+        out_secs
     );
     Some(wav)
+}
+
+fn input_wav_duration_secs(audio_wav: &[u8]) -> Option<f64> {
+    if audio_wav.len() < 44 {
+        return None;
+    }
+
+    let byte_rate = u32::from_le_bytes(audio_wav[28..32].try_into().ok()?) as f64;
+    if byte_rate == 0.0 {
+        return None;
+    }
+
+    Some((audio_wav.len() - 44) as f64 / byte_rate)
 }
 
 fn wrap_s16le_as_wav(pcm: &[u8]) -> Vec<u8> {
