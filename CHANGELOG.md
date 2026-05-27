@@ -1,3 +1,10 @@
+## [1.19.1](https://github.com/ibrahimshadev/Voxly/compare/v1.19.0...v1.19.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **paste:** trim leading space, append trailing ([95337db](https://github.com/ibrahimshadev/Voxly/commit/95337db901cb0a1253bef6c2431ce4de82ddbaae))
+
 # [1.19.0](https://github.com/ibrahimshadev/Voxly/compare/v1.18.1...v1.19.0) (2026-05-27)
 
 
