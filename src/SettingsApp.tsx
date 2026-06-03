@@ -57,6 +57,7 @@ export default function SettingsApp() {
   const [historyTotal, setHistoryTotal] = createSignal(0);
   const [historyPage, setHistoryPage] = createSignal(1);
   const [historyTodayCount, setHistoryTodayCount] = createSignal(0);
+  const [historyTodayAudioSecs, setHistoryTodayAudioSecs] = createSignal(0);
   const [historyTotalAudioSecs, setHistoryTotalAudioSecs] = createSignal(0);
   const [historySearchQuery, setHistorySearchQuery] = createSignal('');
   const [meetings, setMeetings] = createSignal<MeetingMeta[]>([]);
@@ -207,6 +208,7 @@ export default function SettingsApp() {
         todayStartMs: todayStartMs(),
       });
       setHistoryTodayCount(stats.today_count);
+      setHistoryTodayAudioSecs(stats.today_audio_secs);
       setHistoryTotalAudioSecs(stats.total_audio_secs);
     } catch (err) {
       notifyError(err, 'Failed to load history stats.');
@@ -412,6 +414,7 @@ export default function SettingsApp() {
       setHistory([]);
       setHistoryTotal(0);
       setHistoryTodayCount(0);
+      setHistoryTodayAudioSecs(0);
       setHistoryTotalAudioSecs(0);
       notifySuccess('History cleared.');
     } catch (err) {
@@ -755,6 +758,7 @@ export default function SettingsApp() {
             pageSize={HISTORY_PAGE_SIZE}
             totalCount={historyTotal}
             todayCount={historyTodayCount}
+            todayAudioSecs={historyTodayAudioSecs}
             totalAudioSecs={historyTotalAudioSecs}
             searchQuery={historySearchQuery}
             onSearchQueryChange={(value) => setHistorySearchQuery(value)}

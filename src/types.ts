@@ -58,6 +58,7 @@ export type TranscriptionHistoryPage = {
 export type TranscriptionHistoryStats = {
   total_count: number;
   today_count: number;
+  today_audio_secs: number;
   total_audio_secs: number;
 };
 

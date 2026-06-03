@@ -32,6 +32,7 @@ pub struct HistoryPage {
 pub struct HistoryStats {
     pub total_count: i64,
     pub today_count: i64,
+    pub today_audio_secs: f64,
     pub total_audio_secs: f64,
 }
 
@@ -142,10 +143,18 @@ pub fn history_stats(today_start_ms: i64) -> Result<HistoryStats, String> {
                 |row| row.get(0),
             )
             .map_err(|error| format!("Failed to sum transcription audio duration: {error}"))?;
+        let today_audio_secs = conn
+            .query_row(
+                "SELECT COALESCE(SUM(duration_secs), 0.0) FROM transcription_history WHERE created_at_ms >= ?1",
+                params![today_start_ms],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Failed to sum today's transcription audio duration: {error}"))?;
 
         Ok(HistoryStats {
             total_count,
             today_count,
+            today_audio_secs,
             total_audio_secs,
         })
     })

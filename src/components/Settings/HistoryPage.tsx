@@ -43,6 +43,7 @@ export type HistoryPageProps = {
   pageSize: number;
   totalCount: Accessor<number>;
   todayCount: Accessor<number>;
+  todayAudioSecs: Accessor<number>;
   totalAudioSecs: Accessor<number>;
   searchQuery: Accessor<string>;
   onSearchQueryChange: (value: string) => void;
@@ -267,6 +268,13 @@ export default function HistoryPage(props: HistoryPageProps) {
                 <span class="font-semibold text-white">{props.todayCount()}</span>
                 <span class="hidden sm:inline">Today</span>
               </div>
+              <Show when={props.todayAudioSecs() > 0}>
+                <div class="flex items-center gap-1.5 shrink-0" title="Today's Audio Duration">
+                  <Timer size={14} class="text-primary" />
+                  <span class="font-semibold text-white">{formatTotalAudio(props.todayAudioSecs())}</span>
+                  <span class="hidden lg:inline">Today Audio</span>
+                </div>
+              </Show>
               <Show when={props.totalAudioSecs() > 0}>
                 <div class="flex items-center gap-1.5 shrink-0" title="Total Audio Duration">
                   <AudioLines size={14} class="text-primary" />
