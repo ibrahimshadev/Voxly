@@ -112,6 +112,7 @@ fn main() {
             commands::clear_transcription_history,
             commands::start_meeting,
             commands::stop_meeting,
+            commands::transcribe_meeting,
             commands::list_meetings,
             commands::get_meeting,
             commands::delete_meeting,

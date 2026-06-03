@@ -3,7 +3,12 @@ pub mod loopback;
 pub mod manager;
 pub mod recorder;
 pub mod storage;
+pub mod transcribe;
 pub mod types;
 
 pub use manager::MeetingSessionManager;
-pub use types::{MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingUpdate};
+#[allow(unused_imports)]
+pub use types::{
+    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingTranscript,
+    MeetingUpdate, TranscriptStatus, Utterance,
+};

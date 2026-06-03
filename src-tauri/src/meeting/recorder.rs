@@ -136,6 +136,7 @@ impl RunningRecorder {
                 self.has_video,
                 self.has_primary_audio,
                 self.system_audio_offset_ms,
+                transcript_audio_path_for(&self.final_path).as_deref(),
             ) {
                 if let Some(primary_path) = self.primary_path.as_deref() {
                     if primary_path != self.final_path {
@@ -256,6 +257,7 @@ fn mux_outputs(
     has_video: bool,
     has_primary_audio: bool,
     system_audio_offset_ms: i64,
+    transcript_audio_path: Option<&Path>,
 ) -> Result<(), String> {
     let Some(system_audio_path) = system_audio_path else {
         return Ok(());
@@ -327,12 +329,76 @@ fn mux_outputs(
         ));
     }
 
+    if has_primary_audio {
+        if let Some(transcript_audio_path) = transcript_audio_path {
+            if let Err(error) = create_dual_channel_transcript_audio(
+                ffmpeg,
+                transcript_audio_path,
+                primary_path,
+                Some(system_audio_path),
+                system_audio_offset_ms,
+            ) {
+                eprintln!("{error}");
+            }
+        }
+    }
+
     if let Some(primary_path) = primary_path {
         if primary_path != final_path {
             let _ = std::fs::remove_file(primary_path);
         }
     }
     let _ = std::fs::remove_file(system_audio_path);
+    Ok(())
+}
+
+fn create_dual_channel_transcript_audio(
+    ffmpeg: &Path,
+    output_path: &Path,
+    primary_path: Option<&Path>,
+    system_audio_path: Option<&Path>,
+    system_audio_offset_ms: i64,
+) -> Result<(), String> {
+    let (Some(primary_path), Some(system_audio_path)) = (primary_path, system_audio_path) else {
+        return Ok(());
+    };
+
+    let system_filter = audio_offset_filter("[1:a]", "[sys_offset]", system_audio_offset_ms, false);
+    let filter = format!(
+        "[0:a]asetpts=PTS-STARTPTS,{MEETING_MIC_GAIN_FILTER},pan=mono|c0=c0,apad=pad_dur=3[mic];{system_filter};[sys_offset]pan=mono|c0=0.5*c0+0.5*c1,apad=pad_dur=3[sys];[mic][sys]join=inputs=2:channel_layout=stereo[aout]"
+    );
+    let args = vec![
+        "-hide_banner".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        primary_path.to_string_lossy().to_string(),
+        "-i".to_string(),
+        system_audio_path.to_string_lossy().to_string(),
+        "-filter_complex".to_string(),
+        filter,
+        "-map".to_string(),
+        "[aout]".to_string(),
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-b:a".to_string(),
+        "96k".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ];
+
+    let output = hidden_command(ffmpeg)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("Failed to create transcript audio with FFmpeg: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to create transcript audio with FFmpeg: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
     Ok(())
 }
 
@@ -350,16 +416,16 @@ fn signed_offset_ms(value: Instant, baseline: Instant) -> i64 {
 fn audio_offset_filter(input: &str, output: &str, offset_ms: i64, apply_gain: bool) -> String {
     let mut filters = Vec::new();
     if offset_ms > 0 {
+        filters.push("asetpts=PTS-STARTPTS".to_string());
         filters.push(format!("adelay={offset_ms}:all=1"));
     } else if offset_ms < 0 {
         filters.push(format!("atrim=start={:.3}", (-offset_ms as f64) / 1000.0));
         filters.push("asetpts=PTS-STARTPTS".to_string());
+    } else {
+        filters.push("asetpts=PTS-STARTPTS".to_string());
     }
     if apply_gain {
         filters.push(MEETING_AUDIO_GAIN_FILTER.to_string());
-    }
-    if filters.is_empty() {
-        filters.push("anull".to_string());
     }
     format!("{input}{}{output}", filters.join(","))
 }
@@ -367,8 +433,14 @@ fn audio_offset_filter(input: &str, output: &str, offset_ms: i64, apply_gain: bo
 fn mic_system_mix_filter(system_audio_offset_ms: i64) -> String {
     let system_filter = audio_offset_filter("[1:a]", "[sys]", system_audio_offset_ms, false);
     format!(
-        "[0:a]{MEETING_MIC_GAIN_FILTER}[mic];{system_filter};[mic][sys]amix=inputs=2:duration=longest:normalize=0,{MEETING_AUDIO_LIMITER_FILTER}[aout]"
+        "[0:a]asetpts=PTS-STARTPTS,{MEETING_MIC_GAIN_FILTER}[mic];{system_filter};[mic][sys]amix=inputs=2:duration=longest:normalize=0,{MEETING_AUDIO_LIMITER_FILTER}[aout]"
     )
+}
+
+fn transcript_audio_path_for(final_path: &Path) -> Option<PathBuf> {
+    final_path
+        .parent()
+        .map(|dir| dir.join("transcript-audio.m4a"))
 }
 
 fn promote_primary_capture(primary_path: &Path, final_path: &Path) -> Result<(), String> {
@@ -701,7 +773,7 @@ mod tests {
     fn audio_offset_filter_delays_late_system_audio() {
         assert_eq!(
             audio_offset_filter("[1:a]", "[sys]", 750, false),
-            "[1:a]adelay=750:all=1[sys]"
+            "[1:a]asetpts=PTS-STARTPTS,adelay=750:all=1[sys]"
         );
     }
 
@@ -717,7 +789,7 @@ mod tests {
     fn audio_offset_filter_uses_anull_for_zero_offset_without_gain() {
         assert_eq!(
             audio_offset_filter("[1:a]", "[sys]", 0, false),
-            "[1:a]anull[sys]"
+            "[1:a]asetpts=PTS-STARTPTS[sys]"
         );
     }
 
@@ -725,7 +797,7 @@ mod tests {
     fn mic_system_mix_filter_boosts_mic_before_mixing() {
         assert_eq!(
             mic_system_mix_filter(0),
-            "[0:a]volume=3.0[mic];[1:a]anull[sys];[mic][sys]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout]"
+            "[0:a]asetpts=PTS-STARTPTS,volume=3.0[mic];[1:a]asetpts=PTS-STARTPTS[sys];[mic][sys]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout]"
         );
     }
 
@@ -733,7 +805,7 @@ mod tests {
     fn mic_system_mix_filter_preserves_system_offset() {
         assert_eq!(
             mic_system_mix_filter(250),
-            "[0:a]volume=3.0[mic];[1:a]adelay=250:all=1[sys];[mic][sys]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout]"
+            "[0:a]asetpts=PTS-STARTPTS,volume=3.0[mic];[1:a]asetpts=PTS-STARTPTS,adelay=250:all=1[sys];[mic][sys]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout]"
         );
     }
 }

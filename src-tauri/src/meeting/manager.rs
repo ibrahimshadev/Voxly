@@ -100,6 +100,10 @@ impl MeetingSessionManager {
             has_system_audio,
             file_size_bytes: None,
             status: MeetingStatus::Recording,
+            transcript_status: None,
+            transcript_error: None,
+            assemblyai_transcript_id: None,
+            transcript_started_at_ms: None,
         };
 
         let recorder = match RunningRecorder::spawn(app.clone(), id.clone(), &output_path, &options)
@@ -134,20 +138,32 @@ impl MeetingSessionManager {
             return Err("No meeting is recording.".to_string());
         };
 
-        let mut meta = active.meta;
+        let active_meta = active.meta;
         let stop_result = active.recorder.stop();
         let ended_at_ms = storage::now_ms()?;
-        let source_path = storage::source_path(&meta.id)?;
-
-        meta.ended_at_ms = Some(ended_at_ms);
-        meta.duration_secs = Some(active.started.elapsed().as_secs_f64());
-        meta.file_size_bytes = storage::file_size(&source_path);
-        meta.status = if stop_result.is_ok() {
+        let source_path = storage::source_path(&active_meta.id)?;
+        let duration_secs = active.started.elapsed().as_secs_f64();
+        let file_size_bytes = storage::file_size(&source_path);
+        let status = if stop_result.is_ok() {
             MeetingStatus::Recorded
         } else {
             MeetingStatus::Error
         };
-        storage::upsert_meta(meta.clone())?;
+        let meta = storage::update_meta_by_id(&active_meta.id, |item| {
+            item.ended_at_ms = Some(ended_at_ms);
+            item.duration_secs = Some(duration_secs);
+            item.file_size_bytes = file_size_bytes;
+            item.status = status.clone();
+            Ok(())
+        })?
+        .unwrap_or_else(|| {
+            let mut meta = active_meta;
+            meta.ended_at_ms = Some(ended_at_ms);
+            meta.duration_secs = Some(duration_secs);
+            meta.file_size_bytes = file_size_bytes;
+            meta.status = status;
+            meta
+        });
 
         stop_result?;
         Ok(meta)

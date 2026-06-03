@@ -33,6 +33,7 @@ export type Settings = {
   meeting_system_audio_device: string | null;
   meeting_consent_acknowledged: boolean;
   api_key: string;
+  assemblyai_api_key: string;
   provider_api_keys: Partial<Record<Provider, string>>;
   vocabulary: VocabularyEntry[];
   active_mode_id: string | null;
@@ -56,6 +57,7 @@ export type DictationUpdate = {
 };
 
 export type MeetingStatus = 'recording' | 'recorded' | 'error';
+export type TranscriptStatus = 'pending' | 'completed' | 'error';
 
 export type MeetingMeta = {
   id: string;
@@ -68,11 +70,33 @@ export type MeetingMeta = {
   has_system_audio: boolean;
   file_size_bytes?: number;
   status: MeetingStatus;
+  transcript_status?: TranscriptStatus;
+  transcript_error?: string;
+  assemblyai_transcript_id?: string;
+  transcript_started_at_ms?: number;
+};
+
+export type Utterance = {
+  speaker: string;
+  text: string;
+  start_ms: number;
+  end_ms: number;
+  confidence?: number;
+};
+
+export type MeetingTranscript = {
+  utterances: Utterance[];
+  text: string;
+  audio_duration_secs?: number;
+  language_code?: string;
+  provider: string;
+  created_at_ms: number;
 };
 
 export type MeetingDetail = {
   meta: MeetingMeta;
   source_path: string;
+  transcript?: MeetingTranscript;
 };
 
 export type MeetingDevices = {
@@ -85,7 +109,7 @@ export type MeetingDevices = {
 };
 
 export type MeetingUpdate = {
-  state: 'recording' | 'stopped' | 'log' | 'error';
+  state: 'recording' | 'stopped' | 'log' | 'error' | 'transcribing' | 'transcribed' | 'transcription_error';
   meeting_id?: string;
   message?: string;
   elapsed_secs?: number;

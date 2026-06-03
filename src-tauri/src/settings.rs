@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use crate::domain::types::{Mode, VocabularyEntry};
 
 const SERVICE_NAME: &str = "dikt";
+const API_KEY_USER: &str = "api-key";
+const ASSEMBLYAI_KEY_USER: &str = "assemblyai-api-key";
 // Use Tauri's canonical modifier name. This resolves to Ctrl on Windows/Linux and Cmd on macOS.
 const DEFAULT_HOTKEY: &str = "CommandOrControl+Space";
 const DEFAULT_MEETING_HOTKEY: &str = "CommandOrControl+Alt+M";
@@ -41,6 +43,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub meeting_consent_acknowledged: bool,
     pub api_key: String,
+    #[serde(default)]
+    pub assemblyai_api_key: String,
     #[serde(default)]
     pub provider_api_keys: HashMap<String, String>,
     #[serde(default)]
@@ -137,6 +141,8 @@ struct StoredSettings {
     #[serde(default)]
     encrypted_api_key: Option<String>,
     #[serde(default)]
+    encrypted_assemblyai_api_key: Option<String>,
+    #[serde(default)]
     encrypted_provider_api_keys: HashMap<String, String>,
     #[serde(default)]
     vocabulary: Vec<VocabularyEntry>,
@@ -164,6 +170,7 @@ impl Default for AppSettings {
             meeting_system_audio_device: None,
             meeting_consent_acknowledged: false,
             api_key: String::new(),
+            assemblyai_api_key: String::new(),
             provider_api_keys: HashMap::new(),
             vocabulary: Vec::new(),
             active_mode_id: None,
@@ -215,6 +222,7 @@ pub fn load_settings() -> AppSettings {
                     meeting_system_audio_device,
                     meeting_consent_acknowledged,
                     encrypted_api_key: _,
+                    encrypted_assemblyai_api_key: _,
                     encrypted_provider_api_keys,
                     vocabulary,
                     active_mode_id,
@@ -257,6 +265,10 @@ pub fn load_settings() -> AppSettings {
                 .insert(settings.provider.clone(), api_key.clone());
         }
         settings.api_key = api_key;
+    }
+
+    if let Ok(Some(api_key)) = get_assemblyai_api_key() {
+        settings.assemblyai_api_key = api_key;
     }
 
     if should_seed_default_modes && settings.modes.is_empty() {
@@ -305,6 +317,7 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         meeting_system_audio_device: settings.meeting_system_audio_device.clone(),
         meeting_consent_acknowledged: settings.meeting_consent_acknowledged,
         encrypted_api_key: None,
+        encrypted_assemblyai_api_key: None,
         encrypted_provider_api_keys,
         vocabulary: settings.vocabulary.clone(),
         active_mode_id: settings.active_mode_id.clone(),
@@ -322,6 +335,12 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         delete_api_key()?;
     } else {
         store_api_key(&settings.api_key)?;
+    }
+
+    if settings.assemblyai_api_key.trim().is_empty() {
+        delete_assemblyai_api_key()?;
+    } else {
+        store_assemblyai_api_key(&settings.assemblyai_api_key)?;
     }
 
     Ok(())
@@ -404,7 +423,7 @@ fn store_api_key(api_key: &str) -> Result<(), String> {
     store_encrypted_api_key_fallback(api_key)?;
 
     // Also try keyring as primary storage
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, "api-key") {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, API_KEY_USER) {
         let _ = entry.set_password(api_key);
     }
 
@@ -413,7 +432,7 @@ fn store_api_key(api_key: &str) -> Result<(), String> {
 
 fn get_api_key() -> Result<Option<String>, String> {
     // Try keyring first
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, "api-key") {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, API_KEY_USER) {
         match entry.get_password() {
             Ok(value) => return Ok(Some(value)),
             Err(keyring::Error::NoEntry) => {}
@@ -427,7 +446,7 @@ fn get_api_key() -> Result<Option<String>, String> {
 
 fn delete_api_key() -> Result<(), String> {
     // Try to delete from keyring
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, "api-key") {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, API_KEY_USER) {
         let _ = entry.delete_credential();
     }
 
@@ -455,6 +474,7 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
             meeting_system_audio_device: None,
             meeting_consent_acknowledged: false,
             encrypted_api_key: None,
+            encrypted_assemblyai_api_key: None,
             encrypted_provider_api_keys: HashMap::new(),
             vocabulary: Vec::new(),
             active_mode_id: None,
@@ -477,6 +497,7 @@ fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
             meeting_system_audio_device: None,
             meeting_consent_acknowledged: false,
             encrypted_api_key: None,
+            encrypted_assemblyai_api_key: None,
             encrypted_provider_api_keys: HashMap::new(),
             vocabulary: Vec::new(),
             active_mode_id: None,
@@ -517,6 +538,107 @@ fn clear_encrypted_api_key_fallback() {
                 }
             }
         }
+    }
+}
+
+fn store_assemblyai_api_key(api_key: &str) -> Result<(), String> {
+    store_encrypted_assemblyai_api_key_fallback(api_key)?;
+
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, ASSEMBLYAI_KEY_USER) {
+        let _ = entry.set_password(api_key);
+    }
+
+    Ok(())
+}
+
+fn get_assemblyai_api_key() -> Result<Option<String>, String> {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, ASSEMBLYAI_KEY_USER) {
+        match entry.get_password() {
+            Ok(value) => return Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => {}
+            Err(_) => {}
+        }
+    }
+
+    get_encrypted_assemblyai_api_key_fallback()
+}
+
+fn delete_assemblyai_api_key() -> Result<(), String> {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, ASSEMBLYAI_KEY_USER) {
+        let _ = entry.delete_credential();
+    }
+
+    clear_encrypted_assemblyai_api_key_fallback();
+    Ok(())
+}
+
+fn store_encrypted_assemblyai_api_key_fallback(api_key: &str) -> Result<(), String> {
+    let path = settings_path()?;
+    let mut stored = if let Ok(contents) = fs::read_to_string(&path) {
+        serde_json::from_str::<StoredSettings>(&contents)
+            .unwrap_or_else(|_| default_stored_settings())
+    } else {
+        default_stored_settings()
+    };
+
+    stored.encrypted_assemblyai_api_key = Some(encrypt_api_key(api_key));
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let contents = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
+    fs::write(&path, contents).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+fn get_encrypted_assemblyai_api_key_fallback() -> Result<Option<String>, String> {
+    let path = settings_path()?;
+    if let Ok(contents) = fs::read_to_string(&path) {
+        if let Ok(stored) = serde_json::from_str::<StoredSettings>(&contents) {
+            if let Some(encrypted) = stored.encrypted_assemblyai_api_key {
+                return Ok(decrypt_api_key(&encrypted));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn clear_encrypted_assemblyai_api_key_fallback() {
+    if let Ok(path) = settings_path() {
+        if let Ok(contents) = fs::read_to_string(&path) {
+            if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
+                stored.encrypted_assemblyai_api_key = None;
+                if let Ok(new_contents) = serde_json::to_string_pretty(&stored) {
+                    let _ = fs::write(&path, new_contents);
+                }
+            }
+        }
+    }
+}
+
+fn default_stored_settings() -> StoredSettings {
+    StoredSettings {
+        provider: "groq".to_string(),
+        base_url: "https://api.groq.com/openai/v1".to_string(),
+        model: "whisper-large-v3-turbo".to_string(),
+        hotkey: DEFAULT_HOTKEY.to_string(),
+        meeting_hotkey: default_meeting_hotkey(),
+        hotkey_mode: "hold".to_string(),
+        copy_to_clipboard_on_success: false,
+        meeting_record_video: true,
+        meeting_record_mic: true,
+        meeting_record_system_audio: true,
+        meeting_video_preset: default_meeting_video_preset(),
+        meeting_mic_device: None,
+        meeting_system_audio_device: None,
+        meeting_consent_acknowledged: false,
+        encrypted_api_key: None,
+        encrypted_assemblyai_api_key: None,
+        encrypted_provider_api_keys: HashMap::new(),
+        vocabulary: Vec::new(),
+        active_mode_id: None,
+        modes: Vec::new(),
     }
 }
 

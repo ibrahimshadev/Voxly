@@ -41,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   meeting_system_audio_device: null,
   meeting_consent_acknowledged: false,
   api_key: '',
+  assemblyai_api_key: '',
   provider_api_keys: {},
   vocabulary: [],
   active_mode_id: null,

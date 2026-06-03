@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { Toaster } from 'solid-sonner';
 
-import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, Mode, MeetingMeta, MeetingDetail, MeetingDevices } from './types';
+import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingUpdate } from './types';
 import {
   CHAT_MODELS,
   DEFAULT_SETTINGS,
@@ -333,6 +333,17 @@ export default function SettingsApp() {
     }
   };
 
+  const transcribeMeeting = async (id: string) => {
+    try {
+      const meta = await invoke<MeetingMeta>('transcribe_meeting', { id });
+      upsertMeetingMeta(meta);
+      notifyInfo('Meeting transcription started.');
+      void loadMeetings();
+    } catch (err) {
+      notifyError(err, 'Failed to start meeting transcription.');
+    }
+  };
+
   const deleteHistoryItem = async (id: string) => {
     try {
       await invoke('delete_transcription_history_item', { id });
@@ -640,6 +651,33 @@ export default function SettingsApp() {
       void loadMeetings();
     });
 
+    const unlistenMeetingUpdate = await listen<MeetingUpdate>('meeting:update', (event) => {
+      const payload = event.payload;
+      const id = payload.meeting_id;
+      if (!id) return;
+
+      if (payload.state === 'transcribing') {
+        setMeetings((current) =>
+          current.map((meeting) =>
+            meeting.id === id ? { ...meeting, transcript_status: 'pending', transcript_error: undefined } : meeting
+          )
+        );
+        setSelectedMeeting((current) =>
+          current?.meta.id === id
+            ? { ...current, meta: { ...current.meta, transcript_status: 'pending', transcript_error: undefined } }
+            : current
+        );
+      } else if (payload.state === 'transcribed') {
+        notifySuccess('Meeting transcript ready.');
+        void loadMeetings();
+        if (selectedMeetingId() === id) void loadMeetingDetail(id);
+      } else if (payload.state === 'transcription_error') {
+        notifyError(payload.message ?? 'Meeting transcription failed.');
+        void loadMeetings();
+        if (selectedMeetingId() === id) void loadMeetingDetail(id);
+      }
+    });
+
     const unlistenHistoryError = await listen<string>('transcription-history-error', (event) => {
       notifyError(event.payload);
       void loadHistory();
@@ -655,6 +693,7 @@ export default function SettingsApp() {
       void unlistenOpened();
       void unlistenHistoryUpdated();
       void unlistenMeetingsUpdated();
+      void unlistenMeetingUpdate();
       void unlistenHistoryError();
       void unlistenAudioLevel();
       clearTimeout(audioLevelTimer);
@@ -761,6 +800,7 @@ export default function SettingsApp() {
             meetingRecording={meetingRecording}
             onStartRecording={startMeetingRecording}
             onStopRecording={stopMeetingRecording}
+            onTranscribeMeeting={transcribeMeeting}
             onSaveSettings={() => saveSettingsQuiet({
               notifyOnError: true,
               errorMessage: 'Failed to save meeting capture settings.',

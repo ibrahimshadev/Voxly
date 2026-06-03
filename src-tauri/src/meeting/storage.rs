@@ -1,11 +1,20 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::meeting::types::{MeetingDetail, MeetingMeta, MeetingStatus};
+use once_cell::sync::Lazy;
+
+use crate::meeting::types::{
+    MeetingDetail, MeetingMeta, MeetingStatus, MeetingTranscript, TranscriptStatus,
+};
 
 const INDEX_FILE: &str = "index.json";
 const SOURCE_FILE: &str = "recording.mp4";
+const TRANSCRIPT_FILE: &str = "transcript.json";
+const TRANSCRIPT_AUDIO_FILE: &str = "transcript-audio.m4a";
+const STALE_PENDING_TRANSCRIPT_MS: i64 = 6 * 60 * 60 * 1000;
+static STORAGE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 pub fn now_ms() -> Result<i64, String> {
     Ok(SystemTime::now()
@@ -34,6 +43,14 @@ pub fn meeting_dir(id: &str) -> Result<PathBuf, String> {
 
 pub fn source_path(id: &str) -> Result<PathBuf, String> {
     Ok(meeting_dir(id)?.join(SOURCE_FILE))
+}
+
+pub fn transcript_path(id: &str) -> Result<PathBuf, String> {
+    Ok(meeting_dir(id)?.join(TRANSCRIPT_FILE))
+}
+
+pub fn transcript_audio_path(id: &str) -> Result<PathBuf, String> {
+    Ok(meeting_dir(id)?.join(TRANSCRIPT_AUDIO_FILE))
 }
 
 pub fn create_meeting_folder(id: &str) -> Result<PathBuf, String> {
@@ -66,11 +83,15 @@ pub fn load_index() -> Result<Vec<MeetingMeta>, String> {
 }
 
 pub fn load_index_reconciled(active_id: Option<&str>) -> Result<Vec<MeetingMeta>, String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
     let mut items = load_index()?;
     let ended_at_ms = now_ms()?;
-    let changed = reconcile_orphaned_recordings(&mut items, active_id, ended_at_ms, |id| {
+    let mut changed = reconcile_orphaned_recordings(&mut items, active_id, ended_at_ms, |id| {
         Ok(file_size(&source_path(id)?))
     })?;
+    changed |= reconcile_stale_pending_transcripts(&mut items, ended_at_ms);
 
     if changed {
         save_index(&items)?;
@@ -118,7 +139,29 @@ pub fn save_index(items: &[MeetingMeta]) -> Result<(), String> {
     atomic_write(&path, contents.as_bytes())
 }
 
+pub fn update_meta_by_id<F>(id: &str, patch: F) -> Result<Option<MeetingMeta>, String>
+where
+    F: FnOnce(&mut MeetingMeta) -> Result<(), String>,
+{
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    let mut items = load_index()?;
+    let Some(item) = items.iter_mut().find(|item| item.id == id) else {
+        return Ok(None);
+    };
+
+    patch(item)?;
+    let updated = item.clone();
+    items.sort_by(|a, b| b.started_at_ms.cmp(&a.started_at_ms));
+    save_index(&items)?;
+    Ok(Some(updated))
+}
+
 pub fn upsert_meta(meta: MeetingMeta) -> Result<(), String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
     let mut items = load_index()?;
     if let Some(existing) = items.iter_mut().find(|item| item.id == meta.id) {
         *existing = meta;
@@ -138,10 +181,54 @@ pub fn get_detail_reconciled(id: &str, active_id: Option<&str>) -> Result<Meetin
     Ok(MeetingDetail {
         meta,
         source_path: source.to_string_lossy().to_string(),
+        transcript: load_transcript(id).ok().flatten(),
     })
 }
 
+pub fn save_transcript(id: &str, transcript: &MeetingTranscript) -> Result<(), String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    if !load_index()?.iter().any(|item| item.id == id) {
+        return Err("Meeting no longer exists.".to_string());
+    }
+    let dir = meeting_dir(id)?;
+    if !dir.exists() {
+        return Err("Meeting folder no longer exists.".to_string());
+    }
+    let path = transcript_path(id)?;
+    let contents = serde_json::to_string_pretty(transcript).map_err(|e| e.to_string())?;
+    atomic_write_existing_parent(&path, contents.as_bytes())
+}
+
+pub fn load_transcript(id: &str) -> Result<Option<MeetingTranscript>, String> {
+    let path = transcript_path(id)?;
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read meeting transcript '{}': {error}",
+                path.display()
+            ))
+        }
+    };
+    serde_json::from_str(&contents).map(Some).map_err(|error| {
+        format!(
+            "Failed to parse meeting transcript '{}': {error}",
+            path.display()
+        )
+    })
+}
+
+pub fn meeting_exists(id: &str) -> Result<bool, String> {
+    Ok(load_index()?.iter().any(|item| item.id == id))
+}
+
 pub fn delete_meeting(id: &str) -> Result<(), String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
     let mut items = load_index()?;
     items.retain(|item| item.id != id);
     save_index(&items)?;
@@ -182,6 +269,63 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn atomic_write_existing_parent(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Path '{}' has no parent directory", path.display()))?;
+    if !parent.exists() {
+        return Err(format!(
+            "Parent directory '{}' does not exist",
+            parent.display()
+        ));
+    }
+
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, bytes).map_err(|e| {
+        format!(
+            "Failed to write temporary file '{}': {e}",
+            tmp_path.display()
+        )
+    })?;
+    if let Err(error) = fs::rename(&tmp_path, path) {
+        let _ = fs::remove_file(path);
+        fs::rename(&tmp_path, path).map_err(|retry_error| {
+            format!(
+                "Failed to move '{}' into place (rename error: {error}, retry error: {retry_error})",
+                path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn reconcile_stale_pending_transcripts(items: &mut [MeetingMeta], now_ms: i64) -> bool {
+    let mut changed = false;
+
+    for item in items {
+        if !matches!(item.transcript_status, Some(TranscriptStatus::Pending)) {
+            continue;
+        }
+        let Some(started_at_ms) = item.transcript_started_at_ms else {
+            item.transcript_status = Some(TranscriptStatus::Error);
+            item.transcript_error =
+                Some("Transcription was interrupted. Retry to start again.".to_string());
+            changed = true;
+            continue;
+        };
+        if now_ms.saturating_sub(started_at_ms) > STALE_PENDING_TRANSCRIPT_MS {
+            item.transcript_status = Some(TranscriptStatus::Error);
+            item.transcript_error = Some(
+                "Transcription did not complete before the app stopped. Retry to start again."
+                    .to_string(),
+            );
+            changed = true;
+        }
+    }
+
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +342,10 @@ mod tests {
             has_system_audio: false,
             file_size_bytes: None,
             status,
+            transcript_status: None,
+            transcript_error: None,
+            assemblyai_transcript_id: None,
+            transcript_started_at_ms: None,
         }
     }
 
@@ -235,5 +383,30 @@ mod tests {
         assert!(!changed);
         assert!(matches!(items[0].status, MeetingStatus::Recording));
         assert_eq!(items[0].file_size_bytes, None);
+    }
+
+    #[test]
+    fn stale_pending_transcript_is_marked_error() {
+        let mut items = vec![MeetingMeta {
+            transcript_status: Some(TranscriptStatus::Pending),
+            transcript_started_at_ms: Some(1_000),
+            ..meta("pending", MeetingStatus::Recorded)
+        }];
+
+        let changed = reconcile_stale_pending_transcripts(
+            &mut items,
+            1_000 + STALE_PENDING_TRANSCRIPT_MS + 1,
+        );
+
+        assert!(changed);
+        assert!(matches!(
+            items[0].transcript_status,
+            Some(TranscriptStatus::Error)
+        ));
+        assert!(items[0]
+            .transcript_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("Retry"));
     }
 }

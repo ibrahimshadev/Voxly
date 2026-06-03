@@ -9,6 +9,14 @@ pub enum MeetingStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptStatus {
+    Pending,
+    Completed,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeetingMeta {
     pub id: String,
     pub title: String,
@@ -23,12 +31,41 @@ pub struct MeetingMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_size_bytes: Option<u64>,
     pub status: MeetingStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_status: Option<TranscriptStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assemblyai_transcript_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_started_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeetingDetail {
     pub meta: MeetingMeta,
     pub source_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<MeetingTranscript>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeetingTranscript {
+    pub utterances: Vec<Utterance>,
+    pub text: String,
+    pub audio_duration_secs: Option<f64>,
+    pub language_code: Option<String>,
+    pub provider: String,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Utterance {
+    pub speaker: String,
+    pub text: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

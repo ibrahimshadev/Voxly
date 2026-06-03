@@ -1,8 +1,28 @@
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createMemo, createSignal } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { CheckCircle2, HardDrive, Play, RefreshCcw, Square, Trash2, Video } from 'lucide-solid';
+import {
+  AlertTriangle,
+  Bot,
+  Calendar,
+  Clock,
+  Copy,
+  Download,
+  FileText,
+  HardDrive,
+  Loader2,
+  Mic,
+  Monitor,
+  Play,
+  RefreshCcw,
+  Square,
+  Trash2,
+  UploadCloud,
+  Video,
+  Volume2,
+} from 'lucide-solid';
 import type { MeetingDetail, MeetingDevices, MeetingMeta, Settings } from '../../types';
+import { notifyError, notifySuccess } from '../../lib/notify';
 import Select from './Select';
 
 type MeetingsPageProps = {
@@ -18,6 +38,7 @@ type MeetingsPageProps = {
   meetingRecording: Accessor<boolean>;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  onTranscribeMeeting: (id: string) => void;
   onSaveSettings: () => Promise<boolean>;
 };
 
@@ -27,6 +48,8 @@ const VIDEO_PRESETS = [
   { value: 'screen_1080p_30', label: 'Screen 1080p / 30 fps' },
   { value: 'audio_only', label: 'Audio only' },
 ];
+
+type TranscriptTab = 'transcript' | 'summary';
 
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString([], {
@@ -69,7 +92,76 @@ function formatHotkeyForDisplay(hotkey: string) {
     .replace(/\+/g, ' + ');
 }
 
+function formatSpeakerLabel(speaker: string) {
+  return speaker === 'You' || speaker === 'System' ? speaker : `Speaker ${speaker}`;
+}
+
+function transcriptStatusLabel(meeting: MeetingMeta) {
+  if (meeting.transcript_status === 'pending') return 'Transcribing';
+  if (meeting.transcript_status === 'completed') return 'Transcribed';
+  if (meeting.transcript_status === 'error') return 'Error';
+  if (meeting.status === 'recording') return 'Recording';
+  if (meeting.status === 'error') return 'Error';
+  return 'Ready';
+}
+
+function statusClass(meeting: MeetingMeta) {
+  const label = transcriptStatusLabel(meeting);
+  if (label === 'Ready' || label === 'Transcribed') {
+    return 'border-primary/35 bg-primary/10 text-primary';
+  }
+  if (label === 'Transcribing') {
+    return 'border-zinc-500/40 bg-zinc-500/10 text-zinc-300';
+  }
+  if (label === 'Recording') {
+    return 'border-red-400/35 bg-red-500/10 text-red-300';
+  }
+  return 'border-amber-400/35 bg-amber-500/10 text-amber-300';
+}
+
+function ToggleRow(props: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={props.disabled}
+      onClick={() => props.onChange(!props.checked)}
+      class={`rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5 flex items-center justify-between gap-3 text-left transition-colors ${
+        props.disabled
+          ? 'opacity-50 cursor-not-allowed'
+          : 'hover:bg-white/[0.04] cursor-pointer'
+      }`}
+    >
+      <span class="min-w-0 flex flex-col gap-1">
+        <span class="text-sm font-medium text-gray-200 leading-tight">{props.label}</span>
+        <Show when={props.description}>
+          <span class="text-[11px] text-gray-500 leading-snug">{props.description}</span>
+        </Show>
+      </span>
+      <span
+        class={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${
+          props.checked ? 'bg-primary' : 'bg-white/10'
+        }`}
+      >
+        <span
+          class={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+            props.checked ? 'translate-x-[18px]' : 'translate-x-[3px]'
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
 export default function MeetingsPage(props: MeetingsPageProps) {
+  let videoRef: HTMLVideoElement | undefined;
+  const [activeTab, setActiveTab] = createSignal<TranscriptTab>('transcript');
+
   const audioOptions = createMemo(() => {
     const devices = props.devices()?.audio_devices ?? [];
     return [
@@ -100,42 +192,69 @@ export default function MeetingsPage(props: MeetingsPageProps) {
     return `${convertFileSrc(meeting.source_path)}?v=${encodeURIComponent(version)}`;
   });
 
-  const storageUsed = createMemo(() =>
-    props.meetings().reduce((total, meeting) => total + (meeting.file_size_bytes ?? 0), 0)
-  );
-
   const applyChange = (updater: (current: Settings) => Settings) => {
     props.setSettings(updater);
     void props.onSaveSettings();
   };
 
+  const transcriptText = (meeting: MeetingDetail) => {
+    const transcript = meeting.transcript;
+    if (!transcript) return '';
+    if (transcript.utterances.length === 0) return transcript.text;
+    return transcript.utterances
+      .map((utterance) => `${formatSpeakerLabel(utterance.speaker)}: ${utterance.text}`)
+      .join('\n');
+  };
+
+  const copyTranscript = async (meeting: MeetingDetail) => {
+    try {
+      await navigator.clipboard.writeText(transcriptText(meeting));
+      notifySuccess('Transcript copied.');
+    } catch (err) {
+      notifyError(err, 'Failed to copy transcript.');
+    }
+  };
+
+  const seekTo = (startMs: number) => {
+    if (!videoRef) return;
+    videoRef.currentTime = Math.max(0, startMs / 1000);
+    void videoRef.play().catch(() => undefined);
+  };
+
+  const canTranscribe = (meeting: MeetingDetail) =>
+    props.settings().assemblyai_api_key.trim() &&
+    props.settings().meeting_consent_acknowledged &&
+    (meeting.meta.has_mic || meeting.meta.has_system_audio) &&
+    meeting.meta.status === 'recorded' &&
+    meeting.meta.transcript_status !== 'pending';
+
   return (
-    <div class="flex-1 flex flex-col overflow-hidden">
-      <div class="flex-none px-6 sm:px-10 py-5 border-b border-white/5">
-        <div class="max-w-6xl mx-auto w-full flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-          <div class="flex flex-col gap-2">
-            <div class="flex items-baseline gap-4">
-              <h1 class="text-white text-3xl font-bold tracking-tight">Meetings</h1>
-              <div class="flex items-center gap-1.5 text-sm text-gray-400 border-l border-white/10 pl-4">
-                <Video size={14} class="text-primary" />
-                <span class="font-semibold text-white">{props.meetings().length}</span>
-                <span class="hidden sm:inline">saved</span>
-              </div>
-              <div class="flex items-center gap-1.5 text-sm text-gray-400 border-l border-white/10 pl-4">
-                <HardDrive size={14} class="text-primary" />
-                <span class="font-semibold text-white">{formatBytes(storageUsed())}</span>
-              </div>
-            </div>
-            <p class="text-zinc-500 text-sm">Windows screen and call capture with the MP4 kept as source of truth.</p>
+    <div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-background-dark">
+      <header class="shrink-0 border-b border-white/5 bg-background-dark px-6 lg:px-10 py-5">
+        <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <div>
+            <h1 class="text-white text-[30px] leading-9 font-bold tracking-tight">Meetings</h1>
+            <p class="mt-1 text-sm text-zinc-500">
+              Record MP4 meetings and generate speaker-labeled transcripts.
+            </p>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={props.onRefreshDevices}
+              class="h-9 w-10 rounded-lg border border-white/10 bg-surface-dark text-zinc-500 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+              title="Refresh devices"
+            >
+              <RefreshCcw size={16} />
+            </button>
             <Show
               when={props.meetingRecording()}
               fallback={
                 <button
                   type="button"
                   onClick={props.onStartRecording}
-                  class="bg-red-500 hover:bg-red-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  class="h-9 px-5 rounded-lg bg-primary text-black hover:bg-primary-dark transition-colors text-sm font-semibold flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={!props.settings().meeting_consent_acknowledged}
                 >
                   <Video size={15} />
@@ -146,62 +265,78 @@ export default function MeetingsPage(props: MeetingsPageProps) {
               <button
                 type="button"
                 onClick={props.onStopRecording}
-                class="bg-white text-zinc-950 hover:bg-zinc-200 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer"
+                class="h-9 px-5 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 transition-colors text-sm font-semibold flex items-center gap-2 cursor-pointer"
               >
                 <Square size={14} />
                 Stop Recording
               </button>
             </Show>
-            <button
-              type="button"
-              onClick={props.onRefreshDevices}
-              class="px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <RefreshCcw size={15} />
-              Refresh Devices
-            </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div class="flex-1 overflow-hidden">
-        <div class="max-w-6xl mx-auto h-full grid grid-cols-[360px_minmax(0,1fr)] gap-0 border-x border-white/5">
-          <aside class="border-r border-white/5 overflow-y-auto scrollbar-hide bg-[#111111]/60">
-            <div class="p-4 border-b border-white/5 flex flex-col gap-4">
+      <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[45%_55%] overflow-hidden">
+        <section class="min-h-0 flex flex-col border-r border-white/5 bg-background-dark overflow-hidden">
+          <div class="shrink-0 border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
+            <div class="mb-3">
+              <h2 class="text-lg font-semibold text-white">Capture Configuration</h2>
+            </div>
+
+            <div class="space-y-3">
               <Show
-                when={props.settings().meeting_consent_acknowledged}
-                fallback={
-                  <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-                    <p class="text-sm font-semibold text-amber-200">Consent required</p>
-                    <p class="text-xs text-amber-100/70 mt-1 leading-relaxed">
-                      You are responsible for getting permission from meeting participants before recording.
-                    </p>
-                    <label class="flex items-start gap-2 mt-3 text-xs text-amber-50/80 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        class="mt-0.5 accent-primary"
-                        checked={props.settings().meeting_consent_acknowledged}
-                        onChange={(e) =>
-                          applyChange((current) => ({
-                            ...current,
-                            meeting_consent_acknowledged: (e.target as HTMLInputElement).checked,
-                          }))
-                        }
-                      />
-                      I understand and will obtain required consent.
-                    </label>
-                  </div>
-                }
+                when={!props.settings().meeting_consent_acknowledged}
               >
-                <div class="rounded-lg border border-primary/20 bg-primary/10 p-3 flex items-center gap-2 text-primary text-sm">
-                  <CheckCircle2 size={16} />
-                  Consent acknowledged
-                </div>
+                  <div class="border border-amber-500/30 bg-amber-500/10 p-3">
+                    <div class="flex items-start gap-2">
+                      <AlertTriangle size={15} class="mt-0.5 shrink-0 text-amber-300" />
+                      <div>
+                        <p class="text-sm font-semibold text-amber-200">Consent required</p>
+                        <p class="mt-1 text-xs text-amber-100/70 leading-relaxed">
+                          You are responsible for getting permission from meeting participants before recording.
+                        </p>
+                        <label class="mt-3 flex items-start gap-2 text-xs text-amber-50/80 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            class="mt-0.5 accent-primary"
+                            checked={props.settings().meeting_consent_acknowledged}
+                            onChange={(e) =>
+                              applyChange((current) => ({
+                                ...current,
+                                meeting_consent_acknowledged: (e.target as HTMLInputElement).checked,
+                              }))
+                            }
+                          />
+                          I understand and will obtain required consent.
+                        </label>
+                      </div>
+                    </div>
+                  </div>
               </Show>
 
-              <div class="grid grid-cols-1 gap-3">
-                <div class="flex flex-col gap-2">
-                  <label class="text-xs font-medium text-gray-500 uppercase tracking-wide">Meeting Hotkey</label>
+              <div>
+                <label class="text-xs text-gray-500 font-medium ml-1">
+                  AssemblyAI API key
+                </label>
+                <input
+                  type="password"
+                  value={props.settings().assemblyai_api_key}
+                  onInput={(e) =>
+                    props.setSettings((current) => ({
+                      ...current,
+                      assemblyai_api_key: (e.target as HTMLInputElement).value,
+                    }))
+                  }
+                  onBlur={() => void props.onSaveSettings()}
+                  placeholder="AssemblyAI key for meeting transcripts"
+                  class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                />
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs text-gray-500 font-medium ml-1">
+                    Meeting hotkey
+                  </label>
                   <input
                     type="text"
                     value={props.settings().meeting_hotkey}
@@ -212,17 +347,21 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       }))
                     }
                     onBlur={() => void props.onSaveSettings()}
-                    class="w-full bg-input-bg border border-white/15 rounded-lg py-2 px-3 text-sm text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                    class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 hover:border-primary/50 transition-colors"
                   />
-                  <p class="text-xs text-zinc-500">On Windows this is {formatHotkeyForDisplay(props.settings().meeting_hotkey)}.</p>
+                  <p class="mt-1 text-[11px] text-zinc-600">
+                    Windows: {formatHotkeyForDisplay(props.settings().meeting_hotkey)}
+                  </p>
                 </div>
 
-                <div class="flex flex-col gap-2">
-                  <label class="text-xs font-medium text-gray-500 uppercase tracking-wide">Preset</label>
+                <div>
+                  <label class="text-xs text-gray-500 font-medium ml-1">
+                    Video source
+                  </label>
                   <Select
                     value={props.settings().meeting_video_preset}
                     options={VIDEO_PRESETS}
-                    class="px-3"
+                    class="mt-1.5 px-3 py-1.5"
                     onChange={(value) =>
                       applyChange((current) => ({
                         ...current,
@@ -232,44 +371,17 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     }
                   />
                 </div>
+              </div>
 
-                <label class="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-zinc-300">
-                  <span>Record screen</span>
-                  <input
-                    type="checkbox"
-                    class="accent-primary"
-                    checked={props.settings().meeting_record_video}
-                    disabled={props.settings().meeting_video_preset === 'audio_only'}
-                    onChange={(e) =>
-                      applyChange((current) => ({
-                        ...current,
-                        meeting_record_video: (e.target as HTMLInputElement).checked,
-                      }))
-                    }
-                  />
-                </label>
-
-                <label class="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-zinc-300">
-                  <span>Record microphone</span>
-                  <input
-                    type="checkbox"
-                    class="accent-primary"
-                    checked={props.settings().meeting_record_mic}
-                    onChange={(e) =>
-                      applyChange((current) => ({
-                        ...current,
-                        meeting_record_mic: (e.target as HTMLInputElement).checked,
-                      }))
-                    }
-                  />
-                </label>
-
-                <div class="flex flex-col gap-2">
-                  <label class="text-xs font-medium text-gray-500 uppercase tracking-wide">Microphone Device</label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs text-gray-500 font-medium ml-1">
+                    Microphone
+                  </label>
                   <Select
                     value={props.settings().meeting_mic_device ?? ''}
                     options={audioOptions()}
-                    class="px-3"
+                    class="mt-1.5 px-3 py-1.5"
                     onChange={(value) =>
                       applyChange((current) => ({
                         ...current,
@@ -279,27 +391,14 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   />
                 </div>
 
-                <label class="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-zinc-300">
-                  <span>Record system audio</span>
-                  <input
-                    type="checkbox"
-                    class="accent-primary"
-                    checked={props.settings().meeting_record_system_audio}
-                    onChange={(e) =>
-                      applyChange((current) => ({
-                        ...current,
-                        meeting_record_system_audio: (e.target as HTMLInputElement).checked,
-                      }))
-                    }
-                  />
-                </label>
-
-                <div class="flex flex-col gap-2">
-                  <label class="text-xs font-medium text-gray-500 uppercase tracking-wide">System Audio Device</label>
+                <div>
+                  <label class="text-xs text-gray-500 font-medium ml-1">
+                    System audio
+                  </label>
                   <Select
                     value={props.settings().meeting_system_audio_device ?? ''}
                     options={systemAudioOptions()}
-                    class="px-3"
+                    class="mt-1.5 px-3 py-1.5"
                     onChange={(value) =>
                       applyChange((current) => ({
                         ...current,
@@ -307,157 +406,480 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       }))
                     }
                   />
-                  <p class="text-xs text-zinc-500 leading-relaxed">
-                    Default Windows output records the speaker or headphones currently playing YouTube or meeting audio.
-                  </p>
-                  <Show when={props.devices() && !props.devices()!.has_system_audio}>
-                    <div class="text-xs text-amber-300/80 leading-relaxed space-y-1">
-                      <p>
-                        No Windows playback output was returned for WASAPI loopback capture. System audio records from the selected speaker/headphone output, not from DirectShow microphone devices.
-                      </p>
-                    </div>
-                  </Show>
-                  <Show when={props.devices()?.message}>
-                    <p class="text-xs text-red-300/80 leading-relaxed">{props.devices()?.message}</p>
-                  </Show>
-                  <Show when={(props.devices()?.audio_devices.length ?? 0) === 0}>
-                    <p class="text-xs text-red-300/80 leading-relaxed">
-                      No audio devices were returned. Check Windows microphone permission for desktop apps, then refresh devices.
-                    </p>
-                  </Show>
                 </div>
               </div>
-            </div>
 
-            <div class="divide-y divide-white/5">
-              <Show
-                when={props.meetings().length > 0}
-                fallback={
-                  <div class="p-6 text-sm text-zinc-500 leading-relaxed">
-                    No meetings recorded yet. Use Start Recording or the Windows hotkey after saving capture settings.
-                  </div>
-                }
-              >
-                <For each={props.meetings()}>
-                  {(meeting) => (
-                    <button
-                      type="button"
-                      onClick={() => props.onSelectMeeting(meeting.id)}
-                      class={`w-full text-left p-4 transition-colors ${
-                        props.selectedMeetingId() === meeting.id
-                          ? 'bg-primary/10'
-                          : 'hover:bg-white/[0.03]'
-                      }`}
-                    >
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="text-sm font-semibold text-zinc-200 truncate">{meeting.title}</p>
-                          <p class="text-xs text-zinc-500 mt-1">{formatDate(meeting.started_at_ms)}</p>
-                        </div>
-                        <span class={`text-[10px] uppercase tracking-wide px-2 py-1 rounded border ${
-                          meeting.status === 'recording'
-                            ? 'border-red-400/30 text-red-300 bg-red-500/10'
-                            : meeting.status === 'error'
-                              ? 'border-amber-400/30 text-amber-300 bg-amber-500/10'
-                              : 'border-white/10 text-zinc-400 bg-white/[0.03]'
-                        }`}>
-                          {meeting.status}
-                        </span>
-                      </div>
-                      <div class="mt-3 flex items-center gap-3 text-xs text-zinc-500">
-                        <span>{formatDuration(meeting.duration_secs)}</span>
-                        <span class="w-1 h-1 rounded-full bg-zinc-700" />
-                        <span>{formatBytes(meeting.file_size_bytes)}</span>
-                        <span class="w-1 h-1 rounded-full bg-zinc-700" />
-                        <span>{meeting.has_video ? 'Video' : 'Audio'}</span>
-                      </div>
-                    </button>
-                  )}
-                </For>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <ToggleRow
+                  label="Record Screen"
+                  description="MP4 video"
+                  checked={props.settings().meeting_record_video}
+                  disabled={props.settings().meeting_video_preset === 'audio_only'}
+                  onChange={(checked) =>
+                    applyChange((current) => ({
+                      ...current,
+                      meeting_record_video: checked,
+                    }))
+                  }
+                />
+                <ToggleRow
+                  label="Record Mic"
+                  description="Your channel"
+                  checked={props.settings().meeting_record_mic}
+                  onChange={(checked) =>
+                    applyChange((current) => ({
+                      ...current,
+                      meeting_record_mic: checked,
+                    }))
+                  }
+                />
+                <ToggleRow
+                  label="System Audio"
+                  description="Playback"
+                  checked={props.settings().meeting_record_system_audio}
+                  onChange={(checked) =>
+                    applyChange((current) => ({
+                      ...current,
+                      meeting_record_system_audio: checked,
+                    }))
+                  }
+                />
+              </div>
+
+              <Show when={props.devices() && !props.devices()!.has_system_audio}>
+                <p class="text-xs text-amber-300/80 leading-relaxed">
+                  No Windows playback output was returned for WASAPI loopback capture. System audio records from the selected speaker/headphone output.
+                </p>
+              </Show>
+              <Show when={props.devices()?.message}>
+                <p class="text-xs text-red-300/80 leading-relaxed">{props.devices()?.message}</p>
+              </Show>
+              <Show when={(props.devices()?.audio_devices.length ?? 0) === 0}>
+                <p class="text-xs text-red-300/80 leading-relaxed">
+                  No audio devices were returned. Check Windows microphone permission for desktop apps, then refresh devices.
+                </p>
               </Show>
             </div>
-          </aside>
+          </div>
 
-          <main class="overflow-y-auto scrollbar-hide">
+          <div class="shrink-0 border-b border-border-dark bg-[#111111] px-4 py-3 flex items-center justify-between">
+            <h3 class="text-[11px] font-mono uppercase tracking-wider text-zinc-500">Saved Meetings</h3>
+            <span class="border border-border-dark bg-background-dark px-2 py-1 text-[10px] font-mono text-zinc-500">
+              {props.meetings().length} items
+            </span>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-y-auto scrollbar-hide">
             <Show
-              when={props.selectedMeeting()}
+              when={props.meetings().length > 0}
               fallback={
-                <div class="h-full flex items-center justify-center">
-                  <div class="text-center max-w-sm">
-                    <div class="mx-auto w-12 h-12 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-zinc-500">
-                      <Play size={20} />
-                    </div>
-                    <h2 class="mt-4 text-lg font-semibold text-zinc-200">Select a recording</h2>
-                    <p class="mt-2 text-sm text-zinc-500">Saved MP4 files play here. Derived transcripts can be added from this source later.</p>
-                  </div>
+                <div class="p-6 text-sm text-zinc-500 leading-relaxed">
+                  No meetings recorded yet. Use Start Recording or the Windows hotkey after saving capture settings.
                 </div>
               }
             >
-              {(meeting) => (
-                <div class="p-6 lg:p-8">
-                  <div class="flex items-start justify-between gap-4 mb-5">
-                    <div>
-                      <h2 class="text-xl font-semibold text-white">{meeting().meta.title}</h2>
-                      <p class="text-sm text-zinc-500 mt-1">
-                        {formatDate(meeting().meta.started_at_ms)} · {formatDuration(meeting().meta.duration_secs)} · {formatBytes(meeting().meta.file_size_bytes)}
-                      </p>
-                    </div>
+              <For each={props.meetings()}>
+                {(meeting) => {
+                  const selected = () => props.selectedMeetingId() === meeting.id;
+                  return (
                     <button
                       type="button"
-                      onClick={() => props.onDeleteMeeting(meeting().meta.id)}
-                      class="w-9 h-9 rounded-lg hover:bg-red-500/10 flex items-center justify-center text-zinc-500 hover:text-red-300 transition-colors cursor-pointer"
-                      title="Delete meeting"
+                      onClick={() => props.onSelectMeeting(meeting.id)}
+                      class={`group relative w-full text-left border-b border-border-dark p-4 transition-colors cursor-pointer ${
+                        selected() ? 'bg-surface-hover' : 'hover:bg-surface-hover/70'
+                      }`}
                     >
-                      <Trash2 size={17} />
+                      <span
+                        class={`absolute left-0 top-0 bottom-0 w-1 transition-colors ${
+                          selected() ? 'bg-primary' : 'bg-transparent group-hover:bg-border-dark'
+                        }`}
+                      />
+                      <div class="pl-1">
+                        <div class="flex items-start justify-between gap-3">
+                          <p class="min-w-0 text-sm font-semibold text-zinc-100 truncate">{meeting.title}</p>
+                          <span class={`shrink-0 border px-2 py-0.5 text-[10px] font-mono uppercase ${statusClass(meeting)}`}>
+                            {transcriptStatusLabel(meeting)}
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-zinc-500">
+                          <span class="flex items-center gap-1">
+                            <Calendar size={13} />
+                            {formatDate(meeting.started_at_ms)}
+                          </span>
+                          <span class="flex items-center gap-1">
+                            <Clock size={13} />
+                            {formatDuration(meeting.duration_secs)}
+                          </span>
+                          <span>{formatBytes(meeting.file_size_bytes)}</span>
+                        </div>
+                        <div class="mt-3 flex items-center gap-2 text-zinc-600">
+                          <Mic size={14} class={meeting.has_mic ? 'text-primary' : ''} />
+                          <Monitor size={14} class={meeting.has_video ? 'text-primary' : ''} />
+                          <Volume2 size={14} class={meeting.has_system_audio ? 'text-primary' : ''} />
+                        </div>
+                      </div>
                     </button>
-                  </div>
+                  );
+                }}
+              </For>
+            </Show>
+          </div>
+        </section>
 
-                  <div class="rounded-lg overflow-hidden border border-white/10 bg-black/30 min-h-[260px] flex items-center justify-center">
-                    <Show
-                      keyed
-                      when={selectedSourceUrl()}
-                      fallback={
-                        <div class="px-6 py-10 text-center">
+        <main class="min-h-0 flex flex-col bg-[#111111] overflow-hidden">
+          <Show
+            when={props.selectedMeeting()}
+            fallback={
+              <div class="h-full flex items-center justify-center bg-background-dark">
+                <div class="text-center max-w-sm px-6">
+                  <div class="mx-auto w-12 h-12 border border-border-dark bg-surface-dark flex items-center justify-center text-zinc-500">
+                    <Play size={20} />
+                  </div>
+                  <h2 class="mt-4 text-lg font-semibold text-zinc-200">Select a recording</h2>
+                  <p class="mt-2 text-sm text-zinc-500">
+                    Saved MP4 files play here. Transcripts and summaries stay attached to the selected recording.
+                  </p>
+                </div>
+              </div>
+            }
+          >
+            {(meeting) => (
+              <>
+                <section class="relative h-[40%] min-h-[300px] border-b border-border-dark bg-background-dark">
+                  <Show
+                    keyed
+                    when={selectedSourceUrl()}
+                    fallback={
+                      <div class="h-full flex items-center justify-center px-6 text-center">
+                        <div>
                           <p class="text-sm font-medium text-zinc-300">
                             {meeting().meta.status === 'recording' ? 'Recording in progress' : 'Recording file is not ready'}
                           </p>
                           <p class="mt-1 text-xs text-zinc-500">
-                            {meeting().meta.status === 'recording' ? 'Playback will appear after the meeting is stopped.' : 'The saved source file has no playable media yet.'}
+                            {meeting().meta.status === 'recording'
+                              ? 'Playback will appear after the meeting is stopped.'
+                              : 'The saved source file has no playable media yet.'}
                           </p>
                         </div>
-                      }
-                    >
-                      {(src) => (
-                        <video
-                          src={src}
-                          controls
-                          preload="metadata"
-                          class="w-full max-h-[520px] bg-[#0b0b0b]"
-                        />
-                      )}
-                    </Show>
+                      </div>
+                    }
+                  >
+                    {(src) => (
+                      <video
+                        ref={videoRef}
+                        src={src}
+                        controls
+                        preload="metadata"
+                        class="h-full w-full bg-[#0b0b0b] object-contain"
+                      />
+                    )}
+                  </Show>
+                </section>
+
+                <section class="shrink-0 border-b border-border-dark bg-[#111111] px-4 lg:px-5 py-3">
+                  <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <h2 class="text-base font-semibold text-white truncate">{meeting().meta.title}</h2>
+                      <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-zinc-500">
+                        <span class="flex items-center gap-1">
+                          <Calendar size={13} />
+                          {formatDate(meeting().meta.started_at_ms)}
+                        </span>
+                        <span class="flex items-center gap-1">
+                          <Clock size={13} />
+                          {formatDuration(meeting().meta.duration_secs)}
+                        </span>
+                        <span class="flex items-center gap-1">
+                          <HardDrive size={13} />
+                          {formatBytes(meeting().meta.file_size_bytes)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <p class="hidden 2xl:block max-w-[190px] text-right text-[10px] leading-snug text-zinc-500">
+                        Uploads meeting audio to AssemblyAI cloud.
+                      </p>
+                      <div class="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => props.onTranscribeMeeting(meeting().meta.id)}
+                          disabled={!canTranscribe(meeting())}
+                          class="h-8 px-4 rounded-lg bg-primary text-black hover:bg-primary-dark transition-colors text-xs font-semibold flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <UploadCloud size={15} />
+                          {meeting().meta.transcript_status === 'error' ? 'Retry' : 'Transcribe'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => props.onDeleteMeeting(meeting().meta.id)}
+                          class="h-8 w-8 rounded-lg border border-white/10 text-zinc-500 hover:text-red-300 hover:border-red-400/30 hover:bg-red-500/10 transition-colors cursor-pointer flex items-center justify-center"
+                          title="Delete meeting"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="min-h-0 flex-1 flex flex-col bg-background-dark overflow-hidden">
+                  <div class="shrink-0 border-b border-border-dark bg-[#111111] px-4 lg:px-5 pt-2 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                    <div class="flex items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('transcript')}
+                        class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 transition-colors ${
+                          activeTab() === 'transcript'
+                            ? 'border-primary text-primary'
+                            : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                        }`}
+                      >
+                        <FileText size={14} />
+                        Transcript
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('summary')}
+                        class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 transition-colors ${
+                          activeTab() === 'summary'
+                            ? 'border-primary text-primary'
+                            : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                        }`}
+                      >
+                        <Bot size={14} />
+                        Summary
+                      </button>
+                    </div>
+
+                    <div class="flex items-center gap-2 pb-2">
+                      <Show when={meeting().transcript}>
+                        <button
+                          type="button"
+                          onClick={() => void copyTranscript(meeting())}
+                          class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Copy size={13} />
+                          Copy
+                        </button>
+                      </Show>
+                      <button
+                        type="button"
+                        disabled
+                        class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-600 flex items-center gap-1.5 cursor-not-allowed"
+                      >
+                        <Download size={13} />
+                        Export
+                      </button>
+                    </div>
                   </div>
 
-                  <div class="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div class="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-                      <p class="text-xs text-zinc-500 uppercase tracking-wide">Mic</p>
-                      <p class="mt-1 text-sm text-zinc-200">{meeting().meta.has_mic ? 'Captured' : 'Off'}</p>
-                    </div>
-                    <div class="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-                      <p class="text-xs text-zinc-500 uppercase tracking-wide">System Audio</p>
-                      <p class="mt-1 text-sm text-zinc-200">{meeting().meta.has_system_audio ? 'Captured' : 'Off'}</p>
-                    </div>
-                    <div class="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-                      <p class="text-xs text-zinc-500 uppercase tracking-wide">Source File</p>
-                      <p class="mt-1 text-sm text-zinc-200 truncate" title={meeting().source_path}>{meeting().source_path}</p>
-                    </div>
+                  <div class="min-h-0 flex-1 overflow-y-auto scrollbar-hide">
+                    <Show when={activeTab() === 'transcript'} fallback={<SummaryPanel meeting={meeting()} />}>
+                      <TranscriptPanel
+                        meeting={meeting()}
+                        settings={props.settings}
+                        onTranscribeMeeting={props.onTranscribeMeeting}
+                        seekTo={seekTo}
+                      />
+                    </Show>
                   </div>
-                </div>
-              )}
-            </Show>
-          </main>
-        </div>
+                </section>
+              </>
+            )}
+          </Show>
+        </main>
       </div>
+    </div>
+  );
+}
+
+function TranscriptPanel(props: {
+  meeting: MeetingDetail;
+  settings: Accessor<Settings>;
+  onTranscribeMeeting: (id: string) => void;
+  seekTo: (startMs: number) => void;
+}) {
+  const canTranscribe =
+    props.settings().assemblyai_api_key.trim() &&
+    props.settings().meeting_consent_acknowledged &&
+    (props.meeting.meta.has_mic || props.meeting.meta.has_system_audio) &&
+    props.meeting.meta.status === 'recorded' &&
+    props.meeting.meta.transcript_status !== 'pending';
+
+  return (
+    <Show
+      when={props.meeting.transcript}
+      fallback={
+        <div class="p-5 lg:p-6">
+          <Show
+            when={props.meeting.meta.transcript_status === 'pending'}
+            fallback={
+              <Show
+                when={props.meeting.meta.transcript_status === 'error'}
+                fallback={
+                  <div class="border border-border-dark bg-[#111111] p-4 flex items-center justify-between gap-4">
+                    <div class="min-w-0">
+                      <p class="text-sm text-zinc-300">No transcript yet.</p>
+                      <p class="mt-1 text-xs text-zinc-500">
+                        Speaker labels work best with clear voices and limited crosstalk.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => props.onTranscribeMeeting(props.meeting.meta.id)}
+                      disabled={!canTranscribe}
+                      class="shrink-0 px-4 py-2 bg-primary text-black hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <UploadCloud size={14} />
+                      Transcribe
+                    </button>
+                  </div>
+                }
+              >
+                <div class="border border-amber-400/20 bg-amber-500/10 p-4 flex items-start justify-between gap-4">
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium text-amber-200">Transcription failed</p>
+                    <p class="mt-1 text-xs text-amber-100/70 leading-relaxed">
+                      {props.meeting.meta.transcript_error ?? 'AssemblyAI returned an error.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => props.onTranscribeMeeting(props.meeting.meta.id)}
+                    disabled={!props.settings().assemblyai_api_key.trim()}
+                    class="shrink-0 px-4 py-2 text-xs font-mono font-bold text-amber-100 hover:bg-amber-400/10 border border-amber-300/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </Show>
+            }
+          >
+            <div class="border border-primary/20 bg-primary/10 p-4 flex items-center gap-3 text-primary">
+              <Loader2 size={16} class="animate-spin" />
+              <div>
+                <p class="text-sm font-medium">Transcribing...</p>
+                <p class="mt-1 text-xs text-primary/80">
+                  AssemblyAI is processing the extracted meeting audio.
+                </p>
+              </div>
+            </div>
+          </Show>
+        </div>
+      }
+    >
+      {(transcript) => (
+        <div class="p-5 lg:p-6">
+          <Show
+            when={transcript().utterances.length > 0}
+            fallback={
+              <div class="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                {transcript().text}
+              </div>
+            }
+          >
+            <div class="space-y-6">
+              <For each={transcript().utterances}>
+                {(utterance) => (
+                  <button
+                    type="button"
+                    onClick={() => props.seekTo(utterance.start_ms)}
+                    class="group w-full text-left grid grid-cols-[72px_minmax(0,1fr)] gap-4 hover:bg-white/[0.03] transition-colors cursor-pointer p-2 -m-2"
+                  >
+                    <span class="pt-1 text-right text-[11px] font-mono text-zinc-600">
+                      {formatDuration(utterance.start_ms / 1000)}
+                    </span>
+                    <span class="min-w-0">
+                      <span
+                        class={`inline-flex border px-1.5 py-0.5 text-[10px] font-mono uppercase ${
+                          formatSpeakerLabel(utterance.speaker) === 'You'
+                            ? 'border-primary/30 bg-primary/10 text-primary'
+                            : 'border-border-dark bg-[#111111] text-zinc-500'
+                        }`}
+                      >
+                        {formatSpeakerLabel(utterance.speaker)}
+                      </span>
+                      <span class="mt-2 block text-sm leading-relaxed text-zinc-300 group-hover:text-zinc-100">
+                        {utterance.text}
+                      </span>
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      )}
+    </Show>
+  );
+}
+
+function SummaryPanel(props: { meeting: MeetingDetail }) {
+  const hasTranscript = () => Boolean(props.meeting.transcript);
+  const firstYouUtterance = () =>
+    props.meeting.transcript?.utterances.find((utterance) => formatSpeakerLabel(utterance.speaker) === 'You')?.text;
+
+  return (
+    <div class="p-5 lg:p-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+        <div>
+          <h3 class="text-sm font-semibold text-white">AI meeting summary</h3>
+          <p class="mt-1 text-xs text-zinc-500">
+            Summary generation is staged here for the next workflow after transcription.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={!hasTranscript()}
+          class="px-4 py-2 border border-border-dark text-xs font-mono font-bold text-primary hover:bg-primary hover:text-black transition-colors disabled:text-zinc-600 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+        >
+          Generate Summary
+        </button>
+      </div>
+
+      <Show
+        when={hasTranscript()}
+        fallback={
+          <div class="border border-border-dark bg-[#111111] p-4 text-sm text-zinc-400">
+            Transcribe this meeting first. The summary tab will use the transcript to extract key points, action items, decisions, and follow-ups.
+          </div>
+        }
+      >
+        <div class="grid grid-cols-1 2xl:grid-cols-2 gap-5">
+          <section class="border border-border-dark bg-[#111111] p-4">
+            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Key points</h4>
+            <ul class="mt-3 space-y-2 text-sm text-zinc-300 leading-relaxed">
+              <li>Transcript captured {props.meeting.transcript?.utterances.length ?? 0} speaker-labeled utterances.</li>
+              <li>{firstYouUtterance() ?? 'Use Generate Summary to extract the meeting narrative.'}</li>
+            </ul>
+          </section>
+
+          <section class="border border-border-dark bg-[#111111] p-4">
+            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Action items</h4>
+            <div class="mt-3 space-y-3">
+              <div class="border-l-2 border-border-dark pl-3">
+                <p class="text-sm text-zinc-300">Generate a structured summary from this transcript.</p>
+                <p class="mt-1 text-[10px] font-mono text-zinc-600">OWNER: You · STATUS: Pending</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="border border-border-dark bg-[#111111] p-4">
+            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Decisions</h4>
+            <p class="mt-3 text-sm text-zinc-500 leading-relaxed">
+              No generated decisions yet.
+            </p>
+          </section>
+
+          <section class="border border-border-dark bg-[#111111] p-4">
+            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Follow-ups</h4>
+            <p class="mt-3 text-sm text-zinc-500 leading-relaxed">
+              Follow-ups will appear here after summary generation is implemented.
+            </p>
+          </section>
+        </div>
+      </Show>
     </div>
   );
 }

@@ -221,6 +221,30 @@ pub fn stop_meeting(app: AppHandle, state: State<'_, AppState>) -> Result<Meetin
 }
 
 #[tauri::command]
+pub fn transcribe_meeting(
+    id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<MeetingMeta, String> {
+    let settings = state.manager.get_settings()?;
+    if !settings.meeting_consent_acknowledged {
+        return Err("Acknowledge meeting consent in Settings first.".to_string());
+    }
+    let api_key = settings.assemblyai_api_key.trim().to_string();
+    if api_key.is_empty() {
+        return Err("Add your AssemblyAI API key in Meeting settings.".to_string());
+    }
+
+    let meta = crate::meeting::transcribe::begin(&id)?;
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::meeting::transcribe::run(app2, api_key, id).await;
+    });
+    let _ = app.emit("meetings-updated", ());
+    Ok(meta)
+}
+
+#[tauri::command]
 pub fn list_meetings(state: State<'_, AppState>) -> Result<Vec<MeetingMeta>, String> {
     state.meeting_manager.list()
 }

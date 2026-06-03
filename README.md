@@ -18,6 +18,13 @@ Hold a hotkey, speak, release. Your words are transcribed, cleaned up by AI, and
 4. Hold your hotkey (default: `Ctrl+Space`) and speak
 5. Release to transcribe and auto-paste
 
+Optional meeting workflow:
+1. Open Settings -> Meetings
+2. Acknowledge the recording consent notice
+3. Choose screen, microphone, and system-audio capture settings
+4. Click **Start Recording** or use the meeting hotkey (default: `Ctrl+Alt+M`)
+5. Stop the recording, then click **Transcribe** to create a speaker-labelled transcript with AssemblyAI
+
 ## Features
 
 ### Voice Transcription
@@ -51,6 +58,25 @@ Useful for names, technical jargon, or domain-specific terms that speech-to-text
 
 Every transcription is saved locally with a timestamp. The History tab shows recent transcriptions with relative timestamps (e.g. "5m ago") and exact times on hover. If a mode was active, both the original and formatted versions are shown. You can copy any past transcription to the clipboard or delete individual entries.
 
+### Meeting Recording
+
+The Meetings tab records longer calls or screen sessions as local MP4 files. On Windows, Voxly can capture:
+- Screen video
+- Microphone audio
+- System audio from the selected Windows playback device
+
+Meeting recordings are saved under `%APPDATA%\dikt\meetings\<meeting-id>\` on Windows. Each meeting keeps `recording.mp4` as the source of truth. When both microphone and system audio are captured, Voxly also keeps an aligned two-channel `transcript-audio.m4a` for more reliable meeting transcription:
+- Channel 1: microphone / You
+- Channel 2: system audio
+
+You are responsible for getting permission from meeting participants before recording.
+
+### Meeting Transcripts
+
+Meeting transcription is manual. After stopping a recording, click **Transcribe** in the meeting detail view. Voxly extracts or reuses meeting audio, uploads it to AssemblyAI, polls until the transcript is ready, and saves `transcript.json` beside the recording.
+
+When separate mic/system channels are available, Voxly uses AssemblyAI multichannel transcription so transcript rows can be labelled as **You** and **System**. If only mixed audio is available, Voxly falls back to speaker diarization with generic speaker labels. Obvious duplicate system-audio bleed picked up by the microphone is filtered from multichannel transcripts.
+
 ### Floating Overlay
 
 A minimal pill sits at the bottom of your screen showing the current state: recording, transcribing, formatting (when a mode is active), or done. It stays on top of all windows and passes through mouse clicks when not hovered.
@@ -69,19 +95,26 @@ Voxly minimizes to the system tray. Right-click for quick access to Settings, Re
 
 Voxly uses the OpenAI-compatible API format. Any provider that supports `/audio/transcriptions` (for speech-to-text) and `/chat/completions` (for modes) will work with the Custom provider option.
 
+Meeting transcripts use [AssemblyAI](https://www.assemblyai.com/) separately from the dictation provider. Add an AssemblyAI API key in Settings -> Meetings to enable meeting transcription.
+
 ## Platform Support
 
 Voxly is built to be cross-platform (Windows, macOS, Linux), but has only been tested on **Windows** so far. If you're on macOS or Linux and want to help test, bug reports and feedback are very welcome.
 
 ## Security & Data Storage
 
-- **Audio** is recorded locally and sent to your configured API endpoint for transcription. No audio is stored on disk.
+- **Short dictation audio** is recorded locally and sent to your configured API endpoint for transcription. It is not saved as a reusable recording.
+- **Meeting recordings** are stored locally as MP4 files under the meetings directory until you delete them.
+- **Meeting transcription audio and transcripts** are stored beside each meeting recording. Clicking **Transcribe** uploads extracted meeting audio to AssemblyAI.
 - **Transcription history** is stored in a local JSON file alongside settings.
 - **Paste behavior**: Voxly writes the transcript to the system clipboard and triggers paste (`Ctrl+V` on Windows/Linux, `Cmd+V` on macOS). Clipboard managers may record these changes.
 - **Settings** (provider, base URL, model, hotkey, vocabulary, modes) are stored in a local JSON file:
   - Windows: `%APPDATA%\dikt\settings.json`
   - Linux/macOS: `$XDG_CONFIG_HOME/dikt/settings.json` (or `~/.config/dikt/settings.json`)
-- **API key** is stored using the OS credential manager via `keyring` when available. If unavailable, Voxly falls back to an obfuscated value in `settings.json`.
+- **Meeting files** are stored in:
+  - Windows: `%APPDATA%\dikt\meetings\`
+  - Linux/macOS: `$XDG_CONFIG_HOME/dikt/meetings/` (or `~/.config/dikt/meetings/`)
+- **API keys** are stored using the OS credential manager via `keyring` when available. If unavailable, Voxly falls back to obfuscated values in `settings.json`.
 
 ## Development
 
@@ -93,6 +126,7 @@ Voxly is built to be cross-platform (Windows, macOS, Linux), but has only been t
 
 **Windows:**
 - Visual Studio Build Tools with C++ workload
+- FFmpeg available on `PATH`, bundled with the app, or pointed to by `VOXLY_FFMPEG`
 
 **macOS:**
 - Xcode Command Line Tools: `xcode-select --install`
@@ -128,7 +162,8 @@ npm run tauri build
 - **Frontend**: [SolidJS](https://solidjs.com/) + Tailwind CSS
 - **Backend**: Rust
 - **Audio**: [cpal](https://github.com/RustAudio/cpal)
-- **Transcription**: OpenAI Whisper API (cloud)
+- **Short dictation transcription**: OpenAI-compatible Whisper/transcription API (cloud)
+- **Meeting transcription**: AssemblyAI async transcription API (cloud)
 - **Formatting**: OpenAI-compatible Chat Completions API (cloud)
 
 ## License

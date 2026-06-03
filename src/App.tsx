@@ -329,6 +329,12 @@ export default function App() {
         setMeetingElapsed(0);
         setStatus('error');
         setError(payload.message ?? 'Meeting recording failed.');
+      } else if (
+        payload.state === 'transcribing' ||
+        payload.state === 'transcribed' ||
+        payload.state === 'transcription_error'
+      ) {
+        return;
       }
     });
 
