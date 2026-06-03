@@ -1,12 +1,10 @@
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
-const MAX_HISTORY_ITEMS: usize = 10_000;
 static LAST_HISTORY_ERROR: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -24,79 +22,17 @@ pub struct TranscriptionHistoryItem {
     pub original_text: Option<String>,
 }
 
-fn history_path() -> Result<PathBuf, String> {
-    let base_dir = if let Ok(appdata) = std::env::var("APPDATA") {
-        PathBuf::from(appdata)
-    } else if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg)
-    } else if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".config")
-    } else {
-        std::env::temp_dir()
-    };
-
-    Ok(base_dir.join("dikt").join("transcription_history.json"))
+#[derive(Debug, Clone, Serialize)]
+pub struct HistoryPage {
+    pub items: Vec<TranscriptionHistoryItem>,
+    pub total: i64,
 }
 
-fn set_last_error(message: String) {
-    if let Ok(mut guard) = LAST_HISTORY_ERROR.lock() {
-        *guard = Some(message);
-    }
-}
-
-fn normalize_items(mut items: Vec<TranscriptionHistoryItem>) -> Vec<TranscriptionHistoryItem> {
-    items.sort_by(|a, b| b.created_at_ms.cmp(&a.created_at_ms));
-    items.truncate(MAX_HISTORY_ITEMS);
-    items
-}
-
-fn load_history_from(path: &Path) -> Result<Vec<TranscriptionHistoryItem>, String> {
-    let contents = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => {
-            return Err(format!(
-                "Failed to read transcription history file '{}': {e}",
-                path.display()
-            ))
-        }
-    };
-    let items: Vec<TranscriptionHistoryItem> = serde_json::from_str(&contents).map_err(|e| {
-        format!(
-            "Failed to parse transcription history JSON from '{}': {e}",
-            path.display()
-        )
-    })?;
-    Ok(normalize_items(items))
-}
-
-fn save_history_to(path: &Path, items: &[TranscriptionHistoryItem]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let contents = serde_json::to_string_pretty(items).map_err(|e| e.to_string())?;
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, contents).map_err(|e| {
-        format!(
-            "Failed to write temporary transcription history file '{}': {e}",
-            tmp_path.display()
-        )
-    })?;
-    if let Err(e) = fs::rename(&tmp_path, path) {
-        let _ = fs::remove_file(path);
-        fs::rename(&tmp_path, path).map_err(|rename_err| {
-            format!(
-                "Failed to move transcription history file '{}' into place (rename error: {e}, retry error: {rename_err})",
-                path.display()
-            )
-        })?;
-    }
-    Ok(())
-}
-
-pub fn load_history() -> Result<Vec<TranscriptionHistoryItem>, String> {
-    let path = history_path()?;
-    load_history_from(&path)
+#[derive(Debug, Clone, Serialize)]
+pub struct HistoryStats {
+    pub total_count: i64,
+    pub today_count: i64,
+    pub total_audio_secs: f64,
 }
 
 pub struct AppendItemParams {
@@ -107,10 +43,115 @@ pub struct AppendItemParams {
     pub original_text: Option<String>,
 }
 
-pub fn append_item(params: AppendItemParams) -> Result<(), String> {
-    let path = history_path()?;
-    let mut items = load_history_from(&path)?;
+fn set_last_error(message: String) {
+    if let Ok(mut guard) = LAST_HISTORY_ERROR.lock() {
+        *guard = Some(message);
+    }
+}
 
+pub fn load_history_page(
+    offset: u32,
+    limit: u32,
+    query: Option<String>,
+) -> Result<HistoryPage, String> {
+    let limit = limit.clamp(1, 500) as i64;
+    let offset = offset as i64;
+    let query = query
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    crate::db::with_connection(|conn| {
+        let (items, total) = if let Some(query) = query {
+            let pattern = format!("%{query}%");
+            let total = conn
+                .query_row(
+                    r#"
+                    SELECT COUNT(*)
+                    FROM transcription_history
+                    WHERE text LIKE ?1 OR original_text LIKE ?1 OR mode_name LIKE ?1
+                    "#,
+                    params![pattern],
+                    |row| row.get(0),
+                )
+                .map_err(|error| format!("Failed to count transcription history: {error}"))?;
+
+            let mut stmt = conn
+                .prepare(
+                    r#"
+                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text
+                    FROM transcription_history
+                    WHERE text LIKE ?1 OR original_text LIKE ?1 OR mode_name LIKE ?1
+                    ORDER BY created_at_ms DESC
+                    LIMIT ?2 OFFSET ?3
+                    "#,
+                )
+                .map_err(|error| format!("Failed to query transcription history: {error}"))?;
+            let items = stmt
+                .query_map(params![pattern, limit, offset], history_item_from_row)
+                .map_err(|error| format!("Failed to query transcription history: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("Failed to read transcription history row: {error}"))?;
+            (items, total)
+        } else {
+            let total = conn
+                .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
+                    row.get(0)
+                })
+                .map_err(|error| format!("Failed to count transcription history: {error}"))?;
+
+            let mut stmt = conn
+                .prepare(
+                    r#"
+                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text
+                    FROM transcription_history
+                    ORDER BY created_at_ms DESC
+                    LIMIT ?1 OFFSET ?2
+                    "#,
+                )
+                .map_err(|error| format!("Failed to query transcription history: {error}"))?;
+            let items = stmt
+                .query_map(params![limit, offset], history_item_from_row)
+                .map_err(|error| format!("Failed to query transcription history: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("Failed to read transcription history row: {error}"))?;
+            (items, total)
+        };
+
+        Ok(HistoryPage { items, total })
+    })
+}
+
+pub fn history_stats(today_start_ms: i64) -> Result<HistoryStats, String> {
+    crate::db::with_connection(|conn| {
+        let total_count = conn
+            .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
+                row.get(0)
+            })
+            .map_err(|error| format!("Failed to count transcription history: {error}"))?;
+        let today_count = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transcription_history WHERE created_at_ms >= ?1",
+                params![today_start_ms],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Failed to count today's transcription history: {error}"))?;
+        let total_audio_secs = conn
+            .query_row(
+                "SELECT COALESCE(SUM(duration_secs), 0.0) FROM transcription_history",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Failed to sum transcription audio duration: {error}"))?;
+
+        Ok(HistoryStats {
+            total_count,
+            today_count,
+            total_audio_secs,
+        })
+    })
+}
+
+pub fn append_item(params: AppendItemParams) -> Result<(), String> {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -126,22 +167,26 @@ pub fn append_item(params: AppendItemParams) -> Result<(), String> {
         original_text: params.original_text,
     };
 
-    items.insert(0, item);
-    items.truncate(MAX_HISTORY_ITEMS);
-
-    save_history_to(&path, &items)
+    crate::db::with_connection(|conn| crate::db::insert_history_item(conn, &item))
 }
 
 pub fn delete_item(id: &str) -> Result<(), String> {
-    let path = history_path()?;
-    let mut items = load_history_from(&path)?;
-    items.retain(|item| item.id != id);
-    save_history_to(&path, &items)
+    crate::db::with_connection(|conn| {
+        conn.execute(
+            "DELETE FROM transcription_history WHERE id = ?1",
+            params![id],
+        )
+        .map(|_| ())
+        .map_err(|error| format!("Failed to delete transcription history item: {error}"))
+    })
 }
 
 pub fn clear_history() -> Result<(), String> {
-    let path = history_path()?;
-    save_history_to(&path, &[])
+    crate::db::with_connection(|conn| {
+        conn.execute("DELETE FROM transcription_history", [])
+            .map(|_| ())
+            .map_err(|error| format!("Failed to clear transcription history: {error}"))
+    })
 }
 
 pub fn record_runtime_error(message: String) {
@@ -155,134 +200,114 @@ pub fn take_runtime_error() -> Option<String> {
         .and_then(|mut guard| guard.take())
 }
 
+fn history_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TranscriptionHistoryItem> {
+    Ok(TranscriptionHistoryItem {
+        id: row.get("id")?,
+        text: row.get("text")?,
+        created_at_ms: row.get("created_at_ms")?,
+        duration_secs: row.get("duration_secs")?,
+        language: row.get("language")?,
+        mode_name: row.get("mode_name")?,
+        original_text: row.get("original_text")?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
+    use rusqlite::OptionalExtension;
 
-    fn test_path() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dikt_test_{}", uuid::Uuid::new_v4()));
-        dir.join("dikt").join("transcription_history.json")
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE transcription_history (
+                id TEXT PRIMARY KEY,
+                text TEXT NOT NULL,
+                created_at_ms INTEGER NOT NULL,
+                duration_secs REAL,
+                language TEXT,
+                mode_name TEXT,
+                original_text TEXT
+            );
+            CREATE INDEX idx_history_created_at ON transcription_history(created_at_ms DESC);
+            "#,
+        )
+        .unwrap();
+        conn
     }
 
-    #[test]
-    fn load_empty_returns_empty_vec() {
-        let path = test_path();
-        let items = load_history_from(&path).unwrap();
-        assert!(items.is_empty());
-    }
-
-    #[test]
-    fn save_load_roundtrip() {
-        let path = test_path();
-        let items = vec![TranscriptionHistoryItem {
-            id: "test-1".to_string(),
-            text: "Hello world".to_string(),
-            created_at_ms: 1000,
-            ..Default::default()
-        }];
-        save_history_to(&path, &items).unwrap();
-        let loaded = load_history_from(&path).unwrap();
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].id, "test-1");
-        assert_eq!(loaded[0].text, "Hello world");
-        let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
-    }
-
-    #[test]
-    fn append_prepends_and_trims() {
-        let path = test_path();
-        for i in 0..5 {
-            let mut items = load_history_from(&path).unwrap();
-            let item = TranscriptionHistoryItem {
-                id: uuid::Uuid::new_v4().to_string(),
-                text: format!("item {i}"),
-                created_at_ms: i as i64,
-                ..Default::default()
-            };
-            items.insert(0, item);
-            items.truncate(3);
-            save_history_to(&path, &items).unwrap();
-        }
-        let items = load_history_from(&path).unwrap();
-        assert_eq!(items.len(), 3);
-        assert_eq!(items[0].text, "item 4");
-        assert_eq!(items[1].text, "item 3");
-        assert_eq!(items[2].text, "item 2");
-        let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
-    }
-
-    #[test]
-    fn delete_by_id() {
-        let path = test_path();
-        let items = vec![
-            TranscriptionHistoryItem {
-                id: "a".to_string(),
-                text: "two".to_string(),
-                created_at_ms: 2,
-                ..Default::default()
+    fn insert(conn: &Connection, id: &str, text: &str, created_at_ms: i64) {
+        crate::db::insert_history_item(
+            conn,
+            &TranscriptionHistoryItem {
+                id: id.to_string(),
+                text: text.to_string(),
+                created_at_ms,
+                duration_secs: Some(2.5),
+                language: Some("en".to_string()),
+                mode_name: Some("Clean Draft".to_string()),
+                original_text: None,
             },
-            TranscriptionHistoryItem {
-                id: "b".to_string(),
-                text: "one".to_string(),
-                created_at_ms: 1,
-                ..Default::default()
-            },
-        ];
-        save_history_to(&path, &items).unwrap();
-
-        let mut loaded = load_history_from(&path).unwrap();
-        loaded.retain(|item| item.id != "a");
-        save_history_to(&path, &loaded).unwrap();
-
-        let result = load_history_from(&path).unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].text, "one");
-        let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+        )
+        .unwrap();
     }
 
     #[test]
-    fn clear_removes_all() {
-        let path = test_path();
-        let items = vec![TranscriptionHistoryItem {
-            id: "a".to_string(),
-            text: "hello".to_string(),
-            created_at_ms: 1,
-            ..Default::default()
-        }];
-        save_history_to(&path, &items).unwrap();
-        save_history_to(&path, &[]).unwrap();
-        let result = load_history_from(&path).unwrap();
-        assert!(result.is_empty());
-        let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+    fn insert_and_query_history_rows() {
+        let conn = test_conn();
+        insert(&conn, "old", "older", 1);
+        insert(&conn, "new", "newer", 2);
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text FROM transcription_history ORDER BY created_at_ms DESC",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], history_item_from_row)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, "new");
+        assert_eq!(rows[1].id, "old");
     }
 
     #[test]
-    fn malformed_json_returns_empty() {
-        let path = test_path();
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, "not valid json!!!").unwrap();
-        let result = load_history_from(&path);
-        assert!(result.is_err());
-        let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+    fn delete_by_id_removes_only_matching_row() {
+        let conn = test_conn();
+        insert(&conn, "a", "one", 1);
+        insert(&conn, "b", "two", 2);
+
+        conn.execute(
+            "DELETE FROM transcription_history WHERE id = ?1",
+            params!["a"],
+        )
+        .unwrap();
+        let remaining: Option<String> = conn
+            .query_row(
+                "SELECT id FROM transcription_history ORDER BY created_at_ms DESC",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(remaining.as_deref(), Some("b"));
     }
 
     #[test]
-    fn load_truncates_to_max_items() {
-        let path = test_path();
-        let count = MAX_HISTORY_ITEMS + 25;
-        let mut items = Vec::new();
-        for i in 0..count {
-            items.push(TranscriptionHistoryItem {
-                id: format!("item-{i}"),
-                text: format!("entry {i}"),
-                created_at_ms: i as i64,
-                ..Default::default()
-            });
-        }
-        save_history_to(&path, &items).unwrap();
-        let loaded = load_history_from(&path).unwrap();
-        assert_eq!(loaded.len(), MAX_HISTORY_ITEMS);
-        assert_eq!(loaded[0].id, format!("item-{}", count - 1));
-        let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+    fn clear_removes_all_rows() {
+        let conn = test_conn();
+        insert(&conn, "a", "one", 1);
+        conn.execute("DELETE FROM transcription_history", [])
+            .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }

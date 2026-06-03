@@ -105,8 +105,11 @@ Voxly is built to be cross-platform (Windows, macOS, Linux), but has only been t
 
 - **Short dictation audio** is recorded locally and sent to your configured API endpoint for transcription. It is not saved as a reusable recording.
 - **Meeting recordings** are stored locally as MP4 files under the meetings directory until you delete them.
-- **Meeting transcription audio and transcripts** are stored beside each meeting recording. Clicking **Transcribe** uploads extracted meeting audio to AssemblyAI.
-- **Transcription history** is stored in a local JSON file alongside settings.
+- **Meeting transcription audio** is stored beside each meeting recording. Clicking **Transcribe** uploads extracted meeting audio to AssemblyAI.
+- **Transcription history, meeting metadata, meeting transcripts, and future meeting summaries** are stored in a local SQLite database:
+  - Windows: `%APPDATA%\dikt\dikt.db`
+  - Linux/macOS: `$XDG_CONFIG_HOME/dikt/dikt.db` (or `~/.config/dikt/dikt.db`)
+- Existing `transcription_history.json` and `meetings/index.json` data is imported into SQLite automatically on first launch after upgrading. The old JSON files are left in place as a downgrade-safe backup.
 - **Paste behavior**: Voxly writes the transcript to the system clipboard and triggers paste (`Ctrl+V` on Windows/Linux, `Cmd+V` on macOS). Clipboard managers may record these changes.
 - **Settings** (provider, base URL, model, hotkey, vocabulary, modes) are stored in a local JSON file:
   - Windows: `%APPDATA%\dikt\settings.json`

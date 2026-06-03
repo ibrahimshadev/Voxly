@@ -1,17 +1,17 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
+use rusqlite::{params, OptionalExtension};
 
 use crate::meeting::types::{
     MeetingDetail, MeetingMeta, MeetingStatus, MeetingTranscript, TranscriptStatus,
 };
 
-const INDEX_FILE: &str = "index.json";
 const SOURCE_FILE: &str = "recording.mp4";
-const TRANSCRIPT_FILE: &str = "transcript.json";
 const TRANSCRIPT_AUDIO_FILE: &str = "transcript-audio.m4a";
 const STALE_PENDING_TRANSCRIPT_MS: i64 = 6 * 60 * 60 * 1000;
 static STORAGE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -24,17 +24,7 @@ pub fn now_ms() -> Result<i64, String> {
 }
 
 pub fn meetings_dir() -> Result<PathBuf, String> {
-    let base_dir = if let Ok(appdata) = std::env::var("APPDATA") {
-        PathBuf::from(appdata)
-    } else if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg)
-    } else if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".config")
-    } else {
-        std::env::temp_dir()
-    };
-
-    Ok(base_dir.join("dikt").join("meetings"))
+    Ok(crate::db::app_data_dir()?.join("meetings"))
 }
 
 pub fn meeting_dir(id: &str) -> Result<PathBuf, String> {
@@ -43,10 +33,6 @@ pub fn meeting_dir(id: &str) -> Result<PathBuf, String> {
 
 pub fn source_path(id: &str) -> Result<PathBuf, String> {
     Ok(meeting_dir(id)?.join(SOURCE_FILE))
-}
-
-pub fn transcript_path(id: &str) -> Result<PathBuf, String> {
-    Ok(meeting_dir(id)?.join(TRANSCRIPT_FILE))
 }
 
 pub fn transcript_audio_path(id: &str) -> Result<PathBuf, String> {
@@ -60,26 +46,26 @@ pub fn create_meeting_folder(id: &str) -> Result<PathBuf, String> {
 }
 
 pub fn load_index() -> Result<Vec<MeetingMeta>, String> {
-    let path = meetings_dir()?.join(INDEX_FILE);
-    let contents = match fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => {
-            return Err(format!(
-                "Failed to read meetings index '{}': {error}",
-                path.display()
-            ))
-        }
-    };
-
-    let mut items: Vec<MeetingMeta> = serde_json::from_str(&contents).map_err(|error| {
-        format!(
-            "Failed to parse meetings index '{}': {error}",
-            path.display()
-        )
-    })?;
-    items.sort_by(|a, b| b.started_at_ms.cmp(&a.started_at_ms));
-    Ok(items)
+    crate::db::with_connection(|conn| {
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT id, title, started_at_ms, ended_at_ms, duration_secs,
+                       has_video, has_mic, has_system_audio, file_size_bytes, status,
+                       transcript_status, transcript_error, assemblyai_transcript_id,
+                       transcript_started_at_ms
+                FROM meetings
+                ORDER BY started_at_ms DESC
+                "#,
+            )
+            .map_err(|error| format!("Failed to query meetings index: {error}"))?;
+        let items = stmt
+            .query_map([], crate::db::meeting_from_row)
+            .map_err(|error| format!("Failed to query meetings index: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Failed to read meeting metadata row: {error}"))?;
+        Ok(items)
+    })
 }
 
 pub fn load_index_reconciled(active_id: Option<&str>) -> Result<Vec<MeetingMeta>, String> {
@@ -132,11 +118,39 @@ where
 }
 
 pub fn save_index(items: &[MeetingMeta]) -> Result<(), String> {
-    let dir = meetings_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(INDEX_FILE);
-    let contents = serde_json::to_string_pretty(items).map_err(|e| e.to_string())?;
-    atomic_write(&path, contents.as_bytes())
+    crate::db::with_connection(|conn| {
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("Failed to start meeting index transaction: {error}"))?;
+
+        let ids = items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<HashSet<_>>();
+        let existing = {
+            let mut stmt = tx
+                .prepare("SELECT id FROM meetings")
+                .map_err(|error| format!("Failed to query existing meeting ids: {error}"))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("Failed to query existing meeting ids: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("Failed to read existing meeting id: {error}"))?;
+            rows
+        };
+        for id in existing {
+            if !ids.contains(id.as_str()) {
+                tx.execute("DELETE FROM meetings WHERE id = ?1", params![id])
+                    .map_err(|error| format!("Failed to delete stale meeting metadata: {error}"))?;
+            }
+        }
+        for item in items {
+            crate::db::upsert_meeting_meta(&tx, item)?;
+        }
+
+        tx.commit()
+            .map_err(|error| format!("Failed to save meeting index: {error}"))
+    })
 }
 
 pub fn update_meta_by_id<F>(id: &str, patch: F) -> Result<Option<MeetingMeta>, String>
@@ -162,14 +176,7 @@ pub fn upsert_meta(meta: MeetingMeta) -> Result<(), String> {
     let _guard = STORAGE_LOCK
         .lock()
         .map_err(|_| "Meeting storage lock poisoned".to_string())?;
-    let mut items = load_index()?;
-    if let Some(existing) = items.iter_mut().find(|item| item.id == meta.id) {
-        *existing = meta;
-    } else {
-        items.insert(0, meta);
-    }
-    items.sort_by(|a, b| b.started_at_ms.cmp(&a.started_at_ms));
-    save_index(&items)
+    crate::db::with_connection(|conn| crate::db::upsert_meeting_meta(conn, &meta))
 }
 
 pub fn get_detail_reconciled(id: &str, active_id: Option<&str>) -> Result<MeetingDetail, String> {
@@ -189,49 +196,65 @@ pub fn save_transcript(id: &str, transcript: &MeetingTranscript) -> Result<(), S
     let _guard = STORAGE_LOCK
         .lock()
         .map_err(|_| "Meeting storage lock poisoned".to_string())?;
-    if !load_index()?.iter().any(|item| item.id == id) {
+    if !meeting_exists(id)? {
         return Err("Meeting no longer exists.".to_string());
     }
     let dir = meeting_dir(id)?;
     if !dir.exists() {
         return Err("Meeting folder no longer exists.".to_string());
     }
-    let path = transcript_path(id)?;
     let contents = serde_json::to_string_pretty(transcript).map_err(|e| e.to_string())?;
-    atomic_write_existing_parent(&path, contents.as_bytes())
+    crate::db::with_connection(|conn| {
+        conn.execute(
+            r#"
+            INSERT OR REPLACE INTO meeting_transcripts (meeting_id, json)
+            VALUES (?1, ?2)
+            "#,
+            params![id, contents],
+        )
+        .map(|_| ())
+        .map_err(|error| format!("Failed to save meeting transcript: {error}"))
+    })
 }
 
 pub fn load_transcript(id: &str) -> Result<Option<MeetingTranscript>, String> {
-    let path = transcript_path(id)?;
-    let contents = match fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "Failed to read meeting transcript '{}': {error}",
-                path.display()
-            ))
-        }
-    };
-    serde_json::from_str(&contents).map(Some).map_err(|error| {
-        format!(
-            "Failed to parse meeting transcript '{}': {error}",
-            path.display()
+    let contents = crate::db::with_connection(|conn| {
+        conn.query_row(
+            "SELECT json FROM meeting_transcripts WHERE meeting_id = ?1",
+            params![id],
+            |row| row.get::<_, String>(0),
         )
+        .optional()
+        .map_err(|error| format!("Failed to load meeting transcript: {error}"))
+    })?;
+    contents.map_or(Ok(None), |contents| {
+        serde_json::from_str(&contents)
+            .map(Some)
+            .map_err(|error| format!("Failed to parse meeting transcript: {error}"))
     })
 }
 
 pub fn meeting_exists(id: &str) -> Result<bool, String> {
-    Ok(load_index()?.iter().any(|item| item.id == id))
+    crate::db::with_connection(|conn| {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ?1)",
+            params![id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|value| value != 0)
+        .map_err(|error| format!("Failed to check meeting existence: {error}"))
+    })
 }
 
 pub fn delete_meeting(id: &str) -> Result<(), String> {
     let _guard = STORAGE_LOCK
         .lock()
         .map_err(|_| "Meeting storage lock poisoned".to_string())?;
-    let mut items = load_index()?;
-    items.retain(|item| item.id != id);
-    save_index(&items)?;
+    crate::db::with_connection(|conn| {
+        conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])
+            .map(|_| ())
+            .map_err(|error| format!("Failed to delete meeting metadata: {error}"))
+    })?;
 
     let dir = meeting_dir(id)?;
     if dir.exists() {
@@ -243,60 +266,6 @@ pub fn delete_meeting(id: &str) -> Result<(), String> {
 
 pub fn file_size(path: &Path) -> Option<u64> {
     fs::metadata(path).ok().map(|metadata| metadata.len())
-}
-
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, bytes).map_err(|e| {
-        format!(
-            "Failed to write temporary file '{}': {e}",
-            tmp_path.display()
-        )
-    })?;
-    if let Err(error) = fs::rename(&tmp_path, path) {
-        let _ = fs::remove_file(path);
-        fs::rename(&tmp_path, path).map_err(|retry_error| {
-            format!(
-                "Failed to move '{}' into place (rename error: {error}, retry error: {retry_error})",
-                path.display()
-            )
-        })?;
-    }
-    Ok(())
-}
-
-fn atomic_write_existing_parent(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("Path '{}' has no parent directory", path.display()))?;
-    if !parent.exists() {
-        return Err(format!(
-            "Parent directory '{}' does not exist",
-            parent.display()
-        ));
-    }
-
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, bytes).map_err(|e| {
-        format!(
-            "Failed to write temporary file '{}': {e}",
-            tmp_path.display()
-        )
-    })?;
-    if let Err(error) = fs::rename(&tmp_path, path) {
-        let _ = fs::remove_file(path);
-        fs::rename(&tmp_path, path).map_err(|retry_error| {
-            format!(
-                "Failed to move '{}' into place (rename error: {error}, retry error: {retry_error})",
-                path.display()
-            )
-        })?;
-    }
-    Ok(())
 }
 
 fn reconcile_stale_pending_transcripts(items: &mut [MeetingMeta], now_ms: i64) -> bool {

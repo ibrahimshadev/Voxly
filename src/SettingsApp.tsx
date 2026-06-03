@@ -1,9 +1,9 @@
-import { createSignal, createEffect, createMemo, onCleanup, onMount, Switch, Match } from 'solid-js';
+import { createSignal, createEffect, createMemo, on, onCleanup, onMount, Switch, Match } from 'solid-js';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { Toaster } from 'solid-sonner';
 
-import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingUpdate } from './types';
+import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, TranscriptionHistoryPage, TranscriptionHistoryStats, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingUpdate } from './types';
 import {
   CHAT_MODELS,
   DEFAULT_SETTINGS,
@@ -12,8 +12,9 @@ import {
 } from './constants';
 import { DEFAULT_MODES } from './defaultModes';
 import { Layout, SettingsPage, RightPanel, HistoryPage, DictionaryPage, ModesPage, MeetingsPage } from './components/Settings';
-import type { HistoryStats } from './components/Settings';
 import { notifyError, notifyInfo, notifySuccess } from './lib/notify';
+
+const HISTORY_PAGE_SIZE = 50;
 
 const createVocabularyId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -53,6 +54,10 @@ export default function SettingsApp() {
   const [saving, setSaving] = createSignal(false);
 
   const [history, setHistory] = createSignal<TranscriptionHistoryItem[]>([]);
+  const [historyTotal, setHistoryTotal] = createSignal(0);
+  const [historyPage, setHistoryPage] = createSignal(1);
+  const [historyTodayCount, setHistoryTodayCount] = createSignal(0);
+  const [historyTotalAudioSecs, setHistoryTotalAudioSecs] = createSignal(0);
   const [historySearchQuery, setHistorySearchQuery] = createSignal('');
   const [meetings, setMeetings] = createSignal<MeetingMeta[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = createSignal<string | null>(null);
@@ -74,6 +79,8 @@ export default function SettingsApp() {
   const [editorReplacements, setEditorReplacements] = createSignal('');
   let meetingsLoadSeq = 0;
   let meetingDetailLoadSeq = 0;
+  let historyLoadSeq = 0;
+  let historySearchTimer: ReturnType<typeof setTimeout> | undefined;
 
   type SaveSettingsQuietOptions = {
     notifyOnError?: boolean;
@@ -188,14 +195,57 @@ export default function SettingsApp() {
     }
   };
 
-  const loadHistory = async () => {
+  const todayStartMs = () => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return startOfToday.getTime();
+  };
+
+  const loadHistoryStats = async () => {
     try {
-      const items = await invoke<TranscriptionHistoryItem[]>('get_transcription_history');
-      setHistory(items);
+      const stats = await invoke<TranscriptionHistoryStats>('get_transcription_history_stats', {
+        todayStartMs: todayStartMs(),
+      });
+      setHistoryTodayCount(stats.today_count);
+      setHistoryTotalAudioSecs(stats.total_audio_secs);
+    } catch (err) {
+      notifyError(err, 'Failed to load history stats.');
+    }
+  };
+
+  const loadHistory = async (page = historyPage()) => {
+    const seq = ++historyLoadSeq;
+    const safePage = Math.max(1, page);
+    const offset = (safePage - 1) * HISTORY_PAGE_SIZE;
+    try {
+      const result = await invoke<TranscriptionHistoryPage>('get_transcription_history', {
+        offset,
+        limit: HISTORY_PAGE_SIZE,
+        query: historySearchQuery().trim() || null,
+      });
+      if (seq !== historyLoadSeq) return;
+      if (safePage > 1 && result.items.length === 0 && result.total > 0) {
+        const previousPage = safePage - 1;
+        setHistoryPage(previousPage);
+        await loadHistory(previousPage);
+        return;
+      }
+      setHistoryPage(safePage);
+      setHistory(result.items);
+      setHistoryTotal(result.total);
     } catch (err) {
       notifyError(err, 'Failed to load history.');
     }
   };
+
+  createEffect(on(historySearchQuery, () => {
+    clearTimeout(historySearchTimer);
+    if (!settingsLoaded() || activeTab() !== 'history') return;
+    historySearchTimer = setTimeout(() => {
+      setHistoryPage(1);
+      void loadHistory(1);
+    }, 250);
+  }));
 
   const loadMeetings = async () => {
     const seq = ++meetingsLoadSeq;
@@ -347,7 +397,8 @@ export default function SettingsApp() {
   const deleteHistoryItem = async (id: string) => {
     try {
       await invoke('delete_transcription_history_item', { id });
-      setHistory((prev) => prev.filter((item) => item.id !== id));
+      await loadHistory();
+      await loadHistoryStats();
       notifySuccess('Entry deleted.');
     } catch (err) {
       notifyError(err, 'Failed to delete history entry.');
@@ -357,7 +408,11 @@ export default function SettingsApp() {
   const clearHistory = async () => {
     try {
       await invoke('clear_transcription_history');
+      setHistoryPage(1);
       setHistory([]);
+      setHistoryTotal(0);
+      setHistoryTodayCount(0);
+      setHistoryTotalAudioSecs(0);
       notifySuccess('History cleared.');
     } catch (err) {
       notifyError(err, 'Failed to clear history.');
@@ -373,62 +428,6 @@ export default function SettingsApp() {
     }
   };
 
-  const filteredHistory = createMemo(() => {
-    const query = historySearchQuery().trim().toLowerCase();
-    if (!query) return history();
-
-    return history().filter((item) =>
-      item.text.toLowerCase().includes(query) ||
-      (item.original_text?.toLowerCase().includes(query) ?? false) ||
-      (item.mode_name?.toLowerCase().includes(query) ?? false)
-    );
-  });
-
-  const historyStats = createMemo<HistoryStats>(() => {
-    const allItems = history();
-    const now = Date.now();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const todayStartMs = startOfToday.getTime();
-    const weekStartMs = now - (7 * 24 * 60 * 60 * 1000);
-
-    let todayCount = 0;
-    let weekCount = 0;
-    let latestAt: number | null = null;
-    let totalAudioSecs = 0;
-    let audioCount = 0;
-
-    for (const item of allItems) {
-      const timestamp = item.created_at_ms;
-      if (!Number.isFinite(timestamp)) continue;
-
-      if (latestAt === null || timestamp > latestAt) {
-        latestAt = timestamp;
-      }
-      if (timestamp >= todayStartMs) {
-        todayCount += 1;
-      }
-      if (timestamp >= weekStartMs) {
-        weekCount += 1;
-      }
-      if (item.duration_secs != null && Number.isFinite(item.duration_secs)) {
-        totalAudioSecs += item.duration_secs;
-        audioCount += 1;
-      }
-    }
-
-    return {
-      filteredCount: filteredHistory().length,
-      totalCount: allItems.length,
-      todayCount,
-      weekCount,
-      latestAt,
-      totalAudioSecs,
-      averageAudioSecs: audioCount > 0 ? totalAudioSecs / audioCount : 0,
-    };
-  });
-
   const switchToTab = (tab: Tab) => {
     setActiveTab(tab);
     if (tab !== 'history') {
@@ -436,6 +435,10 @@ export default function SettingsApp() {
     }
     if (tab !== 'dictionary') {
       cancelVocabularyEditor();
+    }
+    if (tab === 'history') {
+      void loadHistory();
+      void loadHistoryStats();
     }
     if (tab === 'meetings') {
       void loadMeetings();
@@ -635,16 +638,19 @@ export default function SettingsApp() {
     await loadSettings();
     setSettingsLoaded(true);
     await loadHistory();
+    await loadHistoryStats();
     await loadMeetings();
     await loadMeetingDevices();
 
     const unlistenOpened = await listen('settings-window-opened', () => {
       void loadSettings();
       void loadHistory();
+      void loadHistoryStats();
     });
 
     const unlistenHistoryUpdated = await listen('transcription-history-updated', () => {
       void loadHistory();
+      void loadHistoryStats();
     });
 
     const unlistenMeetingsUpdated = await listen('meetings-updated', () => {
@@ -681,6 +687,7 @@ export default function SettingsApp() {
     const unlistenHistoryError = await listen<string>('transcription-history-error', (event) => {
       notifyError(event.payload);
       void loadHistory();
+      void loadHistoryStats();
     });
 
     const unlistenAudioLevel = await listen<{ rms_db: number; peak_db: number }>('audio:level', (event) => {
@@ -697,6 +704,7 @@ export default function SettingsApp() {
       void unlistenHistoryError();
       void unlistenAudioLevel();
       clearTimeout(audioLevelTimer);
+      clearTimeout(historySearchTimer);
     });
   });
 
@@ -742,12 +750,15 @@ export default function SettingsApp() {
         </Match>
         <Match when={activeTab() === 'history'}>
           <HistoryPage
-            history={filteredHistory}
-            totalCount={() => history().length}
-            todayCount={() => historyStats().todayCount}
-            totalAudioSecs={() => historyStats().totalAudioSecs}
+            history={history}
+            currentPage={historyPage}
+            pageSize={HISTORY_PAGE_SIZE}
+            totalCount={historyTotal}
+            todayCount={historyTodayCount}
+            totalAudioSecs={historyTotalAudioSecs}
             searchQuery={historySearchQuery}
             onSearchQueryChange={(value) => setHistorySearchQuery(value)}
+            onPageChange={(page) => void loadHistory(page)}
             onCopy={copyHistoryText}
             onDelete={deleteHistoryItem}
             onClearAll={clearHistory}

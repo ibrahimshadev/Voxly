@@ -8,6 +8,7 @@ mod audio_preprocess;
 mod click_through;
 mod clipboard;
 mod commands;
+mod db;
 mod domain;
 mod format_text;
 mod meeting;
@@ -28,6 +29,13 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(state::AppState::default())
         .setup(|app| {
+            if let Err(error) = crate::db::init() {
+                eprintln!("Failed to initialize SQLite database: {error}");
+                crate::transcription_history::record_runtime_error(format!(
+                    "Failed to initialize local database: {error}"
+                ));
+            }
+
             // Create tray menu
             let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
             let reset_position_item =
@@ -108,6 +116,7 @@ fn main() {
             commands::update_hit_region,
             commands::fetch_provider_models,
             commands::get_transcription_history,
+            commands::get_transcription_history_stats,
             commands::delete_transcription_history_item,
             commands::clear_transcription_history,
             commands::start_meeting,

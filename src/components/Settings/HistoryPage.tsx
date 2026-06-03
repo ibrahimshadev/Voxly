@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
+import { For, Show, createMemo } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import type { TranscriptionHistoryItem } from '../../types';
 import {
@@ -39,11 +39,14 @@ const MODE_NAME_LUCIDE: Record<string, Component<{ size: number }>> = {
 
 export type HistoryPageProps = {
   history: Accessor<TranscriptionHistoryItem[]>;
+  currentPage: Accessor<number>;
+  pageSize: number;
   totalCount: Accessor<number>;
   todayCount: Accessor<number>;
   totalAudioSecs: Accessor<number>;
   searchQuery: Accessor<string>;
   onSearchQueryChange: (value: string) => void;
+  onPageChange: (page: number) => void;
   onCopy: (text: string) => void;
   onDelete: (id: string) => void;
   onClearAll: () => void;
@@ -140,7 +143,6 @@ function HistoryItem(props: {
   );
 }
 
-const PAGE_SIZE = 50;
 const MAX_PAGE_BUTTONS = 5;
 
 function buildPageNumbers(currentPage: number, totalPages: number): (number | '...')[] {
@@ -221,25 +223,16 @@ function Pagination(props: {
 }
 
 export default function HistoryPage(props: HistoryPageProps) {
-  const [currentPage, setCurrentPage] = createSignal(1);
   const hasSearch = createMemo(() => props.searchQuery().trim().length > 0);
 
-  createEffect(on(() => props.searchQuery(), () => setCurrentPage(1)));
+  const totalPages = createMemo(() => Math.max(1, Math.ceil(props.totalCount() / props.pageSize)));
+  const safePage = createMemo(() => Math.min(props.currentPage(), totalPages()));
 
-  const totalPages = createMemo(() => Math.max(1, Math.ceil(props.history().length / PAGE_SIZE)));
-  const safePage = createMemo(() => Math.min(currentPage(), totalPages()));
-
-  const paginatedHistory = createMemo(() => {
-    const start = (safePage() - 1) * PAGE_SIZE;
-    return props.history().slice(start, start + PAGE_SIZE);
-  });
-
-  const dateGroups = createMemo(() => groupByDate(paginatedHistory()));
+  const dateGroups = createMemo(() => groupByDate(props.history()));
 
   const entryCountLabel = createMemo(() => {
     const total = props.totalCount();
-    const visible = props.history().length;
-    if (hasSearch()) return `${visible} of ${total}`;
+    if (hasSearch()) return total.toLocaleString();
     return total.toLocaleString();
   });
 
@@ -351,7 +344,7 @@ export default function HistoryPage(props: HistoryPageProps) {
         <Pagination
           currentPage={safePage}
           totalPages={totalPages}
-          onPageChange={setCurrentPage}
+          onPageChange={props.onPageChange}
         />
       </Show>
     </div>

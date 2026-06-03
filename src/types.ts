@@ -50,6 +50,17 @@ export type TranscriptionHistoryItem = {
   original_text?: string;
 };
 
+export type TranscriptionHistoryPage = {
+  items: TranscriptionHistoryItem[];
+  total: number;
+};
+
+export type TranscriptionHistoryStats = {
+  total_count: number;
+  today_count: number;
+  total_audio_secs: number;
+};
+
 export type DictationUpdate = {
   state: 'idle' | 'recording' | 'transcribing' | 'formatting' | 'pasting' | 'done' | 'error';
   message?: string;
