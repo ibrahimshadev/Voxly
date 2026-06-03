@@ -1,3 +1,11 @@
+# [1.21.0](https://github.com/ibrahimshadev/Voxly/compare/v1.20.0...v1.21.0) (2026-06-03)
+
+
+### Features
+
+* **docs:** add meeting transcription section to landing page ([d5d8c90](https://github.com/ibrahimshadev/Voxly/commit/d5d8c9062f4f4734e014a0a40fd1b114d82571b8))
+* **storage:** migrate history and meetings to sqlite ([3700248](https://github.com/ibrahimshadev/Voxly/commit/370024895210f07487d40bfa281fd5315ea91ef8))
+
 # [1.20.0](https://github.com/ibrahimshadev/Voxly/compare/v1.19.1...v1.20.0) (2026-06-03)
 
 
