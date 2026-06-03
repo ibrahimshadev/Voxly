@@ -1,3 +1,10 @@
+# [1.20.0](https://github.com/ibrahimshadev/Voxly/compare/v1.19.1...v1.20.0) (2026-06-03)
+
+
+### Features
+
+* **meetings:** add cloud transcripts ([06b4676](https://github.com/ibrahimshadev/Voxly/commit/06b467674e25db5146dcae706ac3a2b5bfd9e8bd))
+
 ## [1.19.1](https://github.com/ibrahimshadev/Voxly/compare/v1.19.0...v1.19.1) (2026-05-27)
 
 
