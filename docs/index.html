@@ -51,6 +51,8 @@
     .code-syntax-yellow { color: #e5c07b; }
     .code-syntax-red { color: #e06c75; }
     .code-syntax-grey { color: #5c6370; }
+    #meet-content, #meet-content * { scrollbar-width: none; -ms-overflow-style: none; }
+    #meet-content::-webkit-scrollbar, #meet-content *::-webkit-scrollbar { display: none; }
 </style>
 </head>
 <body class="bg-background-dark text-white antialiased overflow-x-hidden">
@@ -67,6 +69,7 @@
     <nav class="hidden md:flex items-center gap-8">
         <a class="text-sm font-medium text-gray-400 hover:text-white transition-colors" href="#features">Features</a>
         <a class="text-sm font-medium text-gray-400 hover:text-white transition-colors" href="#showcase">Modes</a>
+        <a class="text-sm font-medium text-gray-400 hover:text-white transition-colors" href="#meetings">Meetings</a>
         <a class="text-sm font-medium text-gray-400 hover:text-white transition-colors" href="#comparison">Comparison</a>
         <a class="text-sm font-medium text-gray-400 hover:text-white transition-colors flex items-center gap-1" href="https://github.com/ibrahimshadev/dikt" target="_blank" rel="noopener noreferrer">
             GitHub <span class="material-symbols-outlined text-[16px]">open_in_new</span>
@@ -310,7 +313,7 @@
         </div>
         <h3 class="font-bold text-lg text-white mb-2">Private by Design</h3>
         <p class="text-sm text-gray-400 leading-relaxed">
-            No audio stored on disk. API keys kept in your OS credential manager. Audio goes directly to your chosen API.
+            Dictation audio is never written to disk. Meeting recordings stay local until you click Transcribe. API keys live in your OS credential manager.
         </p>
     </div>
 
@@ -332,6 +335,115 @@
         <p class="text-sm text-gray-400 leading-relaxed">
             Create custom modes with your own system prompts. Add vocabulary entries for words the model gets wrong.
         </p>
+    </div>
+</div>
+</section>
+
+<!-- Meeting Transcription Section -->
+<section class="max-w-7xl mx-auto px-6 py-24" id="meetings">
+<div class="text-center mb-16">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/20 bg-primary/10 mb-6 w-fit mx-auto">
+        <span class="w-2 h-2 rounded-full bg-primary"></span>
+        <span class="text-xs font-medium text-primary uppercase tracking-wider">New in v1.20</span>
+    </div>
+    <h2 class="text-3xl font-bold mb-4">One hotkey. Full meeting capture.</h2>
+    <p class="text-gray-400 max-w-xl mx-auto leading-relaxed">Record screen, mic, and system audio as a local MP4. When done, click Transcribe — Voxly sends the audio to AssemblyAI and returns a speaker-labeled transcript with your voice and system audio on separate channels.</p>
+</div>
+
+<div class="grid lg:grid-cols-[44%_56%] gap-12 items-start">
+    <!-- Left: Workflow steps + metadata -->
+    <div class="flex flex-col gap-6">
+        <div class="space-y-3">
+            <div class="flex items-start gap-4 p-4 rounded border border-surface-border bg-surface-dark group hover:border-primary/30 transition-colors">
+                <div class="shrink-0 w-9 h-9 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-colors">
+                    <span class="material-symbols-outlined text-[20px]">fiber_manual_record</span>
+                </div>
+                <div>
+                    <p class="text-sm font-bold text-white">Record</p>
+                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">Press <span class="bg-white/10 px-1.5 py-0.5 rounded text-[11px] font-mono font-bold text-gray-300">Ctrl+Alt+M</span>. Screen, mic, and system audio recorded locally. No cloud at this step.</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 text-gray-600 pl-8">
+                <div class="w-px h-5 bg-surface-border mx-auto"></div>
+            </div>
+            <div class="flex items-start gap-4 p-4 rounded border border-surface-border bg-surface-dark group hover:border-primary/30 transition-colors">
+                <div class="shrink-0 w-9 h-9 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-colors">
+                    <span class="material-symbols-outlined text-[20px]">upload_file</span>
+                </div>
+                <div>
+                    <p class="text-sm font-bold text-white">Transcribe</p>
+                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">Click Transcribe. Voxly extracts a dual-channel audio file — mic on channel 1, system audio on channel 2 — and uploads it to AssemblyAI for multichannel diarization.</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 text-gray-600 pl-8">
+                <div class="w-px h-5 bg-surface-border mx-auto"></div>
+            </div>
+            <div class="flex items-start gap-4 p-4 rounded border border-surface-border bg-surface-dark group hover:border-primary/30 transition-colors">
+                <div class="shrink-0 w-9 h-9 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-colors">
+                    <span class="material-symbols-outlined text-[20px]">record_voice_over</span>
+                </div>
+                <div>
+                    <p class="text-sm font-bold text-white">Speaker-labeled transcript</p>
+                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">You and System — not generic Speaker A/B. Mic bleed from system audio is filtered automatically. Click any line to seek the video.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 pt-2">
+            <div class="p-3 rounded border border-surface-border bg-[#050505] text-center">
+                <p class="text-[10px] font-mono text-gray-600 uppercase tracking-wider mb-1">Format</p>
+                <p class="text-sm font-bold text-white">MP4</p>
+            </div>
+            <div class="p-3 rounded border border-surface-border bg-[#050505] text-center">
+                <p class="text-[10px] font-mono text-gray-600 uppercase tracking-wider mb-1">Channels</p>
+                <p class="text-sm font-bold text-white">2-ch AAC</p>
+            </div>
+            <div class="p-3 rounded border border-surface-border bg-[#050505] text-center">
+                <p class="text-[10px] font-mono text-gray-600 uppercase tracking-wider mb-1">Provider</p>
+                <p class="text-sm font-bold text-primary">AssemblyAI</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Animated transcript mockup -->
+    <div class="relative">
+        <div class="absolute -inset-px bg-gradient-to-br from-primary/20 to-transparent rounded-xl blur-md -z-10"></div>
+        <div class="relative bg-[#0a0a0a] border border-surface-border rounded-xl overflow-hidden shadow-2xl">
+            <!-- Meeting header bar -->
+            <div class="border-b border-surface-border bg-surface-dark px-5 py-3 flex items-center justify-between gap-4">
+                <div class="min-w-0">
+                    <p class="text-sm font-semibold text-white truncate">Design Review — Jun 3, 2026</p>
+                    <div class="flex items-center gap-3 mt-0.5 text-[11px] font-mono text-gray-500">
+                        <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">schedule</span>48:22</span>
+                        <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">hard_drive</span>312 MB</span>
+                    </div>
+                </div>
+                <button id="meet-btn" onclick="restartMeetingDemo()" class="shrink-0 h-8 px-4 bg-primary text-black text-xs font-bold flex items-center gap-1.5 rounded hover:bg-primary-dark transition-colors cursor-pointer">
+                    <span class="material-symbols-outlined text-[15px]">upload</span>
+                    <span id="meet-btn-label">Transcribe</span>
+                </button>
+            </div>
+
+            <!-- Tab bar -->
+            <div class="border-b border-surface-border bg-[#111111] px-4 pt-2 flex items-end gap-1">
+                <button id="meet-tab-transcript" onclick="meetSetTab('transcript')" class="px-3 pb-2 border-b-2 border-primary text-[11px] font-mono uppercase tracking-wider text-primary flex items-center gap-2 cursor-pointer bg-transparent transition-colors">
+                    <span class="material-symbols-outlined text-[14px]">article</span>Transcript
+                </button>
+                <button id="meet-tab-summary" onclick="meetSetTab('summary')" class="px-3 pb-2 border-b-2 border-transparent text-[11px] font-mono uppercase tracking-wider text-gray-600 flex items-center gap-2 cursor-pointer bg-transparent hover:text-gray-400 transition-colors">
+                    <span class="material-symbols-outlined text-[14px]">smart_toy</span>Summary
+                </button>
+                <div class="ml-auto pb-2" id="meet-copy-btn" style="display:none;">
+                    <button class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-gray-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[13px]">content_copy</span>Copy
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content area -->
+            <div id="meet-content" class="p-5 min-h-[380px] bg-[#0a0a0a] flex flex-col">
+                <!-- Populated by JS -->
+            </div>
+        </div>
     </div>
 </div>
 </section>
@@ -435,6 +547,22 @@
                 <td class="p-4 font-bold text-white bg-primary/5 border-x border-primary/20">Any (BYOK)</td>
                 <td class="p-4 text-gray-500">Built-in only</td>
                 <td class="p-4 text-gray-500">Built-in only</td>
+            </tr>
+            <tr class="hover:bg-surface-dark/50">
+                <td class="p-4 text-gray-300">Meeting Transcripts</td>
+                <td class="p-4 font-bold text-primary bg-primary/5 border-x border-primary/20">
+                    <span class="material-symbols-outlined">check_circle</span>
+                </td>
+                <td class="p-4 text-gray-500"><span class="material-symbols-outlined">cancel</span></td>
+                <td class="p-4 text-gray-500"><span class="material-symbols-outlined">cancel</span></td>
+            </tr>
+            <tr class="hover:bg-surface-dark/50">
+                <td class="p-4 text-gray-300">Local Recording</td>
+                <td class="p-4 font-bold text-primary bg-primary/5 border-x border-primary/20">
+                    <span class="material-symbols-outlined">check_circle</span>
+                </td>
+                <td class="p-4 text-gray-500"><span class="material-symbols-outlined">cancel</span></td>
+                <td class="p-4 text-gray-500"><span class="material-symbols-outlined">cancel</span></td>
             </tr>
         </tbody>
     </table>
@@ -624,5 +752,226 @@
 })();
 </script>
 
+
+<script>
+(function() {
+    var UTTERANCES = [
+        { time: '0:04', speaker: 'You',    text: "Alright, quick design sync. The new contrast update is live on staging." },
+        { time: '0:16', speaker: 'System', text: "Oh nice — the cards definitely feel more readable now. What was the delta?" },
+        { time: '0:25', speaker: 'You',    text: "Went from 3.8 to 5.1 contrast ratio. Passes WCAG AA for normal text." },
+        { time: '0:38', speaker: 'System', text: "Good. The transcript panel looked rough last week — what's the status?" },
+        { time: '0:49', speaker: 'You',    text: "Almost done. We're splitting mic and system audio into two channels so labels read 'You' and 'System' instead of generic A and B." },
+        { time: '1:05', speaker: 'System', text: "Smart. Does the bleed filter hold up when we're talking at the same time?" },
+        { time: '1:14', speaker: 'You',    text: "Yeah — we compare token overlap in a 1.5-second window. Anything above 55% match gets dropped from the mic channel." },
+        { time: '1:28', speaker: 'System', text: "Ship it. Can you schedule a team demo early next week?" },
+        { time: '1:33', speaker: 'You',    text: "Will do. I'll send a calendar invite right after this." },
+    ];
+
+    var SUMMARY = {
+        keyPoints: [
+            "Contrast ratio updated 3.8 → 5.1, now passes WCAG AA for normal text",
+            "Speaker labels use 'You' / 'System' via dual-channel audio — not generic A/B diarization",
+            "Mic bleed filter: 1.5 s window, drops utterances with ≥ 55% token match against system channel",
+        ],
+        actionItems: [
+            { text: "Ship transcript panel update", owner: "You", due: "This sprint", status: "In progress" },
+            { text: "Schedule team demo", owner: "You", due: "Jun 10", status: "Pending" },
+            { text: "Send calendar invite", owner: "You", due: "Today", status: "Pending" },
+        ],
+        decisions: [
+            "Use multichannel diarization — cleaner than generic speaker diarization",
+            "WCAG AA as minimum contrast target (not AAA) for this release",
+        ],
+        followUps: [
+            "Stress-test bleed filter with overlapping speech > 30 s",
+            "Stakeholder sign-off on contrast change before shipping",
+        ],
+    };
+
+    var content = document.getElementById('meet-content');
+    var btn = document.getElementById('meet-btn');
+    var btnLabel = document.getElementById('meet-btn-label');
+    var copyBtn = document.getElementById('meet-copy-btn');
+    var tabTranscript = document.getElementById('meet-tab-transcript');
+    var tabSummary = document.getElementById('meet-tab-summary');
+
+    var demoState = 'empty';   // empty | transcribing | complete
+    var activeTab = 'transcript'; // transcript | summary
+    var autoTimer = null;
+    var utteranceTimers = [];
+
+    function clearTimers() {
+        if (autoTimer) clearTimeout(autoTimer);
+        utteranceTimers.forEach(function(t) { clearTimeout(t); });
+        utteranceTimers = [];
+    }
+
+    function setBtn(label, enabled) {
+        btnLabel.textContent = label;
+        btn.disabled = !enabled;
+        btn.classList.toggle('opacity-50', !enabled);
+        btn.classList.toggle('cursor-not-allowed', !enabled);
+        btn.classList.toggle('cursor-pointer', enabled);
+    }
+
+    var BASE_TAB = 'px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 cursor-pointer bg-transparent transition-colors';
+    function syncTabStyles() {
+        tabTranscript.className = BASE_TAB + (activeTab === 'transcript' ? ' border-primary text-primary' : ' border-transparent text-gray-600 hover:text-gray-400');
+        tabSummary.className    = BASE_TAB + (activeTab === 'summary'    ? ' border-primary text-primary' : ' border-transparent text-gray-600 hover:text-gray-400');
+    }
+
+    window.meetSetTab = function(tab) {
+        activeTab = tab;
+        syncTabStyles();
+        renderContent();
+    };
+
+    function renderContent() {
+        if (activeTab === 'summary') {
+            copyBtn.style.display = 'none';
+            renderSummary();
+        } else {
+            copyBtn.style.display = demoState === 'complete' ? 'block' : 'none';
+            if (demoState === 'empty') renderEmpty();
+            else if (demoState === 'transcribing') renderTranscribing();
+            else renderTranscriptComplete();
+        }
+    }
+
+    function renderEmpty() {
+        content.innerHTML =
+            '<div class="flex-1 flex items-center">' +
+            '<div class="border border-surface-border bg-[#111111] p-5 w-full flex items-center justify-between gap-4">' +
+            '<div><p class="text-sm text-zinc-300">No transcript yet.</p>' +
+            '<p class="mt-1 text-xs text-zinc-500 leading-relaxed">Click Transcribe to generate a speaker-labeled transcript with AssemblyAI.</p></div>' +
+            '<span class="material-symbols-outlined text-gray-700 text-3xl shrink-0">transcribe</span>' +
+            '</div></div>';
+    }
+
+    function renderTranscribing() {
+        content.innerHTML =
+            '<div class="flex-1 flex items-center">' +
+            '<div class="border border-primary/20 bg-primary/10 p-4 w-full flex items-center gap-4 text-primary">' +
+            '<svg class="animate-spin h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24">' +
+            '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>' +
+            '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>' +
+            '<div><p class="text-sm font-medium">Transcribing…</p>' +
+            '<p class="mt-0.5 text-xs text-primary/70">AssemblyAI is processing dual-channel meeting audio.</p>' +
+            '</div></div></div>';
+    }
+
+    function renderTranscriptComplete() {
+        content.innerHTML = '<div id="meet-utterances" class="space-y-4" style="overflow-y:auto;max-height:340px;"></div>';
+        var container = document.getElementById('meet-utterances');
+        if (!container) return;
+
+        UTTERANCES.forEach(function(u, i) {
+            var t = setTimeout(function() {
+                if (!document.getElementById('meet-utterances')) return;
+                var isYou = u.speaker === 'You';
+                var el = document.createElement('div');
+                el.style.cssText = 'opacity:0;transform:translateY(6px);transition:opacity 0.35s ease,transform 0.35s ease;display:grid;grid-template-columns:52px 1fr;gap:16px;';
+                el.innerHTML =
+                    '<span style="padding-top:4px;text-align:right;font-size:11px;font-family:monospace;color:#52525b;">' + u.time + '</span>' +
+                    '<span style="min-width:0;">' +
+                    '<span style="display:inline-flex;border:1px solid ' + (isYou ? 'rgba(16,183,127,0.3)' : 'rgba(39,39,42,1)') + ';background:' + (isYou ? 'rgba(16,183,127,0.1)' : '#111111') + ';color:' + (isYou ? '#10b77f' : '#71717a') + ';padding:1px 6px;font-size:10px;font-family:monospace;text-transform:uppercase;letter-spacing:0.05em;">' + u.speaker + '</span>' +
+                    '<span style="margin-top:8px;display:block;font-size:14px;line-height:1.6;color:#d4d4d8;">' + u.text + '</span>' +
+                    '</span>';
+                container.appendChild(el);
+                requestAnimationFrame(function() { requestAnimationFrame(function() {
+                    el.style.opacity = '1'; el.style.transform = 'translateY(0)';
+                }); });
+            }, i * 380);
+            utteranceTimers.push(t);
+        });
+    }
+
+    function renderSummary() {
+        if (demoState !== 'complete') {
+            content.innerHTML =
+                '<div class="flex-1 flex items-center">' +
+                '<div class="border border-surface-border bg-[#111111] p-5 w-full">' +
+                '<p class="text-sm text-zinc-400">Transcribe this meeting first.</p>' +
+                '<p class="mt-1 text-xs text-zinc-600 leading-relaxed">The Summary tab extracts key points, action items, decisions, and follow-ups from the transcript.</p>' +
+                '</div></div>';
+            return;
+        }
+
+        var kpRows = SUMMARY.keyPoints.map(function(pt) {
+            return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#d4d4d8;line-height:1.6;">' +
+                   '<span style="color:#10b77f;margin-top:2px;flex-shrink:0;font-size:10px;">▸</span>' + pt + '</li>';
+        }).join('');
+
+        var aiRows = SUMMARY.actionItems.map(function(item) {
+            return '<div style="border-left:2px solid rgba(16,183,127,0.3);padding-left:10px;">' +
+                   '<p style="font-size:12px;color:#e4e4e7;">' + item.text + '</p>' +
+                   '<p style="margin-top:2px;font-size:10px;font-family:monospace;color:#52525b;">OWNER: ' + item.owner + ' &nbsp;·&nbsp; DUE: ' + item.due + ' &nbsp;·&nbsp; ' + item.status + '</p>' +
+                   '</div>';
+        }).join('');
+
+        var decRows = SUMMARY.decisions.map(function(d) {
+            return '<li style="font-size:12px;color:#d4d4d8;line-height:1.6;">' + d + '</li>';
+        }).join('');
+
+        var fuRows = SUMMARY.followUps.map(function(f) {
+            return '<li style="display:flex;align-items:flex-start;gap:6px;font-size:12px;color:#d4d4d8;line-height:1.6;">' +
+                   '<span style="color:#52525b;flex-shrink:0;margin-top:3px;">○</span>' + f + '</li>';
+        }).join('');
+
+        var card = function(title, body) {
+            return '<div style="border:1px solid #27272a;background:#111;padding:14px;border-radius:2px;">' +
+                   '<h4 style="font-size:10px;font-family:monospace;text-transform:uppercase;letter-spacing:0.08em;color:#10b77f;margin-bottom:10px;">' + title + '</h4>' +
+                   body + '</div>';
+        };
+
+        content.innerHTML =
+            '<div style="overflow-y:auto;max-height:380px;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">' +
+            '<p style="font-size:10px;font-family:monospace;text-transform:uppercase;letter-spacing:0.08em;color:#52525b;">AI Meeting Summary</p>' +
+            '<span style="font-size:10px;font-family:monospace;background:#27272a;color:#71717a;padding:2px 8px;border-radius:2px;">claude-sonnet-4</span>' +
+            '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:12px;">' +
+            card('Key Points', '<ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">' + kpRows + '</ul>') +
+            card('Action Items', '<div style="display:flex;flex-direction:column;gap:10px;">' + aiRows + '</div>') +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+            card('Decisions', '<ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">' + decRows + '</ul>') +
+            card('Follow-ups', '<ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">' + fuRows + '</ul>') +
+            '</div>' +
+            '</div></div>';
+    }
+
+    function showEmpty() {
+        clearTimers();
+        demoState = 'empty';
+        setBtn('Transcribe', true);
+        renderContent();
+        autoTimer = setTimeout(showTranscribing, 3200);
+    }
+
+    function showTranscribing() {
+        clearTimers();
+        demoState = 'transcribing';
+        setBtn('Transcribing…', false);
+        renderContent();
+        autoTimer = setTimeout(showComplete, 3600);
+    }
+
+    function showComplete() {
+        clearTimers();
+        demoState = 'complete';
+        setBtn('Retry', true);
+        renderContent();
+        autoTimer = setTimeout(showEmpty, 14000);
+    }
+
+    window.restartMeetingDemo = function() {
+        if (demoState === 'transcribing') return;
+        showTranscribing();
+    };
+
+    syncTabStyles();
+    showComplete();
+})();
+</script>
 </body>
 </html>
