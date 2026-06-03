@@ -1,3 +1,10 @@
+# [1.22.0](https://github.com/ibrahimshadev/Voxly/compare/v1.21.0...v1.22.0) (2026-06-03)
+
+
+### Features
+
+* **history:** show today's audio duration ([671e2be](https://github.com/ibrahimshadev/Voxly/commit/671e2be3ed621863cc75790b71b16adbe66c55cf))
+
 # [1.21.0](https://github.com/ibrahimshadev/Voxly/compare/v1.20.0...v1.21.0) (2026-06-03)
 
 
