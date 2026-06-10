@@ -36,6 +36,7 @@ type MeetingsPageProps = {
   onDeleteMeeting: (id: string) => void;
   onRefreshDevices: () => void;
   meetingRecording: Accessor<boolean>;
+  processingMeetings: Accessor<Record<string, number | null>>;
   onStartRecording: () => void;
   onStopRecording: () => void;
   onTranscribeMeeting: (id: string) => void;
@@ -97,6 +98,7 @@ function formatSpeakerLabel(speaker: string) {
 }
 
 function transcriptStatusLabel(meeting: MeetingMeta) {
+  if (meeting.status === 'processing') return 'Saving';
   if (meeting.transcript_status === 'pending') return 'Transcribing';
   if (meeting.transcript_status === 'completed') return 'Transcribed';
   if (meeting.transcript_status === 'error') return 'Error';
@@ -109,6 +111,9 @@ function statusClass(meeting: MeetingMeta) {
   const label = transcriptStatusLabel(meeting);
   if (label === 'Ready' || label === 'Transcribed') {
     return 'border-primary/35 bg-primary/10 text-primary';
+  }
+  if (label === 'Saving') {
+    return 'border-sky-400/35 bg-sky-500/10 text-sky-300';
   }
   if (label === 'Transcribing') {
     return 'border-zinc-500/40 bg-zinc-500/10 text-zinc-300';
@@ -178,9 +183,20 @@ export default function MeetingsPage(props: MeetingsPageProps) {
     ];
   });
 
+  const selectedProcessingPct = createMemo(() => {
+    const meeting = props.selectedMeeting();
+    if (!meeting || meeting.meta.status !== 'processing') return null;
+    return props.processingMeetings()[meeting.meta.id] ?? null;
+  });
+
   const selectedSourceUrl = createMemo(() => {
     const meeting = props.selectedMeeting();
-    if (!meeting || meeting.meta.status === 'recording' || !meeting.meta.file_size_bytes) {
+    if (
+      !meeting ||
+      meeting.meta.status === 'recording' ||
+      meeting.meta.status === 'processing' ||
+      !meeting.meta.file_size_bytes
+    ) {
       return '';
     }
 
@@ -499,6 +515,9 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                           <p class="min-w-0 text-sm font-semibold text-zinc-100 truncate">{meeting.title}</p>
                           <span class={`shrink-0 border px-2 py-0.5 text-[10px] font-mono uppercase ${statusClass(meeting)}`}>
                             {transcriptStatusLabel(meeting)}
+                            {meeting.status === 'processing' && props.processingMeetings()[meeting.id] != null
+                              ? ` ${Math.floor(props.processingMeetings()[meeting.id]!)}%`
+                              : ''}
                           </span>
                         </div>
                         <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-zinc-500">
@@ -551,15 +570,37 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     when={selectedSourceUrl()}
                     fallback={
                       <div class="h-full flex items-center justify-center px-6 text-center">
-                        <div>
+                        <div class="w-full max-w-xs">
                           <p class="text-sm font-medium text-zinc-300">
-                            {meeting().meta.status === 'recording' ? 'Recording in progress' : 'Recording file is not ready'}
+                            {meeting().meta.status === 'recording'
+                              ? 'Recording in progress'
+                              : meeting().meta.status === 'processing'
+                                ? 'Saving recording…'
+                                : 'Recording file is not ready'}
                           </p>
                           <p class="mt-1 text-xs text-zinc-500">
                             {meeting().meta.status === 'recording'
                               ? 'Playback will appear after the meeting is stopped.'
-                              : 'The saved source file has no playable media yet.'}
+                              : meeting().meta.status === 'processing'
+                                ? 'Mixing and saving the audio. Playback will appear when finished.'
+                                : 'The saved source file has no playable media yet.'}
                           </p>
+                          <Show when={meeting().meta.status === 'processing'}>
+                            <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                              <div
+                                class={`h-full rounded-full bg-primary ${
+                                  selectedProcessingPct() == null
+                                    ? 'w-2/5 meeting-progress-indeterminate'
+                                    : 'w-full origin-left transition-transform duration-300'
+                                }`}
+                                style={
+                                  selectedProcessingPct() != null
+                                    ? { transform: `scaleX(${selectedProcessingPct()! / 100})` }
+                                    : undefined
+                                }
+                              />
+                            </div>
+                          </Show>
                         </div>
                       </div>
                     }

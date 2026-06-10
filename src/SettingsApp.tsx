@@ -64,6 +64,8 @@ export default function SettingsApp() {
   const [selectedMeetingId, setSelectedMeetingId] = createSignal<string | null>(null);
   const [selectedMeeting, setSelectedMeeting] = createSignal<MeetingDetail | null>(null);
   const [meetingDevices, setMeetingDevices] = createSignal<MeetingDevices | null>(null);
+  // Saving progress per finalizing meeting id; null = indeterminate.
+  const [processingMeetings, setProcessingMeetings] = createSignal<Record<string, number | null>>({});
   const meetingRecording = createMemo(() => meetings().some((meeting) => meeting.status === 'recording'));
 
   const [modelsList, setModelsList] = createSignal<string[]>([]);
@@ -377,7 +379,7 @@ export default function SettingsApp() {
       upsertMeetingMeta(meta);
       setSelectedMeetingId(meta.id);
       await loadMeetingDetail(meta.id);
-      notifySuccess('Meeting recording saved.');
+      notifyInfo('Saving recording…');
       void loadMeetings();
     } catch (err) {
       await loadMeetings();
@@ -665,7 +667,33 @@ export default function SettingsApp() {
       const id = payload.meeting_id;
       if (!id) return;
 
-      if (payload.state === 'transcribing') {
+      if (payload.state === 'processing') {
+        setProcessingMeetings((current) => ({ ...current, [id]: payload.progress_pct ?? null }));
+        setMeetings((current) =>
+          current.map((meeting) => (meeting.id === id ? { ...meeting, status: 'processing' as const } : meeting))
+        );
+        setSelectedMeeting((current) =>
+          current?.meta.id === id
+            ? { ...current, meta: { ...current.meta, status: 'processing' as const } }
+            : current
+        );
+      } else if (payload.state === 'stopped') {
+        setProcessingMeetings((current) => {
+          const { [id]: _removed, ...rest } = current;
+          return rest;
+        });
+        notifySuccess('Meeting recording saved.');
+        void loadMeetings();
+        if (selectedMeetingId() === id) void loadMeetingDetail(id);
+      } else if (payload.state === 'error') {
+        setProcessingMeetings((current) => {
+          const { [id]: _removed, ...rest } = current;
+          return rest;
+        });
+        notifyError(payload.message ?? 'Failed to save meeting recording.');
+        void loadMeetings();
+        if (selectedMeetingId() === id) void loadMeetingDetail(id);
+      } else if (payload.state === 'transcribing') {
         setMeetings((current) =>
           current.map((meeting) =>
             meeting.id === id ? { ...meeting, transcript_status: 'pending', transcript_error: undefined } : meeting
@@ -813,6 +841,7 @@ export default function SettingsApp() {
             onDeleteMeeting={deleteMeeting}
             onRefreshDevices={loadMeetingDevices}
             meetingRecording={meetingRecording}
+            processingMeetings={processingMeetings}
             onStartRecording={startMeetingRecording}
             onStopRecording={stopMeetingRecording}
             onTranscribeMeeting={transcribeMeeting}

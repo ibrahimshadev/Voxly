@@ -257,3 +257,17 @@ body.window-main {
   font-size: 16px;
   font-weight: bold;
 }
+
+/* Meetings: indeterminate saving bar (compositor-safe: transform only) */
+.meeting-progress-indeterminate {
+  animation: meeting-progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes meeting-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
