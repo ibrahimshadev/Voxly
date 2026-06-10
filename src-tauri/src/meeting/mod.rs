@@ -4,6 +4,7 @@ pub mod manager;
 pub mod progress;
 pub mod recorder;
 pub mod storage;
+pub mod summarize;
 pub mod transcribe;
 pub mod types;
 
