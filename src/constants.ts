@@ -25,6 +25,14 @@ export const PROVIDERS: Record<Provider, { label: string; base_url: string; mode
   }
 };
 
+// Curated "thinking" models for meeting summaries — verified against the live
+// Groq/OpenAI model APIs on 2026-06-10 (see spec §11.3). First entry = default.
+export const SUMMARY_MODELS: Record<Provider, string[]> = {
+  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3-32b'],
+  openai: ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.4', 'gpt-5.5'],
+  custom: []
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   provider: 'groq',
   base_url: PROVIDERS.groq.base_url,
@@ -43,6 +51,11 @@ export const DEFAULT_SETTINGS: Settings = {
   api_key: '',
   assemblyai_api_key: '',
   provider_api_keys: {},
+  summary_provider: 'groq',
+  summary_base_url: PROVIDERS.groq.base_url,
+  summary_model: SUMMARY_MODELS.groq[0],
+  summary_api_key: '',
+  summary_provider_api_keys: {},
   vocabulary: [],
   active_mode_id: null,
   modes: DEFAULT_MODES

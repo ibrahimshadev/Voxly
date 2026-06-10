@@ -1,8 +1,8 @@
 # Design: AI meeting summary (GPT-OSS-120B on Groq)
 
 **Date:** 2026-06-10
-**Status:** Draft — codex-reviewed (gpt-5.5 high, against the live codebase + Groq docs); awaiting maintainer sign-off before the implementation plan.
-**App version at time of writing:** 1.21.0 (in production, distributed via GitHub releases)
+**Status:** v1 (§1–§10) **shipped** in 1.22.0 (commits 64c7f56..d1e5bff). **v2 revision (§11) in design** — configurable summary model; supersedes v1's hardcoded-Groq key resolution and request body.
+**App version at time of writing:** 1.21.0 (v1 design) / 1.22.0 (v2 revision)
 
 ---
 
@@ -301,3 +301,175 @@ Frontend: manual verification (tab disabled→enabled on transcript; generate �
 - `src/components/Settings/MeetingsPage.tsx` — tab enable/disable; rewritten `SummaryPanel`.
 - `src/SettingsApp.tsx` — `generateSummary` handler + signals + wiring.
 - `package.json` — add `marked`, `dompurify` (+ `@types/dompurify` if needed).
+
+---
+
+# §11. v2 revision: configurable summary ("thinking") model
+
+**Status:** approved by maintainer 2026-06-10; supersedes §2's "reuse saved Groq key" decision and §4.1's hardcoded model/endpoint/request body. Everything else in v1 (storage, command shape, in-flight lock, SummaryPanel rendering — copy excepted, see §11.8) stands.
+
+## 11.1 Problem
+
+v1 shipped hardcoded to GPT-OSS-120B on Groq, resolving the key from `provider_api_keys["groq"]`. In practice the maintainer hits **Groq free-tier TPM limits** on meeting-sized transcripts (the rate-limit risk flagged in the v1 codex review), and wants to point summaries at other providers (OpenAI, custom endpoints) — a "thinking model" configuration mirroring the transcription provider config, without touching transcription settings.
+
+## 11.2 Decisions (locked)
+
+| Decision | Choice |
+|---|---|
+| Configurability | Full provider config for summaries: provider cards (Groq / OpenAI / Custom) + base URL + model + API key — same shape as the transcription provider section in `SettingsPage.tsx`. |
+| Placement | **Tabs inside the meeting config panel** (`MeetingsPage` left column): `Capture` \| `Transcription` \| `AI Summary`. AssemblyAI key moves to the Transcription tab. Consent banner stays **above** the tabs while unacknowledged. |
+| Model field | **Curated preset dropdown per provider + free text for Custom** (same pattern as transcription MODEL ID). |
+| Defaults | `groq` / `https://api.groq.com/openai/v1` / `openai/gpt-oss-120b` — v1 behavior is the default. |
+| Key storage | **Independent** `summary_*` fields incl. a per-provider key map. Do NOT share the transcription `provider_api_keys` map (avoids clobbering its `api_key ⟷ provider_api_keys` mirroring, `settings.rs:259/288`). **Prefill** from the transcription map whenever the summary map has no key for the selected provider (§11.8 step 2). |
+| Back-compat | If no summary key is configured and summary provider is `groq`, fall back to v1's resolution. Existing working setups keep working with zero action. |
+
+## 11.3 Live API verification (2026-06-10)
+
+Curated lists and the request matrix below were verified against the **live** `GET /v1/models` endpoints and 8 live `chat/completions` probes (keys from the repo `.env`). These results override any training-data assumptions:
+
+- **Groq catalog (16 models):** thinking-capable text models are exactly `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3-32b` (all 131,072 ctx). `deepseek-r1-distill-*` is **gone**; `llama-3.3-70b-versatile` is not a reasoning model; `groq/compound[-mini]` are agentic systems (built-in web search) — excluded.
+- **OpenAI catalog (132 models):** current chat families are **GPT-5.5** (`gpt-5.5`, `gpt-5.5-pro`; 2026-04) and **GPT-5.4** (`gpt-5.4`, `-mini`, `-nano`, `-pro`; 2026-03). 4o/4.1/o-series are legacy.
+- **Probe results:**
+
+| # | Probe | Result |
+|---|---|---|
+| 1 | OpenAI `gpt-5.4-nano` + `temperature: 0.3` | ✅ accepted |
+| 2 | OpenAI `gpt-5.4-nano` + `reasoning_effort: "low"` | ✅ accepted |
+| 3 | OpenAI + `include_reasoning` | ❌ `Unknown parameter` (400) — v1 body breaks on OpenAI |
+| 4 | Groq `qwen3-32b` + `reasoning_effort: "low"` | ❌ 400 — must be `none` or `default` |
+| 5 | Groq `llama-3.3-70b` + `reasoning_effort` | ❌ 400 — `not supported with this model` |
+| 6 | Groq `qwen3-32b`, no reasoning params | ⚠️ raw `<think>…` leaks into `content` |
+| 7 | OpenAI `gpt-5.4-mini` + `temperature: 0.3` | ❌ 400 — `Only the default (1) value is supported` (inconsistent with nano!) |
+| 8 | Groq `qwen3-32b` + `reasoning_effort: "none"` | ✅ clean content |
+
+Consequences: the request body must be **per-provider AND per-model**; OpenAI requests must omit `temperature` entirely (support is inconsistent within the 5.4 family, and the rigid output format is enforced by the prompt, not sampling).
+
+## 11.4 Settings model
+
+### Rust — `src-tauri/src/settings.rs`
+
+`AppSettings` gains (all `#[serde(default = ...)]` so existing installs migrate silently):
+
+```rust
+pub summary_provider: String,          // default "groq"
+pub summary_base_url: String,          // default "https://api.groq.com/openai/v1"
+pub summary_model: String,             // default "openai/gpt-oss-120b"
+pub summary_api_key: String,           // default "" (active summary key)
+pub summary_provider_api_keys: HashMap<String, String>,  // default empty
+```
+
+`StoredSettings` gains `summary_provider`, `summary_base_url`, `summary_model`, and `encrypted_summary_provider_api_keys: HashMap<String, String>` — **map-only persistence**, using the same file-level inline encrypt/decrypt as `encrypted_provider_api_keys` (`settings.rs:249-253/296-302`). No dedicated `encrypted_summary_api_key` field and no keyring entry: on load, `summary_api_key` is derived from `summary_provider_api_keys[summary_provider]`; on save, it is written back into the map before encryption (mirroring the transcription pair at `settings.rs:259/288`, but the map is the single source of truth). Implementer note: `StoredSettings` is exhaustively destructured/constructed at five sites (`settings.rs:209`, `:304`, `:461`, `:484`, `:620`) — all compiler-caught.
+
+### TypeScript — `src/types.ts`, `src/constants.ts`
+
+`Settings` gains the same five fields (`summary_provider_api_keys: Partial<Record<Provider, string>>`). `DEFAULT_SETTINGS` updated accordingly. New constant:
+
+```ts
+export const SUMMARY_MODELS: Record<Provider, string[]> = {
+  groq:   ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3-32b'],
+  openai: ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.4', 'gpt-5.5'],
+  custom: []
+};
+```
+
+First entry per provider = default on provider switch. `CHAT_MODELS` (feeds Modes) is untouched. Provider labels/base URLs reuse the existing `PROVIDERS` constant.
+
+## 11.5 Key/config resolution — `summarize.rs`
+
+`resolve_groq_key()` is replaced by:
+
+```rust
+pub struct SummaryConfig { pub provider: String, pub base_url: String, pub model: String, pub api_key: String }
+
+pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, String>
+```
+
+Precedence for the key:
+1. `summary_api_key` (trimmed, non-empty);
+2. `summary_provider_api_keys[summary_provider]`;
+3. **legacy fallback** — only when `summary_provider == "groq"`: `provider_api_keys["groq"]`, else `api_key` when active `provider == "groq"` (v1 logic verbatim);
+4. else `Err("Add an API key under Meetings → AI Summary to generate meeting summaries.")`.
+
+Blank-field fallbacks are **per-provider**: for `groq`/`openai`, blank `summary_base_url` → `PROVIDERS[provider].base_url` equivalent constants and blank `summary_model` → first curated entry; for `custom`, blank base URL or model is an **error** ("Set a base URL and model under Meetings → AI Summary.") — never silently route a custom config to Groq. `run()`'s signature changes from `(groq_key, id, detail)` to `(config: SummaryConfig, id, detail)`; the POST goes to `{config.base_url}/chat/completions`. The stored `MeetingSummary.model`/`provider` record the config values actually used; the SummaryPanel footer currently shows `model` + date (`MeetingsPage.tsx:950`) — v2 keeps that and need not display `provider`.
+
+## 11.6 Request-body matrix (verified, one unit test per row)
+
+Base for all targets: `{ model, messages: [system, user] }`.
+
+| Target (provider + model match) | Additional body |
+|---|---|
+| `groq` + model contains `gpt-oss` | `temperature: 0.3`, `max_completion_tokens: 8192`, `reasoning_effort: "low"`, `include_reasoning: false` (v1's proven body) |
+| `groq` + model contains `qwen3` | `temperature: 0.3`, `max_completion_tokens: 8192`, `reasoning_effort: "none"` (probe 8; prevents `<think>` leakage from probe 6) |
+| `groq` + any other model | `temperature: 0.3`, `max_completion_tokens: 8192` (no reasoning params — probe 5) |
+| `openai` (gpt-5.x curated) | `max_completion_tokens: 8192`, `reasoning_effort: "low"` — **no** `temperature` (probe 7), **no** `include_reasoning` (probe 3) |
+| `custom` / anything else | `temperature: 0.3`, `max_tokens: 8192` (broadest OpenAI-compat) |
+
+Matching is on the configured model string (case-insensitive substring), provider first. Implemented as a pure `fn request_body(provider: &str, model: &str, transcript_text: &str) -> serde_json::Value`.
+
+## 11.7 Error handling additions
+
+- HTTP **429**, or an error body containing the substring `rate_limit` (case-insensitive — covers Groq/OpenAI `rate_limit_exceeded` codes): append a hint to the surfaced error — *"Rate or token limit hit — try a smaller model or a different provider under Meetings → AI Summary."*
+- **Error strings become provider-neutral**: `"Groq API error {status}"`, `"Failed to parse Groq response"`, `"Groq response did not include summary content."` (`summarize.rs:152/158/204`) are reworded to use the configured provider name (e.g. `"Summary API error ({provider}) {status}: …"`).
+- All other v1 error behavior unchanged (inline display, retryable, in-flight lock).
+
+## 11.8 UI — tabbed meeting config (`MeetingsPage.tsx`)
+
+The "Capture Configuration" panel becomes three tabs (local `createSignal<'capture' | 'transcription' | 'summary'>('capture')`), reusing the detail panel's existing tab styling (font-mono uppercase, `border-b-2`, primary accent):
+
+- **Capture** — meeting hotkey, video source preset, microphone, system audio, record toggles (existing fields, unchanged behavior).
+- **Transcription** — AssemblyAI API key (moved here verbatim; same `onBlur` save).
+- **AI Summary** — compact version of the Settings-page provider section:
+  - 3 provider cards (Groq / OpenAI / Custom — reuse `GroqIcon`/`OpenAIIcon` by **exporting them from `SettingsPage.tsx`** (currently module-private at `SettingsPage.tsx:22-32`) and importing in `MeetingsPage.tsx`; `dns` material icon for Custom; smaller padding for the 45% column);
+  - BASE URL input (reset to `PROVIDERS[p].base_url` on provider switch, editable — mirrors transcription behavior);
+  - MODEL ID — `Select` over `SUMMARY_MODELS[provider]` for groq/openai; free-text input for custom;
+  - API KEY — password input with show/hide toggle, saved on blur.
+
+The consent warning banner renders **above** the tab strip while unacknowledged (it gates recording, not configuration).
+
+**SummaryPanel copy becomes provider-aware (supersedes two v1 strings):** the hardcoded *"Generated with GPT-OSS-120B on Groq from the meeting transcript."* (`MeetingsPage.tsx:895`) and *"GPT-OSS-120B is analyzing the transcript on Groq."* (`MeetingsPage.tsx:938`) must be driven by the configured `summary_model`/`summary_provider` (or made neutral, e.g. "Generated from the meeting transcript with your configured AI model."). Otherwise the UI claims Groq while running OpenAI.
+
+**Provider-switch behavior** (mirrors `SettingsPage.onProviderChange`, scoped to `summary_*`):
+1. stash the current `summary_api_key` under `summary_provider_api_keys[old_provider]` and the current model in a module-level `summaryModelMemory[old_provider]`;
+2. restore the new provider's key from `summary_provider_api_keys[new]`; **whenever that map entry is absent/empty**, prefill from the transcription `provider_api_keys[new]` (re-applies if the user cleared the summary key — acceptable);
+3. restore the model from `summaryModelMemory[new]`, else `SUMMARY_MODELS[new][0]`, else `''` (custom);
+4. reset `summary_base_url` to `PROVIDERS[new].base_url`;
+5. save quietly (no test-call for summary keys in v2).
+
+## 11.9 Testing
+
+Rust (same style/location as v1 tests):
+- `resolve_summary_config` precedence: explicit summary key → summary map → legacy groq fallback (both branches) → error; blank-trimming; base_url/model fallbacks.
+- `request_body` matrix: one test per row of §11.6 asserting the exact params present AND absent (e.g. OpenAI body has no `temperature`/`include_reasoning`).
+- 429 hint appended on rate-limit status.
+
+Frontend: `npx tsc --noEmit`; manual pass over tab switching, provider switch stash/restore/prefill, generate on each provider.
+
+## 11.10 Migration & back-compat
+
+- New settings fields are serde-defaulted; no settings-file version bump needed.
+- No DB changes (`meeting_summaries` schema untouched; `SCHEMA_VERSION` stays 1).
+- v1 users with a working Groq key: legacy fallback (§11.5 step 3) keeps summaries working before they ever open the new tab.
+- Stored summaries from v1 render unchanged (model/provider already persisted per summary).
+
+## 11.11 Out of scope (v2)
+
+- Temperature / reasoning-effort knobs in the UI (internal constants).
+- Key test-call ("Test & Save") for the summary provider.
+- Per-meeting model override.
+- Chunked map-reduce for over-budget transcripts (still v1.1 of the summary feature).
+- Changing `CHAT_MODELS` / Modes.
+
+## 11.12 File-by-file change list (v2)
+
+**Modified — Rust**
+- `src-tauri/src/settings.rs` — five `AppSettings` fields + defaults; `StoredSettings.encrypted_summary_provider_api_keys` (map-only, §11.4); load/save mirroring for the summary pair (5 `StoredSettings` construction sites).
+- `src-tauri/src/meeting/summarize.rs` — `SummaryConfig`; `resolve_summary_config` (replaces `resolve_groq_key`); provider/model-aware `request_body`; `run(config, id, detail)`; 429/rate-limit hint; provider-neutral error strings; updated/new tests.
+- `src-tauri/src/commands.rs` — `generate_meeting_summary` calls `resolve_summary_config` and passes the config.
+
+**Modified — Frontend**
+- `src/types.ts` — five `Settings` fields.
+- `src/constants.ts` — `SUMMARY_MODELS`; `DEFAULT_SETTINGS` additions.
+- `src/components/Settings/MeetingsPage.tsx` — config panel → 3 tabs; AI Summary tab UI; provider-switch logic + `summaryModelMemory`; AssemblyAI key moves to Transcription tab; **provider-aware SummaryPanel copy (`:895`, `:938`)**.
+- `src/components/Settings/SettingsPage.tsx` — export `GroqIcon`/`OpenAIIcon` (no behavior change).
+
+**No new files. No DB changes.**

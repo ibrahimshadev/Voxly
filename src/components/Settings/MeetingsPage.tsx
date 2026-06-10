@@ -8,6 +8,8 @@ import {
   Clock,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   FileText,
   HardDrive,
   Loader2,
@@ -21,10 +23,13 @@ import {
   Video,
   Volume2,
 } from 'lucide-solid';
-import type { MeetingDetail, MeetingDevices, MeetingMeta, Settings } from '../../types';
+import type { JSX } from 'solid-js';
+import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } from '../../types';
+import { PROVIDERS, SUMMARY_MODELS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
 import Select from './Select';
+import { GroqIcon, OpenAIIcon } from './SettingsPage';
 
 type MeetingsPageProps = {
   meetings: Accessor<MeetingMeta[]>;
@@ -55,6 +60,30 @@ const VIDEO_PRESETS = [
 ];
 
 type TranscriptTab = 'transcript' | 'summary';
+
+type ConfigTab = 'capture' | 'transcription' | 'summary';
+
+const CONFIG_TABS: { value: ConfigTab; label: string }[] = [
+  { value: 'capture', label: 'Capture' },
+  { value: 'transcription', label: 'Transcription' },
+  { value: 'summary', label: 'AI Summary' },
+];
+
+type SummaryProviderOption = {
+  value: Provider;
+  label: string;
+  icon?: string;
+  iconComponent?: (props: { class?: string }) => JSX.Element;
+};
+
+const SUMMARY_PROVIDER_OPTIONS: SummaryProviderOption[] = [
+  { value: 'groq', label: 'Groq', iconComponent: GroqIcon },
+  { value: 'openai', label: 'OpenAI', iconComponent: OpenAIIcon },
+  { value: 'custom', label: 'Custom', icon: 'dns' },
+];
+
+// Session-scoped model stash per provider (mirrors providerModelMemory in SettingsPage).
+const summaryModelMemory: Partial<Record<Provider, string>> = {};
 
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString([], {
@@ -170,6 +199,43 @@ function ToggleRow(props: {
 export default function MeetingsPage(props: MeetingsPageProps) {
   let videoRef: HTMLVideoElement | undefined;
   const [activeTab, setActiveTab] = createSignal<TranscriptTab>('transcript');
+  const [configTab, setConfigTab] = createSignal<ConfigTab>('capture');
+  const [showSummaryKey, setShowSummaryKey] = createSignal(false);
+
+  const summaryModelOptions = () =>
+    SUMMARY_MODELS[props.settings().summary_provider].map((model) => ({
+      value: model,
+      label: model,
+    }));
+
+  const onSummaryProviderChange = (provider: Provider) => {
+    if (provider === props.settings().summary_provider) return;
+    applyChange((current) => {
+      const previous = current.summary_provider;
+      const stashedKeys = { ...current.summary_provider_api_keys };
+      if (current.summary_api_key.trim()) {
+        stashedKeys[previous] = current.summary_api_key;
+      } else {
+        delete stashedKeys[previous];
+      }
+      summaryModelMemory[previous] = current.summary_model;
+
+      // Restore this provider's summary key; if none, prefill from the
+      // transcription-side key for the same provider (spec §11.8 step 2).
+      const restoredKey = stashedKeys[provider]?.trim()
+        ? (stashedKeys[provider] as string)
+        : (current.provider_api_keys[provider] ?? '');
+
+      return {
+        ...current,
+        summary_provider: provider,
+        summary_base_url: PROVIDERS[provider].base_url,
+        summary_model: summaryModelMemory[provider] ?? SUMMARY_MODELS[provider][0] ?? '',
+        summary_api_key: restoredKey,
+        summary_provider_api_keys: stashedKeys,
+      };
+    });
+  };
 
   const audioOptions = createMemo(() => {
     const devices = props.devices()?.audio_devices ?? [];
@@ -298,10 +364,6 @@ export default function MeetingsPage(props: MeetingsPageProps) {
       <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[45%_55%] overflow-hidden">
         <section class="min-h-0 flex flex-col border-r border-white/5 bg-background-dark overflow-hidden">
           <div class="shrink-0 border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
-            <div class="mb-3">
-              <h2 class="text-lg font-semibold text-white">Capture Configuration</h2>
-            </div>
-
             <div class="space-y-3">
               <Show
                 when={!props.settings().meeting_consent_acknowledged}
@@ -333,25 +395,49 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   </div>
               </Show>
 
-              <div>
-                <label class="text-xs text-gray-500 font-medium ml-1">
-                  AssemblyAI API key
-                </label>
-                <input
-                  type="password"
-                  value={props.settings().assemblyai_api_key}
-                  onInput={(e) =>
-                    props.setSettings((current) => ({
-                      ...current,
-                      assemblyai_api_key: (e.target as HTMLInputElement).value,
-                    }))
-                  }
-                  onBlur={() => void props.onSaveSettings()}
-                  placeholder="AssemblyAI key for meeting transcripts"
-                  class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
-                />
+              <div class="flex items-center gap-1 border-b border-white/5">
+                <For each={CONFIG_TABS}>
+                  {(tab) => (
+                    <button
+                      type="button"
+                      onClick={() => setConfigTab(tab.value)}
+                      class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+                        configTab() === tab.value
+                          ? 'border-primary text-primary'
+                          : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  )}
+                </For>
               </div>
 
+              <Show when={configTab() === 'transcription'}>
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-xs text-gray-500 font-medium ml-1">
+                      AssemblyAI API key
+                    </label>
+                    <input
+                      type="password"
+                      value={props.settings().assemblyai_api_key}
+                      onInput={(e) =>
+                        props.setSettings((current) => ({
+                          ...current,
+                          assemblyai_api_key: (e.target as HTMLInputElement).value,
+                        }))
+                      }
+                      onBlur={() => void props.onSaveSettings()}
+                      placeholder="AssemblyAI key for meeting transcripts"
+                      class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                    />
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={configTab() === 'capture'}>
+                <div class="space-y-3">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label class="text-xs text-gray-500 font-medium ml-1">
@@ -478,6 +564,124 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                 <p class="text-xs text-red-300/80 leading-relaxed">
                   No audio devices were returned. Check Windows microphone permission for desktop apps, then refresh devices.
                 </p>
+              </Show>
+                </div>
+              </Show>
+
+              <Show when={configTab() === 'summary'}>
+                <div class="space-y-3">
+                  <div class="grid grid-cols-3 gap-2">
+                    <For each={SUMMARY_PROVIDER_OPTIONS}>
+                      {(option) => {
+                        const isActive = () => props.settings().summary_provider === option.value;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => onSummaryProviderChange(option.value)}
+                            class={`cursor-pointer relative p-3 rounded-xl border transition-colors flex flex-col items-center justify-center gap-1.5 ${
+                              isActive()
+                                ? 'border-primary bg-primary/5'
+                                : 'border-white/10 bg-surface-dark hover:border-white/20 hover:bg-white/[0.03]'
+                            }`}
+                          >
+                            {option.iconComponent
+                              ? option.iconComponent({
+                                  class: `w-5 h-5 ${isActive() ? 'text-primary' : 'text-gray-400'}`,
+                                })
+                              : (
+                                <span class={`material-symbols-outlined text-xl ${isActive() ? 'text-primary' : 'text-gray-400'}`}>
+                                  {option.icon}
+                                </span>
+                              )}
+                            <span class={`font-medium text-xs ${isActive() ? 'text-white' : 'text-gray-300'}`}>
+                              {option.label}
+                            </span>
+                          </button>
+                        );
+                      }}
+                    </For>
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-gray-500 font-medium ml-1">Base URL</label>
+                    <input
+                      type="text"
+                      value={props.settings().summary_base_url}
+                      onInput={(e) =>
+                        props.setSettings((current) => ({
+                          ...current,
+                          summary_base_url: (e.target as HTMLInputElement).value,
+                        }))
+                      }
+                      onBlur={() => void props.onSaveSettings()}
+                      placeholder="https://api.example.com/v1"
+                      class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-gray-500 font-medium ml-1">Model</label>
+                    <Show
+                      when={props.settings().summary_provider !== 'custom'}
+                      fallback={
+                        <input
+                          type="text"
+                          value={props.settings().summary_model}
+                          onInput={(e) =>
+                            props.setSettings((current) => ({
+                              ...current,
+                              summary_model: (e.target as HTMLInputElement).value,
+                            }))
+                          }
+                          onBlur={() => void props.onSaveSettings()}
+                          placeholder="model-name"
+                          class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                        />
+                      }
+                    >
+                      <Select
+                        value={props.settings().summary_model}
+                        options={summaryModelOptions()}
+                        class="mt-1.5 px-3 py-1.5"
+                        onChange={(value) =>
+                          applyChange((current) => ({ ...current, summary_model: value }))
+                        }
+                      />
+                    </Show>
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-gray-500 font-medium ml-1">API key</label>
+                    <div class="relative mt-1.5">
+                      <input
+                        type={showSummaryKey() ? 'text' : 'password'}
+                        value={props.settings().summary_api_key}
+                        onInput={(e) =>
+                          props.setSettings((current) => ({
+                            ...current,
+                            summary_api_key: (e.target as HTMLInputElement).value,
+                          }))
+                        }
+                        onBlur={() => void props.onSaveSettings()}
+                        placeholder="API key for meeting summaries"
+                        class="w-full bg-input-bg border border-white/15 rounded-lg py-1.5 pl-3 pr-10 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSummaryKey((value) => !value)}
+                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+                        title={showSummaryKey() ? 'Hide key' : 'Show key'}
+                      >
+                        <Show when={showSummaryKey()} fallback={<Eye size={15} />}>
+                          <EyeOff size={15} />
+                        </Show>
+                      </button>
+                    </div>
+                    <p class="mt-1 text-[11px] text-zinc-600">
+                      Used only for meeting summaries. Transcription settings are unaffected.
+                    </p>
+                  </div>
+                </div>
               </Show>
             </div>
           </div>
@@ -734,6 +938,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                           onGenerateSummary={props.onGenerateSummary}
                           generating={Boolean(props.summaryGenerating()[meeting().meta.id])}
                           error={props.summaryErrors()[meeting().meta.id] ?? null}
+                          summaryModel={props.settings().summary_model}
                         />
                       }
                     >
@@ -881,6 +1086,7 @@ function SummaryPanel(props: {
   onGenerateSummary: (id: string) => void;
   generating: boolean;
   error: string | null;
+  summaryModel: string;
 }) {
   const hasTranscript = () =>
     props.meeting.meta.transcript_status === 'completed' && Boolean(props.meeting.transcript);
@@ -892,7 +1098,7 @@ function SummaryPanel(props: {
         <div>
           <h3 class="text-sm font-semibold text-white">AI meeting summary</h3>
           <p class="mt-1 text-xs text-zinc-500">
-            Generated with GPT-OSS-120B on Groq from the meeting transcript.
+            Generated from the meeting transcript with {summary()?.model ?? props.summaryModel}.
           </p>
         </div>
         <Show when={!summary()}>
@@ -935,7 +1141,7 @@ function SummaryPanel(props: {
                 <div>
                   <p class="text-sm font-medium">Generating summary…</p>
                   <p class="mt-1 text-xs text-primary/80">
-                    GPT-OSS-120B is analyzing the transcript on Groq.
+                    {props.summaryModel} is analyzing the transcript.
                   </p>
                 </div>
               </div>

@@ -263,9 +263,9 @@ pub async fn generate_meeting_summary(
     state: State<'_, AppState>,
 ) -> Result<crate::meeting::types::MeetingSummary, String> {
     let settings = state.manager.get_settings()?;
-    let groq_key = crate::meeting::summarize::resolve_groq_key(&settings)?;
+    let config = crate::meeting::summarize::resolve_summary_config(&settings)?;
     let detail = state.meeting_manager.get(&id)?;
-    let summary = crate::meeting::summarize::run(groq_key, id, detail).await?;
+    let summary = crate::meeting::summarize::run(config, id, detail).await?;
     let _ = app.emit("meetings-updated", ());
     Ok(summary)
 }

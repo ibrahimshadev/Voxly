@@ -12,10 +12,20 @@ const MODEL: &str = "openai/gpt-oss-120b";
 const GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_COMPLETION_TOKENS: u32 = 8_192;
-const TEMPERATURE: f32 = 0.3;
+const TEMPERATURE: f64 = 0.3;
 // Safe input budget. gpt-oss-120b context = 131,072 tokens; reserve headroom for
 // the system prompt + completion. ~4 chars/token heuristic.
 const MAX_TRANSCRIPT_CHARS: usize = 360_000; // ≈ 90k tokens
+const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_OPENAI_SUMMARY_MODEL: &str = "gpt-5.4-mini";
+
+#[derive(Debug, Clone)]
+pub struct SummaryConfig {
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub api_key: String,
+}
 
 const SUMMARY_SYSTEM_PROMPT: &str = r#"You are an expert meeting analyst. You will be given a meeting transcript with
 speaker labels. In these transcripts, "You" is the local microphone speaker (the
@@ -90,25 +100,77 @@ fn acquire_in_flight(id: &str) -> Result<InFlightGuard, String> {
     Ok(InFlightGuard { id: id.to_string() })
 }
 
-pub fn resolve_groq_key(settings: &AppSettings) -> Result<String, String> {
-    if let Some(key) = settings
-        .provider_api_keys
-        .get("groq")
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-    {
-        return Ok(key.to_string());
-    }
-    if settings.provider == "groq" {
-        let key = settings.api_key.trim();
-        if !key.is_empty() {
-            return Ok(key.to_string());
+pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, String> {
+    let provider = {
+        let trimmed = settings.summary_provider.trim();
+        if trimmed.is_empty() {
+            "groq".to_string()
+        } else {
+            trimmed.to_string()
         }
+    };
+
+    let api_key = non_empty(&settings.summary_api_key)
+        .or_else(|| {
+            settings
+                .summary_provider_api_keys
+                .get(&provider)
+                .and_then(|key| non_empty(key))
+        })
+        .or_else(|| {
+            if provider != "groq" {
+                return None;
+            }
+            // v1 legacy fallback, verbatim semantics.
+            settings
+                .provider_api_keys
+                .get("groq")
+                .and_then(|key| non_empty(key))
+                .or_else(|| {
+                    if settings.provider == "groq" {
+                        non_empty(&settings.api_key)
+                    } else {
+                        None
+                    }
+                })
+        })
+        .ok_or_else(|| {
+            "Add an API key under Meetings → AI Summary to generate meeting summaries."
+                .to_string()
+        })?;
+
+    let base_url = match non_empty(&settings.summary_base_url) {
+        Some(url) => url,
+        None => match provider.as_str() {
+            "groq" => GROQ_BASE_URL.to_string(),
+            "openai" => DEFAULT_OPENAI_BASE_URL.to_string(),
+            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
+        },
+    };
+    let model = match non_empty(&settings.summary_model) {
+        Some(model) => model,
+        None => match provider.as_str() {
+            "groq" => MODEL.to_string(),
+            "openai" => DEFAULT_OPENAI_SUMMARY_MODEL.to_string(),
+            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
+        },
+    };
+
+    Ok(SummaryConfig {
+        provider,
+        base_url,
+        model,
+        api_key,
+    })
+}
+
+fn non_empty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
-    Err(
-        "Add a Groq API key in Settings (switch the provider to Groq and save) to generate meeting summaries."
-            .to_string(),
-    )
 }
 
 fn build_transcript_text(transcript: &MeetingTranscript) -> String {
@@ -133,35 +195,65 @@ fn check_transcript_len(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn request_body(transcript_text: &str) -> serde_json::Value {
-    serde_json::json!({
-        "model": MODEL,
+fn request_body(provider: &str, model: &str, transcript_text: &str) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
         "messages": [
             { "role": "system", "content": SUMMARY_SYSTEM_PROMPT },
             { "role": "user", "content": transcript_text }
-        ],
-        "temperature": TEMPERATURE,
-        "max_completion_tokens": MAX_COMPLETION_TOKENS,
-        "reasoning_effort": "low",
-        "include_reasoning": false
-    })
+        ]
+    });
+    let params = body.as_object_mut().expect("request body is a JSON object");
+    let model_lower = model.to_ascii_lowercase();
+    // Per-provider/per-model matrix, live-verified 2026-06-10 (spec §11.6).
+    match provider {
+        "openai" => {
+            params.insert("max_completion_tokens".into(), MAX_COMPLETION_TOKENS.into());
+            params.insert("reasoning_effort".into(), "low".into());
+        }
+        "groq" => {
+            params.insert("temperature".into(), TEMPERATURE.into());
+            params.insert("max_completion_tokens".into(), MAX_COMPLETION_TOKENS.into());
+            if model_lower.contains("gpt-oss") {
+                params.insert("reasoning_effort".into(), "low".into());
+                params.insert("include_reasoning".into(), false.into());
+            } else if model_lower.contains("qwen3") {
+                params.insert("reasoning_effort".into(), "none".into());
+            }
+        }
+        _ => {
+            params.insert("temperature".into(), TEMPERATURE.into());
+            params.insert("max_tokens".into(), MAX_COMPLETION_TOKENS.into());
+        }
+    }
+    body
 }
 
 fn parse_summary_content(body: &str) -> Result<String, String> {
     let json: serde_json::Value = serde_json::from_str(body)
-        .map_err(|error| format!("Failed to parse Groq response: {error}"))?;
+        .map_err(|error| format!("Failed to parse summary response: {error}"))?;
     let content = json["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("")
         .trim();
     if content.is_empty() {
-        return Err("Groq response did not include summary content.".to_string());
+        return Err("Summary response did not include content.".to_string());
     }
     Ok(content.to_string())
 }
 
+fn with_rate_limit_hint(status: reqwest::StatusCode, body: &str, message: String) -> String {
+    let rate_limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || body.to_ascii_lowercase().contains("rate_limit");
+    if rate_limited {
+        format!("{message} Rate or token limit hit — try a smaller model or a different provider under Meetings → AI Summary.")
+    } else {
+        message
+    }
+}
+
 pub async fn run(
-    groq_key: String,
+    config: SummaryConfig,
     id: String,
     detail: MeetingDetail,
 ) -> Result<MeetingSummary, String> {
@@ -188,9 +280,16 @@ pub async fn run(
         .build()
         .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
     let response = client
-        .post(format!("{GROQ_BASE_URL}/chat/completions"))
-        .bearer_auth(&groq_key)
-        .json(&request_body(&transcript_text))
+        .post(format!(
+            "{}/chat/completions",
+            config.base_url.trim_end_matches('/')
+        ))
+        .bearer_auth(&config.api_key)
+        .json(&request_body(
+            &config.provider,
+            &config.model,
+            &transcript_text,
+        ))
         .send()
         .await
         .map_err(|error| format!("Summary request failed: {error}"))?;
@@ -201,13 +300,20 @@ pub async fn run(
         .await
         .map_err(|error| format!("Failed to read summary response: {error}"))?;
     if !status.is_success() {
-        return Err(format!("Groq API error {status}: {response_body}"));
+        return Err(with_rate_limit_hint(
+            status,
+            &response_body,
+            format!(
+                "Summary API error ({}) {status}: {response_body}",
+                config.provider
+            ),
+        ));
     }
 
     let summary = MeetingSummary {
         markdown: parse_summary_content(&response_body)?,
-        model: MODEL.to_string(),
-        provider: "groq".to_string(),
+        model: config.model.clone(),
+        provider: config.provider.clone(),
         created_at_ms: storage::now_ms()?,
         transcript_created_at_ms: Some(transcript.created_at_ms),
     };
@@ -254,28 +360,138 @@ mod tests {
         }
     }
 
-    #[test]
-    fn resolve_groq_key_prefers_saved_groq_provider_key() {
-        let settings = settings_with("openai", "openai-key", Some("groq-key"));
-        assert_eq!(resolve_groq_key(&settings).unwrap(), "groq-key");
+    fn with_summary(
+        mut settings: AppSettings,
+        provider: &str,
+        api_key: &str,
+        map_key: Option<&str>,
+    ) -> AppSettings {
+        settings.summary_provider = provider.to_string();
+        settings.summary_api_key = api_key.to_string();
+        settings.summary_provider_api_keys.clear();
+        if let Some(key) = map_key {
+            settings
+                .summary_provider_api_keys
+                .insert(provider.to_string(), key.to_string());
+        }
+        settings
     }
 
     #[test]
-    fn resolve_groq_key_falls_back_to_api_key_only_when_groq_is_active() {
-        let settings = settings_with("groq", "active-groq-key", None);
-        assert_eq!(resolve_groq_key(&settings).unwrap(), "active-groq-key");
+    fn resolve_summary_config_prefers_explicit_summary_key() {
+        let settings = with_summary(
+            settings_with("openai", "active-key", Some("legacy-groq")),
+            "openai",
+            "summary-key",
+            Some("map-key"),
+        );
+        let config = resolve_summary_config(&settings).unwrap();
+        assert_eq!(config.api_key, "summary-key");
+        assert_eq!(config.provider, "openai");
     }
 
     #[test]
-    fn resolve_groq_key_rejects_api_key_of_other_providers() {
-        let settings = settings_with("openai", "openai-key", None);
-        assert!(resolve_groq_key(&settings).is_err());
+    fn resolve_summary_config_falls_back_to_summary_map() {
+        let settings = with_summary(
+            settings_with("openai", "active-key", None),
+            "openai",
+            "  ",
+            Some("map-key"),
+        );
+        assert_eq!(resolve_summary_config(&settings).unwrap().api_key, "map-key");
     }
 
     #[test]
-    fn resolve_groq_key_rejects_blank_keys() {
-        let settings = settings_with("groq", "   ", Some("  "));
-        assert!(resolve_groq_key(&settings).is_err());
+    fn resolve_summary_config_uses_legacy_groq_map_when_summary_unset() {
+        let settings = with_summary(
+            settings_with("openai", "openai-key", Some("legacy-groq")),
+            "groq",
+            "",
+            None,
+        );
+        assert_eq!(
+            resolve_summary_config(&settings).unwrap().api_key,
+            "legacy-groq"
+        );
+    }
+
+    #[test]
+    fn resolve_summary_config_uses_legacy_active_key_only_when_groq_active() {
+        let settings = with_summary(settings_with("groq", "active-groq", None), "groq", "", None);
+        assert_eq!(
+            resolve_summary_config(&settings).unwrap().api_key,
+            "active-groq"
+        );
+    }
+
+    #[test]
+    fn resolve_summary_config_denies_legacy_fallback_for_other_providers() {
+        // OpenAI summary provider must NOT borrow groq/active keys.
+        let settings = with_summary(
+            settings_with("groq", "active-groq", Some("legacy-groq")),
+            "openai",
+            "",
+            None,
+        );
+        assert!(resolve_summary_config(&settings).is_err());
+    }
+
+    #[test]
+    fn resolve_summary_config_defaults_blank_base_url_and_model_per_provider() {
+        let mut settings = with_summary(
+            settings_with("groq", "k", None),
+            "openai",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = "  ".to_string();
+        settings.summary_model = String::new();
+        let config = resolve_summary_config(&settings).unwrap();
+        assert_eq!(config.base_url, "https://api.openai.com/v1");
+        assert_eq!(config.model, "gpt-5.4-mini");
+    }
+
+    #[test]
+    fn resolve_summary_config_rejects_blank_custom_config() {
+        let mut settings = with_summary(
+            settings_with("groq", "k", None),
+            "custom",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = String::new();
+        settings.summary_model = "some-model".to_string();
+        assert!(resolve_summary_config(&settings)
+            .unwrap_err()
+            .contains("base URL"));
+    }
+
+    #[test]
+    fn resolve_summary_config_defaults_blank_groq_base_url_and_model() {
+        let mut settings = with_summary(
+            settings_with("openai", "k", None),
+            "groq",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = String::new();
+        settings.summary_model = "  ".to_string();
+        let config = resolve_summary_config(&settings).unwrap();
+        assert_eq!(config.base_url, "https://api.groq.com/openai/v1");
+        assert_eq!(config.model, "openai/gpt-oss-120b");
+    }
+
+    #[test]
+    fn resolve_summary_config_rejects_blank_custom_model() {
+        let mut settings = with_summary(
+            settings_with("groq", "k", None),
+            "custom",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = "http://localhost:11434/v1".to_string();
+        settings.summary_model = String::new();
+        assert!(resolve_summary_config(&settings).is_err());
     }
 
     #[test]
@@ -324,14 +540,81 @@ mod tests {
     }
 
     #[test]
-    fn request_body_uses_locked_model_and_params() {
-        let body = request_body("transcript text");
-        assert_eq!(body["model"], MODEL);
+    fn request_body_groq_gpt_oss_keeps_v1_reasoning_params() {
+        let body = request_body("groq", "openai/gpt-oss-120b", "transcript");
+        assert_eq!(body["model"], "openai/gpt-oss-120b");
         assert_eq!(body["messages"][0]["role"], "system");
-        assert_eq!(body["messages"][1]["content"], "transcript text");
+        assert_eq!(body["messages"][1]["content"], "transcript");
+        assert_eq!(body["temperature"], 0.3);
         assert_eq!(body["max_completion_tokens"], 8_192);
         assert_eq!(body["reasoning_effort"], "low");
         assert_eq!(body["include_reasoning"], false);
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn request_body_groq_qwen3_disables_thinking() {
+        // Probes 6/8 (spec §11.3): default leaks <think> into content; "none" is clean.
+        let body = request_body("groq", "qwen/qwen3-32b", "t");
+        assert_eq!(body["reasoning_effort"], "none");
+        assert!(body.get("include_reasoning").is_none());
+        assert_eq!(body["temperature"], 0.3);
+        assert_eq!(body["max_completion_tokens"], 8_192);
+    }
+
+    #[test]
+    fn request_body_groq_other_models_omit_reasoning_params() {
+        // Probe 5: llama-3.3 rejects reasoning_effort outright.
+        let body = request_body("groq", "llama-3.3-70b-versatile", "t");
+        assert!(body.get("reasoning_effort").is_none());
+        assert!(body.get("include_reasoning").is_none());
+    }
+
+    #[test]
+    fn request_body_openai_omits_temperature_and_include_reasoning() {
+        // Probes 3 & 7: include_reasoning = unknown param; temperature rejected on 5.4-mini.
+        let body = request_body("openai", "gpt-5.4-mini", "t");
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("include_reasoning").is_none());
+        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["max_completion_tokens"], 8_192);
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn request_body_custom_uses_broadest_compat_params() {
+        let body = request_body("custom", "llama3:70b", "t");
+        assert_eq!(body["temperature"], 0.3);
+        assert_eq!(body["max_tokens"], 8_192);
+        assert!(body.get("max_completion_tokens").is_none());
+        assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn rate_limit_hint_appends_on_429() {
+        let message = with_rate_limit_hint(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            "{}",
+            "Summary API error (groq) 429: {}".to_string(),
+        );
+        assert!(message.contains("try a smaller model or a different provider"));
+    }
+
+    #[test]
+    fn rate_limit_hint_appends_on_rate_limit_body() {
+        let message = with_rate_limit_hint(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"error":{"code":"RATE_LIMIT_EXCEEDED"}}"#,
+            "base".to_string(),
+        );
+        assert!(message.contains("Meetings → AI Summary"));
+    }
+
+    #[test]
+    fn rate_limit_hint_leaves_other_errors_unchanged() {
+        let message =
+            with_rate_limit_hint(reqwest::StatusCode::UNAUTHORIZED, "{}", "base".to_string());
+        assert_eq!(message, "base");
     }
 
     #[test]
