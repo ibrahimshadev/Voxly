@@ -35,6 +35,11 @@ export type Settings = {
   api_key: string;
   assemblyai_api_key: string;
   provider_api_keys: Partial<Record<Provider, string>>;
+  summary_provider: Provider;
+  summary_base_url: string;
+  summary_model: string;
+  summary_api_key: string;
+  summary_provider_api_keys: Partial<Record<Provider, string>>;
   vocabulary: VocabularyEntry[];
   active_mode_id: string | null;
   modes: Mode[];
