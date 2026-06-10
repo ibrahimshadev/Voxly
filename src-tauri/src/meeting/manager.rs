@@ -170,13 +170,11 @@ impl MeetingSessionManager {
     }
 
     pub fn list(&self) -> Result<Vec<MeetingMeta>, String> {
-        let active_id = self.active_id()?;
-        storage::load_index_reconciled(active_id.as_deref())
+        storage::load_index_reconciled(&self.live_ids()?)
     }
 
     pub fn get(&self, id: &str) -> Result<MeetingDetail, String> {
-        let active_id = self.active_id()?;
-        storage::get_detail_reconciled(id, active_id.as_deref())
+        storage::get_detail_reconciled(id, &self.live_ids()?)
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
@@ -196,13 +194,17 @@ impl MeetingSessionManager {
         crate::meeting::devices::list_devices(app)
     }
 
-    fn active_id(&self) -> Result<Option<String>, String> {
-        Ok(self
+    fn live_ids(&self) -> Result<std::collections::HashSet<String>, String> {
+        let mut ids = std::collections::HashSet::new();
+        if let Some(active) = self
             .active
             .lock()
             .map_err(|_| "Meeting state lock poisoned".to_string())?
             .as_ref()
-            .map(|active| active.meta.id.clone()))
+        {
+            ids.insert(active.meta.id.clone());
+        }
+        Ok(ids)
     }
 }
 

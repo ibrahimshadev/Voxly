@@ -68,13 +68,13 @@ pub fn load_index() -> Result<Vec<MeetingMeta>, String> {
     })
 }
 
-pub fn load_index_reconciled(active_id: Option<&str>) -> Result<Vec<MeetingMeta>, String> {
+pub fn load_index_reconciled(live_ids: &HashSet<String>) -> Result<Vec<MeetingMeta>, String> {
     let _guard = STORAGE_LOCK
         .lock()
         .map_err(|_| "Meeting storage lock poisoned".to_string())?;
     let mut items = load_index()?;
     let ended_at_ms = now_ms()?;
-    let mut changed = reconcile_orphaned_recordings(&mut items, active_id, ended_at_ms, |id| {
+    let mut changed = reconcile_orphaned_recordings(&mut items, live_ids, ended_at_ms, |id| {
         Ok(file_size(&source_path(id)?))
     })?;
     changed |= reconcile_stale_pending_transcripts(&mut items, ended_at_ms);
@@ -89,7 +89,7 @@ pub fn load_index_reconciled(active_id: Option<&str>) -> Result<Vec<MeetingMeta>
 
 fn reconcile_orphaned_recordings<F>(
     items: &mut [MeetingMeta],
-    active_id: Option<&str>,
+    live_ids: &HashSet<String>,
     ended_at_ms: i64,
     mut file_size_for: F,
 ) -> Result<bool, String>
@@ -99,10 +99,13 @@ where
     let mut changed = false;
 
     for item in items {
-        if !matches!(item.status, MeetingStatus::Recording) {
+        if !matches!(
+            item.status,
+            MeetingStatus::Recording | MeetingStatus::Processing
+        ) {
             continue;
         }
-        if active_id.is_some_and(|id| id == item.id) {
+        if live_ids.contains(&item.id) {
             continue;
         }
 
@@ -179,8 +182,8 @@ pub fn upsert_meta(meta: MeetingMeta) -> Result<(), String> {
     crate::db::with_connection(|conn| crate::db::upsert_meeting_meta(conn, &meta))
 }
 
-pub fn get_detail_reconciled(id: &str, active_id: Option<&str>) -> Result<MeetingDetail, String> {
-    let meta = load_index_reconciled(active_id)?
+pub fn get_detail_reconciled(id: &str, live_ids: &HashSet<String>) -> Result<MeetingDetail, String> {
+    let meta = load_index_reconciled(live_ids)?
         .into_iter()
         .find(|item| item.id == id)
         .ok_or_else(|| "Meeting not found".to_string())?;
@@ -318,6 +321,10 @@ mod tests {
         }
     }
 
+    fn live(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|id| id.to_string()).collect()
+    }
+
     #[test]
     fn reconciliation_marks_only_orphaned_recordings_as_error() {
         let mut items = vec![
@@ -326,7 +333,7 @@ mod tests {
             meta("done", MeetingStatus::Recorded),
         ];
 
-        let changed = reconcile_orphaned_recordings(&mut items, Some("active"), 6_000, |id| {
+        let changed = reconcile_orphaned_recordings(&mut items, &live(&["active"]), 6_000, |id| {
             Ok((id == "orphan").then_some(42))
         })
         .unwrap();
@@ -346,12 +353,38 @@ mod tests {
         let mut items = vec![meta("active", MeetingStatus::Recording)];
 
         let changed =
-            reconcile_orphaned_recordings(&mut items, Some("active"), 6_000, |_| Ok(Some(42)))
+            reconcile_orphaned_recordings(&mut items, &live(&["active"]), 6_000, |_| Ok(Some(42)))
                 .unwrap();
 
         assert!(!changed);
         assert!(matches!(items[0].status, MeetingStatus::Recording));
         assert_eq!(items[0].file_size_bytes, None);
+    }
+
+    #[test]
+    fn reconciliation_keeps_live_processing_meetings() {
+        let mut items = vec![meta("saving", MeetingStatus::Processing)];
+
+        let changed =
+            reconcile_orphaned_recordings(&mut items, &live(&["saving"]), 6_000, |_| Ok(Some(42)))
+                .unwrap();
+
+        assert!(!changed);
+        assert!(matches!(items[0].status, MeetingStatus::Processing));
+    }
+
+    #[test]
+    fn reconciliation_marks_dangling_processing_as_error() {
+        let mut items = vec![meta("orphan", MeetingStatus::Processing)];
+
+        let changed =
+            reconcile_orphaned_recordings(&mut items, &live(&[]), 6_000, |_| Ok(Some(42)))
+                .unwrap();
+
+        assert!(changed);
+        assert!(matches!(items[0].status, MeetingStatus::Error));
+        assert_eq!(items[0].ended_at_ms, Some(6_000));
+        assert_eq!(items[0].file_size_bytes, Some(42));
     }
 
     #[test]
