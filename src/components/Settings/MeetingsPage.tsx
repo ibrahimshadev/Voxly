@@ -32,6 +32,7 @@ import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
 import { createPanelResize } from '../../lib/panelResize';
 import Select from './Select';
+import VideoPlayer from './VideoPlayer';
 import { GroqIcon, OpenAIIcon } from './SettingsPage';
 
 type MeetingsPageProps = {
@@ -369,8 +370,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
     meeting.meta.transcript_status !== 'pending';
 
   return (
-    <div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-background-dark">
-      <header class="shrink-0 border-b border-white/5 bg-background-dark px-6 lg:px-10 py-5">
+    <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <header class="shrink-0 border-b border-white/5 px-6 lg:px-10 py-5">
         <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div>
             <h1 class="text-white text-[30px] leading-9 font-bold tracking-tight">Meetings</h1>
@@ -903,12 +904,11 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     }
                   >
                     {(src) => (
-                      <video
-                        ref={videoRef}
+                      <VideoPlayer
+                        ref={(el) => (videoRef = el)}
                         src={src}
-                        controls
-                        preload="metadata"
-                        class="h-full w-full bg-[#0b0b0b] object-contain"
+                        utterances={meeting().transcript?.utterances}
+                        fallbackDurationSecs={meeting().meta.duration_secs}
                       />
                     )}
                   </Show>
