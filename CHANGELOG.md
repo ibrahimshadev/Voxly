@@ -1,3 +1,11 @@
+# [1.25.0](https://github.com/ibrahimshadev/Voxly/compare/v1.24.0...v1.25.0) (2026-06-10)
+
+
+### Features
+
+* collapsible meeting config and resizable meeting panels ([519e18b](https://github.com/ibrahimshadev/Voxly/commit/519e18b72123f42f63799dd01aad00e7712b216d))
+* **ui:** collapsible meeting config and resizable meeting panels ([1509817](https://github.com/ibrahimshadev/Voxly/commit/15098177f909526bcbf2d043af80d916bda0e179))
+
 # [1.24.0](https://github.com/ibrahimshadev/Voxly/compare/v1.23.0...v1.24.0) (2026-06-10)
 
 
