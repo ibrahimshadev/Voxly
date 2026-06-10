@@ -56,6 +56,14 @@ const VIDEO_PRESETS = [
 
 type TranscriptTab = 'transcript' | 'summary';
 
+type ConfigTab = 'capture' | 'transcription' | 'summary';
+
+const CONFIG_TABS: { value: ConfigTab; label: string }[] = [
+  { value: 'capture', label: 'Capture' },
+  { value: 'transcription', label: 'Transcription' },
+  { value: 'summary', label: 'AI Summary' },
+];
+
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString([], {
     month: 'short',
@@ -170,6 +178,7 @@ function ToggleRow(props: {
 export default function MeetingsPage(props: MeetingsPageProps) {
   let videoRef: HTMLVideoElement | undefined;
   const [activeTab, setActiveTab] = createSignal<TranscriptTab>('transcript');
+  const [configTab, setConfigTab] = createSignal<ConfigTab>('capture');
 
   const audioOptions = createMemo(() => {
     const devices = props.devices()?.audio_devices ?? [];
@@ -298,10 +307,6 @@ export default function MeetingsPage(props: MeetingsPageProps) {
       <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[45%_55%] overflow-hidden">
         <section class="min-h-0 flex flex-col border-r border-white/5 bg-background-dark overflow-hidden">
           <div class="shrink-0 border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
-            <div class="mb-3">
-              <h2 class="text-lg font-semibold text-white">Capture Configuration</h2>
-            </div>
-
             <div class="space-y-3">
               <Show
                 when={!props.settings().meeting_consent_acknowledged}
@@ -333,25 +338,49 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   </div>
               </Show>
 
-              <div>
-                <label class="text-xs text-gray-500 font-medium ml-1">
-                  AssemblyAI API key
-                </label>
-                <input
-                  type="password"
-                  value={props.settings().assemblyai_api_key}
-                  onInput={(e) =>
-                    props.setSettings((current) => ({
-                      ...current,
-                      assemblyai_api_key: (e.target as HTMLInputElement).value,
-                    }))
-                  }
-                  onBlur={() => void props.onSaveSettings()}
-                  placeholder="AssemblyAI key for meeting transcripts"
-                  class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
-                />
+              <div class="flex items-center gap-1 border-b border-white/5">
+                <For each={CONFIG_TABS}>
+                  {(tab) => (
+                    <button
+                      type="button"
+                      onClick={() => setConfigTab(tab.value)}
+                      class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+                        configTab() === tab.value
+                          ? 'border-primary text-primary'
+                          : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  )}
+                </For>
               </div>
 
+              <Show when={configTab() === 'transcription'}>
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-xs text-gray-500 font-medium ml-1">
+                      AssemblyAI API key
+                    </label>
+                    <input
+                      type="password"
+                      value={props.settings().assemblyai_api_key}
+                      onInput={(e) =>
+                        props.setSettings((current) => ({
+                          ...current,
+                          assemblyai_api_key: (e.target as HTMLInputElement).value,
+                        }))
+                      }
+                      onBlur={() => void props.onSaveSettings()}
+                      placeholder="AssemblyAI key for meeting transcripts"
+                      class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                    />
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={configTab() === 'capture'}>
+                <div class="space-y-3">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label class="text-xs text-gray-500 font-medium ml-1">
@@ -478,6 +507,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                 <p class="text-xs text-red-300/80 leading-relaxed">
                   No audio devices were returned. Check Windows microphone permission for desktop apps, then refresh devices.
                 </p>
+              </Show>
+                </div>
               </Show>
             </div>
           </div>
