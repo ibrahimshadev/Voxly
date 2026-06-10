@@ -32,6 +32,7 @@ import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
 import { createPanelResize } from '../../lib/panelResize';
 import Select from './Select';
+import VideoPlayer from './VideoPlayer';
 import { GroqIcon, OpenAIIcon } from './SettingsPage';
 
 type MeetingsPageProps = {
@@ -903,12 +904,11 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     }
                   >
                     {(src) => (
-                      <video
-                        ref={videoRef}
+                      <VideoPlayer
+                        ref={(el) => (videoRef = el)}
                         src={src}
-                        controls
-                        preload="metadata"
-                        class="h-full w-full bg-[#0b0b0b] object-contain"
+                        utterances={meeting().transcript?.utterances}
+                        fallbackDurationSecs={meeting().meta.duration_secs}
                       />
                     )}
                   </Show>
