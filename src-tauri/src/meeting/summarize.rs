@@ -16,6 +16,16 @@ const TEMPERATURE: f32 = 0.3;
 // Safe input budget. gpt-oss-120b context = 131,072 tokens; reserve headroom for
 // the system prompt + completion. ~4 chars/token heuristic.
 const MAX_TRANSCRIPT_CHARS: usize = 360_000; // ≈ 90k tokens
+const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_OPENAI_SUMMARY_MODEL: &str = "gpt-5.4-mini";
+
+#[derive(Debug, Clone)]
+pub struct SummaryConfig {
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub api_key: String,
+}
 
 const SUMMARY_SYSTEM_PROMPT: &str = r#"You are an expert meeting analyst. You will be given a meeting transcript with
 speaker labels. In these transcripts, "You" is the local microphone speaker (the
@@ -109,6 +119,79 @@ pub fn resolve_groq_key(settings: &AppSettings) -> Result<String, String> {
         "Add a Groq API key in Settings (switch the provider to Groq and save) to generate meeting summaries."
             .to_string(),
     )
+}
+
+pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, String> {
+    let provider = {
+        let trimmed = settings.summary_provider.trim();
+        if trimmed.is_empty() {
+            "groq".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    };
+
+    let api_key = non_empty(&settings.summary_api_key)
+        .or_else(|| {
+            settings
+                .summary_provider_api_keys
+                .get(&provider)
+                .and_then(|key| non_empty(key))
+        })
+        .or_else(|| {
+            if provider != "groq" {
+                return None;
+            }
+            // v1 legacy fallback, verbatim semantics.
+            settings
+                .provider_api_keys
+                .get("groq")
+                .and_then(|key| non_empty(key))
+                .or_else(|| {
+                    if settings.provider == "groq" {
+                        non_empty(&settings.api_key)
+                    } else {
+                        None
+                    }
+                })
+        })
+        .ok_or_else(|| {
+            "Add an API key under Meetings → AI Summary to generate meeting summaries."
+                .to_string()
+        })?;
+
+    let base_url = match non_empty(&settings.summary_base_url) {
+        Some(url) => url,
+        None => match provider.as_str() {
+            "groq" => GROQ_BASE_URL.to_string(),
+            "openai" => DEFAULT_OPENAI_BASE_URL.to_string(),
+            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
+        },
+    };
+    let model = match non_empty(&settings.summary_model) {
+        Some(model) => model,
+        None => match provider.as_str() {
+            "groq" => MODEL.to_string(),
+            "openai" => DEFAULT_OPENAI_SUMMARY_MODEL.to_string(),
+            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
+        },
+    };
+
+    Ok(SummaryConfig {
+        provider,
+        base_url,
+        model,
+        api_key,
+    })
+}
+
+fn non_empty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn build_transcript_text(transcript: &MeetingTranscript) -> String {
@@ -252,6 +335,140 @@ mod tests {
             end_ms: 1,
             confidence: None,
         }
+    }
+
+    fn with_summary(
+        mut settings: AppSettings,
+        provider: &str,
+        api_key: &str,
+        map_key: Option<&str>,
+    ) -> AppSettings {
+        settings.summary_provider = provider.to_string();
+        settings.summary_api_key = api_key.to_string();
+        settings.summary_provider_api_keys.clear();
+        if let Some(key) = map_key {
+            settings
+                .summary_provider_api_keys
+                .insert(provider.to_string(), key.to_string());
+        }
+        settings
+    }
+
+    #[test]
+    fn resolve_summary_config_prefers_explicit_summary_key() {
+        let settings = with_summary(
+            settings_with("openai", "active-key", Some("legacy-groq")),
+            "openai",
+            "summary-key",
+            Some("map-key"),
+        );
+        let config = resolve_summary_config(&settings).unwrap();
+        assert_eq!(config.api_key, "summary-key");
+        assert_eq!(config.provider, "openai");
+    }
+
+    #[test]
+    fn resolve_summary_config_falls_back_to_summary_map() {
+        let settings = with_summary(
+            settings_with("openai", "active-key", None),
+            "openai",
+            "  ",
+            Some("map-key"),
+        );
+        assert_eq!(resolve_summary_config(&settings).unwrap().api_key, "map-key");
+    }
+
+    #[test]
+    fn resolve_summary_config_uses_legacy_groq_map_when_summary_unset() {
+        let settings = with_summary(
+            settings_with("openai", "openai-key", Some("legacy-groq")),
+            "groq",
+            "",
+            None,
+        );
+        assert_eq!(
+            resolve_summary_config(&settings).unwrap().api_key,
+            "legacy-groq"
+        );
+    }
+
+    #[test]
+    fn resolve_summary_config_uses_legacy_active_key_only_when_groq_active() {
+        let settings = with_summary(settings_with("groq", "active-groq", None), "groq", "", None);
+        assert_eq!(
+            resolve_summary_config(&settings).unwrap().api_key,
+            "active-groq"
+        );
+    }
+
+    #[test]
+    fn resolve_summary_config_denies_legacy_fallback_for_other_providers() {
+        // OpenAI summary provider must NOT borrow groq/active keys.
+        let settings = with_summary(
+            settings_with("groq", "active-groq", Some("legacy-groq")),
+            "openai",
+            "",
+            None,
+        );
+        assert!(resolve_summary_config(&settings).is_err());
+    }
+
+    #[test]
+    fn resolve_summary_config_defaults_blank_base_url_and_model_per_provider() {
+        let mut settings = with_summary(
+            settings_with("groq", "k", None),
+            "openai",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = "  ".to_string();
+        settings.summary_model = String::new();
+        let config = resolve_summary_config(&settings).unwrap();
+        assert_eq!(config.base_url, "https://api.openai.com/v1");
+        assert_eq!(config.model, "gpt-5.4-mini");
+    }
+
+    #[test]
+    fn resolve_summary_config_rejects_blank_custom_config() {
+        let mut settings = with_summary(
+            settings_with("groq", "k", None),
+            "custom",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = String::new();
+        settings.summary_model = "some-model".to_string();
+        assert!(resolve_summary_config(&settings)
+            .unwrap_err()
+            .contains("base URL"));
+    }
+
+    #[test]
+    fn resolve_summary_config_defaults_blank_groq_base_url_and_model() {
+        let mut settings = with_summary(
+            settings_with("openai", "k", None),
+            "groq",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = String::new();
+        settings.summary_model = "  ".to_string();
+        let config = resolve_summary_config(&settings).unwrap();
+        assert_eq!(config.base_url, "https://api.groq.com/openai/v1");
+        assert_eq!(config.model, "openai/gpt-oss-120b");
+    }
+
+    #[test]
+    fn resolve_summary_config_rejects_blank_custom_model() {
+        let mut settings = with_summary(
+            settings_with("groq", "k", None),
+            "custom",
+            "summary-key",
+            None,
+        );
+        settings.summary_base_url = "http://localhost:11434/v1".to_string();
+        settings.summary_model = String::new();
+        assert!(resolve_summary_config(&settings).is_err());
     }
 
     #[test]
