@@ -76,6 +76,82 @@ input[type="range"]::-webkit-slider-runnable-track {
   border-radius: 2px;
 }
 
+/* AI meeting summary markdown (Meetings page) */
+.summary-prose {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: #d4d4d8; /* zinc-300, as used across the meetings page */
+}
+.summary-prose h2 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-primary);
+}
+.summary-prose h2:first-child {
+  margin-top: 0;
+}
+.summary-prose h3 {
+  margin: 1rem 0 0.375rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-white);
+}
+.summary-prose p {
+  margin: 0.5rem 0;
+}
+.summary-prose ul,
+.summary-prose ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+.summary-prose ul {
+  list-style: disc;
+}
+.summary-prose ol {
+  list-style: decimal;
+}
+.summary-prose li {
+  margin: 0.25rem 0;
+}
+.summary-prose strong {
+  color: var(--color-white);
+}
+.summary-prose hr {
+  margin: 1rem 0;
+  border: 0;
+  border-top: 1px solid var(--color-border-dark);
+}
+.summary-prose table {
+  width: 100%;
+  margin: 0.75rem 0;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.summary-prose th,
+.summary-prose td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border: 1px solid var(--color-border-dark);
+}
+.summary-prose th {
+  background: var(--color-surface-dark);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #a1a1aa; /* zinc-400 */
+}
+.summary-prose code {
+  padding: 0.1rem 0.3rem;
+  background: var(--color-surface-dark);
+  border: 1px solid var(--color-border-dark);
+  font-size: 0.8125rem;
+}
+
 /* ═══ Light theme ═══ */
 .light {
   /* Custom theme colors */
@@ -105,4 +181,11 @@ input[type="range"]::-webkit-slider-runnable-track {
 
 .light input[type="range"]::-webkit-slider-runnable-track {
   background: #d1d5db;
+}
+
+.light .summary-prose {
+  color: #3f3f46; /* zinc-700 */
+}
+.light .summary-prose th {
+  color: #52525b; /* zinc-600 */
 }

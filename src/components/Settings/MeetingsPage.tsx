@@ -23,6 +23,7 @@ import {
 } from 'lucide-solid';
 import type { MeetingDetail, MeetingDevices, MeetingMeta, Settings } from '../../types';
 import { notifyError, notifySuccess } from '../../lib/notify';
+import { renderMarkdown } from '../../lib/markdown';
 import Select from './Select';
 
 type MeetingsPageProps = {
@@ -40,6 +41,9 @@ type MeetingsPageProps = {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onTranscribeMeeting: (id: string) => void;
+  onGenerateSummary: (id: string) => void;
+  summaryGenerating: Accessor<Record<string, boolean>>;
+  summaryErrors: Accessor<Record<string, string>>;
   onSaveSettings: () => Promise<boolean>;
 };
 
@@ -682,7 +686,13 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       <button
                         type="button"
                         onClick={() => setActiveTab('summary')}
-                        class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 transition-colors ${
+                        disabled={meeting().meta.transcript_status !== 'completed'}
+                        title={
+                          meeting().meta.transcript_status === 'completed'
+                            ? undefined
+                            : 'Transcribe this meeting first'
+                        }
+                        class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 transition-colors disabled:cursor-not-allowed disabled:text-zinc-700 ${
                           activeTab() === 'summary'
                             ? 'border-primary text-primary'
                             : 'border-transparent text-zinc-500 hover:text-zinc-200'
@@ -716,7 +726,17 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   </div>
 
                   <div class="min-h-0 flex-1 overflow-y-auto scrollbar-hide">
-                    <Show when={activeTab() === 'transcript'} fallback={<SummaryPanel meeting={meeting()} />}>
+                    <Show
+                      when={activeTab() === 'transcript'}
+                      fallback={
+                        <SummaryPanel
+                          meeting={meeting()}
+                          onGenerateSummary={props.onGenerateSummary}
+                          generating={Boolean(props.summaryGenerating()[meeting().meta.id])}
+                          error={props.summaryErrors()[meeting().meta.id] ?? null}
+                        />
+                      }
+                    >
                       <TranscriptPanel
                         meeting={meeting()}
                         settings={props.settings}
@@ -856,10 +876,15 @@ function TranscriptPanel(props: {
   );
 }
 
-function SummaryPanel(props: { meeting: MeetingDetail }) {
-  const hasTranscript = () => Boolean(props.meeting.transcript);
-  const firstYouUtterance = () =>
-    props.meeting.transcript?.utterances.find((utterance) => formatSpeakerLabel(utterance.speaker) === 'You')?.text;
+function SummaryPanel(props: {
+  meeting: MeetingDetail;
+  onGenerateSummary: (id: string) => void;
+  generating: boolean;
+  error: string | null;
+}) {
+  const hasTranscript = () =>
+    props.meeting.meta.transcript_status === 'completed' && Boolean(props.meeting.transcript);
+  const summary = () => props.meeting.summary;
 
   return (
     <div class="p-5 lg:p-6">
@@ -867,59 +892,78 @@ function SummaryPanel(props: { meeting: MeetingDetail }) {
         <div>
           <h3 class="text-sm font-semibold text-white">AI meeting summary</h3>
           <p class="mt-1 text-xs text-zinc-500">
-            Summary generation is staged here for the next workflow after transcription.
+            Generated with GPT-OSS-120B on Groq from the meeting transcript.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={!hasTranscript()}
-          class="px-4 py-2 border border-border-dark text-xs font-mono font-bold text-primary hover:bg-primary hover:text-black transition-colors disabled:text-zinc-600 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-        >
-          Generate Summary
-        </button>
+        <Show when={!summary()}>
+          <button
+            type="button"
+            onClick={() => props.onGenerateSummary(props.meeting.meta.id)}
+            disabled={!hasTranscript() || props.generating}
+            class="px-4 py-2 border border-border-dark text-xs font-mono font-bold text-primary hover:bg-primary hover:text-black transition-colors disabled:text-zinc-600 disabled:hover:bg-transparent disabled:hover:text-zinc-600 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
+          >
+            <Show when={props.generating} fallback={<>Generate Summary</>}>
+              <Loader2 size={14} class="animate-spin" />
+              Generating…
+            </Show>
+          </button>
+        </Show>
       </div>
 
+      <Show when={props.error}>
+        <div class="mb-5 border border-amber-400/20 bg-amber-500/10 p-4">
+          <p class="text-sm font-medium text-amber-200">Summary generation failed</p>
+          <p class="mt-1 text-xs text-amber-100/70 leading-relaxed">{props.error}</p>
+        </div>
+      </Show>
+
       <Show
-        when={hasTranscript()}
+        when={summary()}
         fallback={
-          <div class="border border-border-dark bg-[#111111] p-4 text-sm text-zinc-400">
-            Transcribe this meeting first. The summary tab will use the transcript to extract key points, action items, decisions, and follow-ups.
-          </div>
+          <Show
+            when={hasTranscript()}
+            fallback={
+              <div class="border border-border-dark bg-[#111111] p-4 text-sm text-zinc-400">
+                Transcribe this meeting first. The summary uses the transcript to extract key
+                topics, blockers, and action items.
+              </div>
+            }
+          >
+            <Show when={props.generating}>
+              <div class="border border-primary/20 bg-primary/10 p-4 flex items-center gap-3 text-primary">
+                <Loader2 size={16} class="animate-spin" />
+                <div>
+                  <p class="text-sm font-medium">Generating summary…</p>
+                  <p class="mt-1 text-xs text-primary/80">
+                    GPT-OSS-120B is analyzing the transcript on Groq.
+                  </p>
+                </div>
+              </div>
+            </Show>
+          </Show>
         }
       >
-        <div class="grid grid-cols-1 2xl:grid-cols-2 gap-5">
-          <section class="border border-border-dark bg-[#111111] p-4">
-            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Key points</h4>
-            <ul class="mt-3 space-y-2 text-sm text-zinc-300 leading-relaxed">
-              <li>Transcript captured {props.meeting.transcript?.utterances.length ?? 0} speaker-labeled utterances.</li>
-              <li>{firstYouUtterance() ?? 'Use Generate Summary to extract the meeting narrative.'}</li>
-            </ul>
-          </section>
-
-          <section class="border border-border-dark bg-[#111111] p-4">
-            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Action items</h4>
-            <div class="mt-3 space-y-3">
-              <div class="border-l-2 border-border-dark pl-3">
-                <p class="text-sm text-zinc-300">Generate a structured summary from this transcript.</p>
-                <p class="mt-1 text-[10px] font-mono text-zinc-600">OWNER: You · STATUS: Pending</p>
-              </div>
+        {(current) => (
+          <div>
+            <div class="summary-prose" innerHTML={renderMarkdown(current().markdown)} />
+            <div class="mt-6 pt-4 border-t border-border-dark flex flex-wrap items-center justify-between gap-3">
+              <p class="text-[10px] font-mono uppercase tracking-wider text-zinc-600">
+                {current().model} · {formatDate(current().created_at_ms)}
+              </p>
+              <button
+                type="button"
+                onClick={() => props.onGenerateSummary(props.meeting.meta.id)}
+                disabled={props.generating}
+                class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Show when={props.generating} fallback={<RefreshCcw size={13} />}>
+                  <Loader2 size={13} class="animate-spin" />
+                </Show>
+                Regenerate
+              </button>
             </div>
-          </section>
-
-          <section class="border border-border-dark bg-[#111111] p-4">
-            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Decisions</h4>
-            <p class="mt-3 text-sm text-zinc-500 leading-relaxed">
-              No generated decisions yet.
-            </p>
-          </section>
-
-          <section class="border border-border-dark bg-[#111111] p-4">
-            <h4 class="text-[11px] font-mono uppercase tracking-wider text-primary">Follow-ups</h4>
-            <p class="mt-3 text-sm text-zinc-500 leading-relaxed">
-              Follow-ups will appear here after summary generation is implemented.
-            </p>
-          </section>
-        </div>
+          </div>
+        )}
       </Show>
     </div>
   );

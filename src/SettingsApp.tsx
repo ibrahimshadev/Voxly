@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { Toaster } from 'solid-sonner';
 
-import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, TranscriptionHistoryPage, TranscriptionHistoryStats, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingUpdate } from './types';
+import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, TranscriptionHistoryPage, TranscriptionHistoryStats, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingSummary, MeetingUpdate } from './types';
 import {
   CHAT_MODELS,
   DEFAULT_SETTINGS,
@@ -66,6 +66,8 @@ export default function SettingsApp() {
   const [meetingDevices, setMeetingDevices] = createSignal<MeetingDevices | null>(null);
   // Saving progress per finalizing meeting id; null = indeterminate.
   const [processingMeetings, setProcessingMeetings] = createSignal<Record<string, number | null>>({});
+  const [summaryGenerating, setSummaryGenerating] = createSignal<Record<string, boolean>>({});
+  const [summaryErrors, setSummaryErrors] = createSignal<Record<string, string>>({});
   const meetingRecording = createMemo(() => meetings().some((meeting) => meeting.status === 'recording'));
 
   const [modelsList, setModelsList] = createSignal<string[]>([]);
@@ -395,6 +397,28 @@ export default function SettingsApp() {
       void loadMeetings();
     } catch (err) {
       notifyError(err, 'Failed to start meeting transcription.');
+    }
+  };
+
+  const generateSummary = async (id: string) => {
+    setSummaryErrors((current) => {
+      const { [id]: _removed, ...rest } = current;
+      return rest;
+    });
+    setSummaryGenerating((current) => ({ ...current, [id]: true }));
+    try {
+      const summary = await invoke<MeetingSummary>('generate_meeting_summary', { id });
+      setSelectedMeeting((current) => (current?.meta.id === id ? { ...current, summary } : current));
+      notifySuccess('Meeting summary ready.');
+    } catch (err) {
+      const message = typeof err === 'string' ? err : 'Failed to generate meeting summary.';
+      setSummaryErrors((current) => ({ ...current, [id]: message }));
+      notifyError(err, 'Failed to generate meeting summary.');
+    } finally {
+      setSummaryGenerating((current) => {
+        const { [id]: _removed, ...rest } = current;
+        return rest;
+      });
     }
   };
 
@@ -845,6 +869,9 @@ export default function SettingsApp() {
             onStartRecording={startMeetingRecording}
             onStopRecording={stopMeetingRecording}
             onTranscribeMeeting={transcribeMeeting}
+            onGenerateSummary={(id) => void generateSummary(id)}
+            summaryGenerating={summaryGenerating}
+            summaryErrors={summaryErrors}
             onSaveSettings={() => saveSettingsQuiet({
               notifyOnError: true,
               errorMessage: 'Failed to save meeting capture settings.',
