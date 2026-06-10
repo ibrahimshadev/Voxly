@@ -12,7 +12,7 @@ const MODEL: &str = "openai/gpt-oss-120b";
 const GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_COMPLETION_TOKENS: u32 = 8_192;
-const TEMPERATURE: f32 = 0.3;
+const TEMPERATURE: f64 = 0.3;
 // Safe input budget. gpt-oss-120b context = 131,072 tokens; reserve headroom for
 // the system prompt + completion. ~4 chars/token heuristic.
 const MAX_TRANSCRIPT_CHARS: usize = 360_000; // ≈ 90k tokens
@@ -216,18 +216,38 @@ fn check_transcript_len(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn request_body(transcript_text: &str) -> serde_json::Value {
-    serde_json::json!({
-        "model": MODEL,
+fn request_body(provider: &str, model: &str, transcript_text: &str) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
         "messages": [
             { "role": "system", "content": SUMMARY_SYSTEM_PROMPT },
             { "role": "user", "content": transcript_text }
-        ],
-        "temperature": TEMPERATURE,
-        "max_completion_tokens": MAX_COMPLETION_TOKENS,
-        "reasoning_effort": "low",
-        "include_reasoning": false
-    })
+        ]
+    });
+    let params = body.as_object_mut().expect("request body is a JSON object");
+    let model_lower = model.to_ascii_lowercase();
+    // Per-provider/per-model matrix, live-verified 2026-06-10 (spec §11.6).
+    match provider {
+        "openai" => {
+            params.insert("max_completion_tokens".into(), MAX_COMPLETION_TOKENS.into());
+            params.insert("reasoning_effort".into(), "low".into());
+        }
+        "groq" => {
+            params.insert("temperature".into(), TEMPERATURE.into());
+            params.insert("max_completion_tokens".into(), MAX_COMPLETION_TOKENS.into());
+            if model_lower.contains("gpt-oss") {
+                params.insert("reasoning_effort".into(), "low".into());
+                params.insert("include_reasoning".into(), false.into());
+            } else if model_lower.contains("qwen3") {
+                params.insert("reasoning_effort".into(), "none".into());
+            }
+        }
+        _ => {
+            params.insert("temperature".into(), TEMPERATURE.into());
+            params.insert("max_tokens".into(), MAX_COMPLETION_TOKENS.into());
+        }
+    }
+    body
 }
 
 fn parse_summary_content(body: &str) -> Result<String, String> {
@@ -273,7 +293,7 @@ pub async fn run(
     let response = client
         .post(format!("{GROQ_BASE_URL}/chat/completions"))
         .bearer_auth(&groq_key)
-        .json(&request_body(&transcript_text))
+        .json(&request_body("groq", MODEL, &transcript_text))
         .send()
         .await
         .map_err(|error| format!("Summary request failed: {error}"))?;
@@ -541,14 +561,54 @@ mod tests {
     }
 
     #[test]
-    fn request_body_uses_locked_model_and_params() {
-        let body = request_body("transcript text");
-        assert_eq!(body["model"], MODEL);
+    fn request_body_groq_gpt_oss_keeps_v1_reasoning_params() {
+        let body = request_body("groq", "openai/gpt-oss-120b", "transcript");
+        assert_eq!(body["model"], "openai/gpt-oss-120b");
         assert_eq!(body["messages"][0]["role"], "system");
-        assert_eq!(body["messages"][1]["content"], "transcript text");
+        assert_eq!(body["messages"][1]["content"], "transcript");
+        assert_eq!(body["temperature"], 0.3);
         assert_eq!(body["max_completion_tokens"], 8_192);
         assert_eq!(body["reasoning_effort"], "low");
         assert_eq!(body["include_reasoning"], false);
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn request_body_groq_qwen3_disables_thinking() {
+        // Probes 6/8 (spec §11.3): default leaks <think> into content; "none" is clean.
+        let body = request_body("groq", "qwen/qwen3-32b", "t");
+        assert_eq!(body["reasoning_effort"], "none");
+        assert!(body.get("include_reasoning").is_none());
+        assert_eq!(body["temperature"], 0.3);
+        assert_eq!(body["max_completion_tokens"], 8_192);
+    }
+
+    #[test]
+    fn request_body_groq_other_models_omit_reasoning_params() {
+        // Probe 5: llama-3.3 rejects reasoning_effort outright.
+        let body = request_body("groq", "llama-3.3-70b-versatile", "t");
+        assert!(body.get("reasoning_effort").is_none());
+        assert!(body.get("include_reasoning").is_none());
+    }
+
+    #[test]
+    fn request_body_openai_omits_temperature_and_include_reasoning() {
+        // Probes 3 & 7: include_reasoning = unknown param; temperature rejected on 5.4-mini.
+        let body = request_body("openai", "gpt-5.4-mini", "t");
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("include_reasoning").is_none());
+        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["max_completion_tokens"], 8_192);
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn request_body_custom_uses_broadest_compat_params() {
+        let body = request_body("custom", "llama3:70b", "t");
+        assert_eq!(body["temperature"], 0.3);
+        assert_eq!(body["max_tokens"], 8_192);
+        assert!(body.get("max_completion_tokens").is_none());
+        assert!(body.get("reasoning_effort").is_none());
     }
 
     #[test]
