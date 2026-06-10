@@ -1,3 +1,11 @@
+# [1.26.0](https://github.com/ibrahimshadev/Voxly/compare/v1.25.0...v1.26.0) (2026-06-10)
+
+
+### Features
+
+* custom video player and dot-grid meetings header ([ec29880](https://github.com/ibrahimshadev/Voxly/commit/ec2988069118093ce3b734258f713cea27e0d742))
+* **meetings:** custom video player with transcript-aware seek bar ([ad33c83](https://github.com/ibrahimshadev/Voxly/commit/ad33c83615067f1f82eca725983af84140fc0d82))
+
 # [1.25.0](https://github.com/ibrahimshadev/Voxly/compare/v1.24.0...v1.25.0) (2026-06-10)
 
 
