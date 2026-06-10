@@ -422,6 +422,15 @@ export default function SettingsApp() {
     }
   };
 
+  const renameMeeting = async (id: string, title: string) => {
+    try {
+      const meta = await invoke<MeetingMeta>('rename_meeting', { id, title });
+      setSelectedMeeting((current) => (current?.meta.id === id ? { ...current, meta } : current));
+    } catch (err) {
+      notifyError(err, 'Failed to rename meeting.');
+    }
+  };
+
   const deleteHistoryItem = async (id: string) => {
     try {
       await invoke('delete_transcription_history_item', { id });
@@ -870,6 +879,7 @@ export default function SettingsApp() {
             onStopRecording={stopMeetingRecording}
             onTranscribeMeeting={transcribeMeeting}
             onGenerateSummary={(id) => void generateSummary(id)}
+            onRenameMeeting={(id, title) => void renameMeeting(id, title)}
             summaryGenerating={summaryGenerating}
             summaryErrors={summaryErrors}
             onSaveSettings={() => saveSettingsQuiet({
