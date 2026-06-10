@@ -47,6 +47,16 @@ pub struct AppSettings {
     pub assemblyai_api_key: String,
     #[serde(default)]
     pub provider_api_keys: HashMap<String, String>,
+    #[serde(default = "default_summary_provider")]
+    pub summary_provider: String,
+    #[serde(default = "default_summary_base_url")]
+    pub summary_base_url: String,
+    #[serde(default = "default_summary_model")]
+    pub summary_model: String,
+    #[serde(default)]
+    pub summary_api_key: String,
+    #[serde(default)]
+    pub summary_provider_api_keys: HashMap<String, String>,
     #[serde(default)]
     pub vocabulary: Vec<VocabularyEntry>,
     #[serde(default)]
@@ -57,6 +67,18 @@ pub struct AppSettings {
 
 fn default_provider() -> String {
     "groq".to_string()
+}
+
+fn default_summary_provider() -> String {
+    "groq".to_string()
+}
+
+fn default_summary_base_url() -> String {
+    "https://api.groq.com/openai/v1".to_string()
+}
+
+fn default_summary_model() -> String {
+    "openai/gpt-oss-120b".to_string()
 }
 
 fn default_hotkey_mode() -> String {
@@ -144,6 +166,14 @@ struct StoredSettings {
     encrypted_assemblyai_api_key: Option<String>,
     #[serde(default)]
     encrypted_provider_api_keys: HashMap<String, String>,
+    #[serde(default = "default_summary_provider")]
+    summary_provider: String,
+    #[serde(default = "default_summary_base_url")]
+    summary_base_url: String,
+    #[serde(default = "default_summary_model")]
+    summary_model: String,
+    #[serde(default)]
+    encrypted_summary_provider_api_keys: HashMap<String, String>,
     #[serde(default)]
     vocabulary: Vec<VocabularyEntry>,
     #[serde(default)]
@@ -172,6 +202,11 @@ impl Default for AppSettings {
             api_key: String::new(),
             assemblyai_api_key: String::new(),
             provider_api_keys: HashMap::new(),
+            summary_provider: default_summary_provider(),
+            summary_base_url: default_summary_base_url(),
+            summary_model: default_summary_model(),
+            summary_api_key: String::new(),
+            summary_provider_api_keys: HashMap::new(),
             vocabulary: Vec::new(),
             active_mode_id: None,
             modes: Vec::new(),
@@ -224,6 +259,10 @@ pub fn load_settings() -> AppSettings {
                     encrypted_api_key: _,
                     encrypted_assemblyai_api_key: _,
                     encrypted_provider_api_keys,
+                    summary_provider,
+                    summary_base_url,
+                    summary_model,
+                    encrypted_summary_provider_api_keys,
                     vocabulary,
                     active_mode_id,
                     modes,
@@ -246,9 +285,17 @@ pub fn load_settings() -> AppSettings {
                 settings.vocabulary = vocabulary;
                 settings.active_mode_id = active_mode_id;
                 settings.modes = modes;
+                settings.summary_provider = summary_provider;
+                settings.summary_base_url = summary_base_url;
+                settings.summary_model = summary_model;
                 for (provider, encrypted) in encrypted_provider_api_keys {
                     if let Some(decrypted) = decrypt_api_key(&encrypted) {
                         settings.provider_api_keys.insert(provider, decrypted);
+                    }
+                }
+                for (provider, encrypted) in encrypted_summary_provider_api_keys {
+                    if let Some(decrypted) = decrypt_api_key(&encrypted) {
+                        settings.summary_provider_api_keys.insert(provider, decrypted);
                     }
                 }
                 should_seed_default_modes = !has_modes_field;
@@ -265,6 +312,14 @@ pub fn load_settings() -> AppSettings {
                 .insert(settings.provider.clone(), api_key.clone());
         }
         settings.api_key = api_key;
+    }
+
+    if let Some(summary_key) = settings
+        .summary_provider_api_keys
+        .get(&settings.summary_provider)
+        .cloned()
+    {
+        settings.summary_api_key = summary_key;
     }
 
     if let Ok(Some(api_key)) = get_assemblyai_api_key() {
@@ -301,6 +356,24 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         encrypted_provider_api_keys.insert(provider, encrypt_api_key(&api_key));
     }
 
+    let mut summary_provider_api_keys = settings.summary_provider_api_keys.clone();
+    if settings.summary_api_key.trim().is_empty() {
+        summary_provider_api_keys.remove(&settings.summary_provider);
+    } else {
+        summary_provider_api_keys.insert(
+            settings.summary_provider.clone(),
+            settings.summary_api_key.clone(),
+        );
+    }
+
+    let mut encrypted_summary_provider_api_keys = HashMap::new();
+    for (provider, api_key) in summary_provider_api_keys {
+        if api_key.trim().is_empty() {
+            continue;
+        }
+        encrypted_summary_provider_api_keys.insert(provider, encrypt_api_key(&api_key));
+    }
+
     let stored = StoredSettings {
         provider: settings.provider.clone(),
         base_url: settings.base_url.clone(),
@@ -319,6 +392,10 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         encrypted_api_key: None,
         encrypted_assemblyai_api_key: None,
         encrypted_provider_api_keys,
+        summary_provider: settings.summary_provider.clone(),
+        summary_base_url: settings.summary_base_url.clone(),
+        summary_model: settings.summary_model.clone(),
+        encrypted_summary_provider_api_keys,
         vocabulary: settings.vocabulary.clone(),
         active_mode_id: settings.active_mode_id.clone(),
         modes: settings.modes.clone(),
@@ -458,51 +535,10 @@ fn delete_api_key() -> Result<(), String> {
 fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
     let path = settings_path()?;
     let mut stored = if let Ok(contents) = fs::read_to_string(&path) {
-        serde_json::from_str::<StoredSettings>(&contents).unwrap_or_else(|_| StoredSettings {
-            provider: "groq".to_string(),
-            base_url: "https://api.groq.com/openai/v1".to_string(),
-            model: "whisper-large-v3-turbo".to_string(),
-            hotkey: DEFAULT_HOTKEY.to_string(),
-            meeting_hotkey: default_meeting_hotkey(),
-            hotkey_mode: "hold".to_string(),
-            copy_to_clipboard_on_success: false,
-            meeting_record_video: true,
-            meeting_record_mic: true,
-            meeting_record_system_audio: true,
-            meeting_video_preset: default_meeting_video_preset(),
-            meeting_mic_device: None,
-            meeting_system_audio_device: None,
-            meeting_consent_acknowledged: false,
-            encrypted_api_key: None,
-            encrypted_assemblyai_api_key: None,
-            encrypted_provider_api_keys: HashMap::new(),
-            vocabulary: Vec::new(),
-            active_mode_id: None,
-            modes: Vec::new(),
-        })
+        serde_json::from_str::<StoredSettings>(&contents)
+            .unwrap_or_else(|_| default_stored_settings())
     } else {
-        StoredSettings {
-            provider: "groq".to_string(),
-            base_url: "https://api.groq.com/openai/v1".to_string(),
-            model: "whisper-large-v3-turbo".to_string(),
-            hotkey: DEFAULT_HOTKEY.to_string(),
-            meeting_hotkey: default_meeting_hotkey(),
-            hotkey_mode: "hold".to_string(),
-            copy_to_clipboard_on_success: false,
-            meeting_record_video: true,
-            meeting_record_mic: true,
-            meeting_record_system_audio: true,
-            meeting_video_preset: default_meeting_video_preset(),
-            meeting_mic_device: None,
-            meeting_system_audio_device: None,
-            meeting_consent_acknowledged: false,
-            encrypted_api_key: None,
-            encrypted_assemblyai_api_key: None,
-            encrypted_provider_api_keys: HashMap::new(),
-            vocabulary: Vec::new(),
-            active_mode_id: None,
-            modes: Vec::new(),
-        }
+        default_stored_settings()
     };
 
     stored.encrypted_api_key = Some(encrypt_api_key(api_key));
@@ -636,6 +672,10 @@ fn default_stored_settings() -> StoredSettings {
         encrypted_api_key: None,
         encrypted_assemblyai_api_key: None,
         encrypted_provider_api_keys: HashMap::new(),
+        summary_provider: default_summary_provider(),
+        summary_base_url: default_summary_base_url(),
+        summary_model: default_summary_model(),
+        encrypted_summary_provider_api_keys: HashMap::new(),
         vocabulary: Vec::new(),
         active_mode_id: None,
         modes: Vec::new(),
@@ -709,5 +749,21 @@ mod tests {
             normalize_meeting_hotkey("CommandOrControl+Shift+R"),
             "CommandOrControl+Shift+R"
         );
+    }
+
+    #[test]
+    fn legacy_settings_default_summary_fields() {
+        let legacy_json = r#"{
+      "provider": "groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "model": "whisper-large-v3-turbo",
+      "hotkey": "CommandOrControl+Space"
+    }"#;
+
+        let parsed: StoredSettings = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(parsed.summary_provider, "groq");
+        assert_eq!(parsed.summary_base_url, "https://api.groq.com/openai/v1");
+        assert_eq!(parsed.summary_model, "openai/gpt-oss-120b");
+        assert!(parsed.encrypted_summary_provider_api_keys.is_empty());
     }
 }
