@@ -68,7 +68,7 @@ export type DictationUpdate = {
   text?: string;
 };
 
-export type MeetingStatus = 'recording' | 'recorded' | 'error';
+export type MeetingStatus = 'recording' | 'processing' | 'recorded' | 'error';
 export type TranscriptStatus = 'pending' | 'completed' | 'error';
 
 export type MeetingMeta = {
@@ -121,9 +121,18 @@ export type MeetingDevices = {
 };
 
 export type MeetingUpdate = {
-  state: 'recording' | 'stopped' | 'log' | 'error' | 'transcribing' | 'transcribed' | 'transcription_error';
+  state:
+    | 'recording'
+    | 'processing'
+    | 'stopped'
+    | 'log'
+    | 'error'
+    | 'transcribing'
+    | 'transcribed'
+    | 'transcription_error';
   meeting_id?: string;
   message?: string;
   elapsed_secs?: number;
   file_size_bytes?: number;
+  progress_pct?: number;
 };

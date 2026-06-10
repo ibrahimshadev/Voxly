@@ -316,7 +316,7 @@ export default function App() {
         setMeetingActive(true);
         setMeetingElapsed(payload.elapsed_secs ?? meetingElapsed());
         setStatus('meeting');
-      } else if (payload.state === 'stopped') {
+      } else if (payload.state === 'stopped' || payload.state === 'processing') {
         lastStoppedMeetingId = payload.meeting_id ?? meetingId();
         setMeetingActive(false);
         setMeetingId(null);
