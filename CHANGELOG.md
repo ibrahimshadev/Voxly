@@ -1,3 +1,21 @@
+# [1.24.0](https://github.com/ibrahimshadev/Voxly/compare/v1.23.0...v1.24.0) (2026-06-10)
+
+
+### Features
+
+* configurable meeting summary model (Groq/OpenAI/custom) ([a19bdc2](https://github.com/ibrahimshadev/Voxly/commit/a19bdc269c73fd18de2f204aa0ca8e6bc76730a7))
+* editable meeting titles with AI auto-title on summary ([b9a9e0d](https://github.com/ibrahimshadev/Voxly/commit/b9a9e0d3c0a1a4392968a6849e8f1ca582c32b03))
+* **meeting:** add rename command and auto-title from summary ([797fba7](https://github.com/ibrahimshadev/Voxly/commit/797fba72d3e4fd06014d3b013eb140cfc2a9a971))
+* **meeting:** provider-aware summary request body ([4eea3d4](https://github.com/ibrahimshadev/Voxly/commit/4eea3d447309b0a10fcdfaa80d59ee4c25d80e99))
+* **meeting:** resolve summary provider config with legacy fallback ([39ac9c0](https://github.com/ibrahimshadev/Voxly/commit/39ac9c0416f22a43234f75a27aefc98b135a59fb))
+* **meeting:** route summaries through configured provider ([11f4ab2](https://github.com/ibrahimshadev/Voxly/commit/11f4ab2ed49685f0e675ec579a8b5cd96620349d))
+* **settings:** add summary model provider settings ([40d7bb2](https://github.com/ibrahimshadev/Voxly/commit/40d7bb2ed198476ae20736fb40a4672e460df35c))
+* **ui:** add AI summary provider configuration tab ([290567f](https://github.com/ibrahimshadev/Voxly/commit/290567f1fb680b2e02f63e814ad8b25ef77afad7))
+* **ui:** add summary model settings types and curated model lists ([0451a72](https://github.com/ibrahimshadev/Voxly/commit/0451a7283d383e31f9bf53246b3fc930f9543ea7))
+* **ui:** make meeting title editable below the video player ([468131f](https://github.com/ibrahimshadev/Voxly/commit/468131fcc9cbaae741fb73adb20a37c463e6ade1))
+* **ui:** make summary panel copy provider-aware ([10c5b74](https://github.com/ibrahimshadev/Voxly/commit/10c5b74cdf2274061ec960c8da175d051f8c68e4))
+* **ui:** split meeting config into capture/transcription/summary tabs ([04bc06d](https://github.com/ibrahimshadev/Voxly/commit/04bc06dcdf00a99a23db7008deddf58d7e79808e))
+
 # [1.23.0](https://github.com/ibrahimshadev/Voxly/compare/v1.22.0...v1.23.0) (2026-06-10)
 
 
