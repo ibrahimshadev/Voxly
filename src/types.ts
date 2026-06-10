@@ -1,4 +1,4 @@
-export type Status = 'idle' | 'recording' | 'transcribing' | 'formatting' | 'pasting' | 'meeting' | 'done' | 'error';
+export type Status = 'idle' | 'recording' | 'transcribing' | 'formatting' | 'pasting' | 'done' | 'error';
 export type Tab = 'settings' | 'dictionary' | 'history' | 'modes' | 'meetings';
 export type Provider = 'groq' | 'openai' | 'custom';
 export type HotkeyMode = 'hold' | 'lock';

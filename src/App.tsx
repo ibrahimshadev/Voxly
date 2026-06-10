@@ -17,13 +17,16 @@ export default function App() {
   const [meetingActive, setMeetingActive] = createSignal(false);
   const [meetingId, setMeetingId] = createSignal<string | null>(null);
   const [meetingElapsed, setMeetingElapsed] = createSignal(0);
-  const isActive = () =>
+  const isDictating = () =>
     status() === 'recording' ||
     status() === 'transcribing' ||
     status() === 'formatting' ||
-    status() === 'pasting' ||
-    status() === 'meeting';
-  const isMeetingBusy = () => meetingActive() || status() === 'meeting';
+    status() === 'pasting';
+  // Shared predicate: drives BOTH the pill's `dictating` class and the combined
+  // hit-region width. Includes 'done' and 'error' so the checkmark and the
+  // error gear render inside the wide pill's hit region.
+  const dictationSlotVisible = () => status() !== 'idle';
+  const isActive = () => isDictating() || meetingActive();
 
   let isHolding = false;
   let registeredHotkey: string | null = null;
@@ -76,8 +79,6 @@ export default function App() {
   };
 
   const handlePressed = async () => {
-    if (isMeetingBusy()) return;
-
     if (settings().hotkey_mode === 'hold') {
       if (isHolding || status() === 'recording') return;
       isHolding = true;
@@ -116,8 +117,6 @@ export default function App() {
       try {
         await invoke('start_recording');
       } catch (err) {
-        setMeetingActive(false);
-        setMeetingElapsed(0);
         setStatus('error');
         setError(String(err));
       }
@@ -125,7 +124,6 @@ export default function App() {
   };
 
   const handleReleased = async () => {
-    if (isMeetingBusy()) return;
     if (settings().hotkey_mode !== 'hold' || !isHolding) return;
 
     isHolding = false;
@@ -145,19 +143,18 @@ export default function App() {
   };
 
   const toggleMeetingRecording = async () => {
-    if (isMeetingBusy()) {
+    if (meetingActive()) {
       try {
         const meta = await invoke<MeetingMeta>('stop_meeting');
         lastStoppedMeetingId = meta.id;
         setMeetingActive(false);
         setMeetingId(null);
         setMeetingElapsed(0);
-        setStatus('idle');
       } catch (err) {
         setMeetingActive(false);
         setMeetingId(null);
         setMeetingElapsed(0);
-        setStatus('error');
+        if (!isDictating()) setStatus('error');
         setError(String(err));
       }
       return;
@@ -190,7 +187,6 @@ export default function App() {
       setMeetingActive(true);
       setMeetingId(meta.id);
       setMeetingElapsed(0);
-      setStatus('meeting');
     } catch (err) {
       setStatus('error');
       setError(String(err));
@@ -248,7 +244,6 @@ export default function App() {
     await loadSettings();
 
     const unlistenDictation = await listen<DictationUpdate>('dictation:update', (event) => {
-      if (isMeetingBusy()) return;
       const payload = event.payload;
       switch (payload.state) {
         case 'recording': {
@@ -315,19 +310,17 @@ export default function App() {
         lastStoppedMeetingId = null;
         setMeetingActive(true);
         setMeetingElapsed(payload.elapsed_secs ?? meetingElapsed());
-        setStatus('meeting');
       } else if (payload.state === 'stopped' || payload.state === 'processing') {
         lastStoppedMeetingId = payload.meeting_id ?? meetingId();
         setMeetingActive(false);
         setMeetingId(null);
         setMeetingElapsed(0);
-        if (status() === 'meeting') setStatus('idle');
       } else if (payload.state === 'error') {
         lastStoppedMeetingId = payload.meeting_id ?? meetingId();
         setMeetingActive(false);
         setMeetingId(null);
         setMeetingElapsed(0);
-        setStatus('error');
+        if (!isDictating()) setStatus('error');
         setError(payload.message ?? 'Meeting recording failed.');
       } else if (
         payload.state === 'transcribing' ||
@@ -362,7 +355,10 @@ export default function App() {
     // Window: 360x100, pill centered at bottom with 8px padding.
     // Margin must be large enough for the 50ms cursor tracker to catch
     // an approaching cursor before it reaches the pill (~15px at normal speed).
-    const pillW = status() === 'meeting' ? 118 : active ? 90 : 48;
+    const pillW = meetingActive() && dictationSlotVisible() ? 184
+      : meetingActive() ? 118
+      : active ? 90
+      : 48;
     const pillH = active ? 28 : 20;
     const pillX = (360 - pillW) / 2;
     const pillY = 100 - 8 - pillH;
@@ -412,6 +408,7 @@ export default function App() {
         <Pill
           status={status}
           error={error}
+          meetingActive={meetingActive}
           meetingElapsed={meetingElapsed}
           onMouseDown={startDrag}
           onSettingsClick={toggleSettingsWindow}

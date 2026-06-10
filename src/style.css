@@ -124,6 +124,21 @@ body.window-main {
   border-color: rgba(248, 113, 113, 0.28);
 }
 
+.pill.meeting.dictating {
+  min-width: 184px;
+}
+
+.dictation-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pill.meeting .dictation-slot {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  padding-left: 8px;
+}
+
 .meeting-indicator {
   display: flex;
   align-items: center;

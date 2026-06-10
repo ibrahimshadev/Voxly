@@ -9,6 +9,7 @@ import GearButton from './GearButton';
 type PillProps = {
   status: Accessor<Status>;
   error: Accessor<string>;
+  meetingActive: Accessor<boolean>;
   meetingElapsed?: Accessor<number>;
   onMouseDown: (e: MouseEvent) => void;
   onSettingsClick: () => void;
@@ -37,24 +38,17 @@ export default function Pill(props: PillProps) {
       classList={{
         recording: props.status() === 'recording',
         transcribing: props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting',
-        meeting: props.status() === 'meeting',
+        meeting: props.meetingActive(),
+        dictating: props.status() !== 'idle',
         error: props.status() === 'error',
       }}
       onMouseDown={props.onMouseDown}
     >
-      <Show when={props.status() === 'idle'}>
+      <Show when={props.status() === 'idle' && !props.meetingActive()}>
         <IdleDots />
       </Show>
 
-      <Show when={props.status() === 'recording'}>
-        <SineWaves />
-      </Show>
-
-      <Show when={props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting'}>
-        <LoadingDots />
-      </Show>
-
-      <Show when={props.status() === 'meeting'}>
+      <Show when={props.meetingActive()}>
         <div class="meeting-indicator">
           <span class="meeting-dot" />
           <span class="meeting-label">REC</span>
@@ -62,15 +56,29 @@ export default function Pill(props: PillProps) {
         </div>
       </Show>
 
-      <Show when={props.status() === 'done'}>
-        <svg class="check-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      </Show>
+      <Show when={props.status() !== 'idle'}>
+        <div class="dictation-slot">
+          <Show when={props.status() === 'recording'}>
+            <Show when={props.meetingActive()} fallback={<SineWaves />}>
+              <SineWaves width={52} height={24} amplitude={3} />
+            </Show>
+          </Show>
 
-      <Show when={props.status() === 'error'}>
-        <span class="error-icon" title={props.error()}>!</span>
-        <GearButton onClick={props.onSettingsClick} />
+          <Show when={props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting'}>
+            <LoadingDots />
+          </Show>
+
+          <Show when={props.status() === 'done'}>
+            <svg class="check-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </Show>
+
+          <Show when={props.status() === 'error'}>
+            <span class="error-icon" title={props.error()}>!</span>
+            <GearButton onClick={props.onSettingsClick} />
+          </Show>
+        </div>
       </Show>
     </div>
   );
