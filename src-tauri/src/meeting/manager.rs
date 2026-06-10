@@ -94,7 +94,7 @@ impl MeetingSessionManager {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
-            .unwrap_or_else(|| "Untitled meeting".to_string());
+            .unwrap_or_else(|| crate::meeting::types::DEFAULT_MEETING_TITLE.to_string());
 
         storage::create_meeting_folder(&id)?;
         let output_path = storage::source_path(&id)?;
@@ -229,6 +229,15 @@ impl MeetingSessionManager {
         storage::delete_meeting(id)
     }
 
+    pub fn rename(&self, id: &str, title: &str) -> Result<MeetingMeta, String> {
+        let normalized = normalize_meeting_title(title)?;
+        storage::update_meta_by_id(id, |meta| {
+            meta.title = normalized.clone();
+            Ok(())
+        })?
+        .ok_or_else(|| "Meeting not found".to_string())
+    }
+
     pub fn devices(&self, app: &AppHandle) -> MeetingDevices {
         crate::meeting::devices::list_devices(app)
     }
@@ -349,6 +358,16 @@ fn emit_progress(app: AppHandle, id: String, output_path: std::path::PathBuf) {
     });
 }
 
+const MAX_MEETING_TITLE_CHARS: usize = 120;
+
+fn normalize_meeting_title(title: &str) -> Result<String, String> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Err("Meeting title cannot be empty.".to_string());
+    }
+    Ok(trimmed.chars().take(MAX_MEETING_TITLE_CHARS).collect())
+}
+
 fn is_still_recording(app: &AppHandle, id: &str) -> bool {
     let _ = app;
     storage::load_index()
@@ -385,5 +404,24 @@ mod tests {
         let error = manager.delete("m1").unwrap_err();
 
         assert!(error.contains("finish saving"));
+    }
+
+    #[test]
+    fn normalize_meeting_title_trims_and_keeps_value() {
+        assert_eq!(
+            normalize_meeting_title("  Sprint sync  ").unwrap(),
+            "Sprint sync"
+        );
+    }
+
+    #[test]
+    fn normalize_meeting_title_rejects_blank() {
+        assert!(normalize_meeting_title("   ").is_err());
+    }
+
+    #[test]
+    fn normalize_meeting_title_caps_length() {
+        let long = "x".repeat(200);
+        assert_eq!(normalize_meeting_title(&long).unwrap().chars().count(), 120);
     }
 }

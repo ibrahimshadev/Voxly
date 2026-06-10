@@ -123,6 +123,7 @@ fn main() {
             commands::stop_meeting,
             commands::transcribe_meeting,
             commands::generate_meeting_summary,
+            commands::rename_meeting,
             commands::list_meetings,
             commands::get_meeting,
             commands::delete_meeting,

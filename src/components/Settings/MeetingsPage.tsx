@@ -15,6 +15,7 @@ import {
   Loader2,
   Mic,
   Monitor,
+  Pencil,
   Play,
   RefreshCcw,
   Square,
@@ -47,6 +48,7 @@ type MeetingsPageProps = {
   onStopRecording: () => void;
   onTranscribeMeeting: (id: string) => void;
   onGenerateSummary: (id: string) => void;
+  onRenameMeeting: (id: string, title: string) => void;
   summaryGenerating: Accessor<Record<string, boolean>>;
   summaryErrors: Accessor<Record<string, string>>;
   onSaveSettings: () => Promise<boolean>;
@@ -201,6 +203,28 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   const [activeTab, setActiveTab] = createSignal<TranscriptTab>('transcript');
   const [configTab, setConfigTab] = createSignal<ConfigTab>('capture');
   const [showSummaryKey, setShowSummaryKey] = createSignal(false);
+  const [editingTitleId, setEditingTitleId] = createSignal<string | null>(null);
+  const [titleDraft, setTitleDraft] = createSignal('');
+
+  const startTitleEdit = (meeting: MeetingDetail) => {
+    setTitleDraft(meeting.meta.title);
+    setEditingTitleId(meeting.meta.id);
+  };
+
+  const cancelTitleEdit = () => {
+    setTitleDraft('');
+    setEditingTitleId(null);
+  };
+
+  const commitTitleEdit = () => {
+    const editingId = editingTitleId();
+    const selected = props.selectedMeeting();
+    setEditingTitleId(null);
+    if (!editingId || !selected || selected.meta.id !== editingId) return;
+    const draft = titleDraft().trim();
+    if (!draft || draft === selected.meta.title) return;
+    props.onRenameMeeting(editingId, draft);
+  };
 
   const summaryModelOptions = () =>
     SUMMARY_MODELS[props.settings().summary_provider].map((model) => ({
@@ -828,7 +852,42 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                 <section class="shrink-0 border-b border-border-dark bg-[#111111] px-4 lg:px-5 py-3">
                   <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                     <div class="min-w-0">
-                      <h2 class="text-base font-semibold text-white truncate">{meeting().meta.title}</h2>
+                      <Show
+                        when={editingTitleId() === meeting().meta.id}
+                        fallback={
+                          <div class="group flex min-w-0 items-center gap-1.5">
+                            <h2
+                              class="text-base font-semibold text-white truncate cursor-text"
+                              onClick={() => startTitleEdit(meeting())}
+                              title="Click to rename"
+                            >
+                              {meeting().meta.title}
+                            </h2>
+                            <button
+                              type="button"
+                              onClick={() => startTitleEdit(meeting())}
+                              title="Rename meeting"
+                              class="shrink-0 text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-zinc-200 transition-opacity cursor-pointer"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          </div>
+                        }
+                      >
+                        <input
+                          type="text"
+                          value={titleDraft()}
+                          maxLength={120}
+                          ref={(el) => setTimeout(() => { el.focus(); el.select(); }, 0)}
+                          onInput={(e) => setTitleDraft((e.target as HTMLInputElement).value)}
+                          onBlur={commitTitleEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                            if (e.key === 'Escape') cancelTitleEdit();
+                          }}
+                          class="w-full max-w-md bg-input-bg border border-white/15 rounded-lg py-1 px-2 text-base font-semibold text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </Show>
                       <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-zinc-500">
                         <span class="flex items-center gap-1">
                           <Calendar size={13} />
