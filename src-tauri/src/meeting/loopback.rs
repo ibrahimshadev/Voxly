@@ -67,6 +67,10 @@ mod platform {
             self.started_at
         }
 
+        pub fn signal(&self) {
+            self.recording.store(false, Ordering::SeqCst);
+        }
+
         pub fn stop(mut self) -> Result<(), String> {
             self.recording.store(false, Ordering::SeqCst);
             if let Some(handle) = self.handle.take() {
@@ -276,6 +280,8 @@ mod platform {
                     .to_string(),
             )
         }
+
+        pub fn signal(&self) {}
 
         pub fn stop(self) -> Result<(), String> {
             Ok(())
