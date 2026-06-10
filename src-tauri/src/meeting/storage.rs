@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use rusqlite::{params, OptionalExtension};
 
 use crate::meeting::types::{
-    MeetingDetail, MeetingMeta, MeetingStatus, MeetingTranscript, TranscriptStatus,
+    MeetingDetail, MeetingMeta, MeetingStatus, MeetingSummary, MeetingTranscript, TranscriptStatus,
 };
 
 const SOURCE_FILE: &str = "recording.mp4";
@@ -192,7 +192,7 @@ pub fn get_detail_reconciled(id: &str, live_ids: &HashSet<String>) -> Result<Mee
         meta,
         source_path: source.to_string_lossy().to_string(),
         transcript: load_transcript(id).ok().flatten(),
-        summary: None,
+        summary: load_summary(id).ok().flatten(),
     })
 }
 
@@ -235,6 +235,44 @@ pub fn load_transcript(id: &str) -> Result<Option<MeetingTranscript>, String> {
         serde_json::from_str(&contents)
             .map(Some)
             .map_err(|error| format!("Failed to parse meeting transcript: {error}"))
+    })
+}
+
+pub fn save_summary(id: &str, summary: &MeetingSummary) -> Result<(), String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    if !meeting_exists(id)? {
+        return Err("Meeting no longer exists.".to_string());
+    }
+    let contents = serde_json::to_string_pretty(summary).map_err(|e| e.to_string())?;
+    crate::db::with_connection(|conn| {
+        conn.execute(
+            r#"
+            INSERT OR REPLACE INTO meeting_summaries (meeting_id, json, created_at_ms, provider)
+            VALUES (?1, ?2, ?3, ?4)
+            "#,
+            params![id, contents, summary.created_at_ms, &summary.provider],
+        )
+        .map(|_| ())
+        .map_err(|error| format!("Failed to save meeting summary: {error}"))
+    })
+}
+
+pub fn load_summary(id: &str) -> Result<Option<MeetingSummary>, String> {
+    let contents = crate::db::with_connection(|conn| {
+        conn.query_row(
+            "SELECT json FROM meeting_summaries WHERE meeting_id = ?1",
+            params![id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("Failed to load meeting summary: {error}"))
+    })?;
+    contents.map_or(Ok(None), |contents| {
+        serde_json::from_str(&contents)
+            .map(Some)
+            .map_err(|error| format!("Failed to parse meeting summary: {error}"))
     })
 }
 
@@ -302,6 +340,51 @@ fn reconcile_stale_pending_transcripts(items: &mut [MeetingMeta], now_ms: i64) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::meeting::types::MeetingSummary;
+
+    fn sample_summary() -> MeetingSummary {
+        MeetingSummary {
+            markdown: "## Conversation Summary\nWe discussed the plan.".to_string(),
+            model: "openai/gpt-oss-120b".to_string(),
+            provider: "groq".to_string(),
+            created_at_ms: 1_234,
+            transcript_created_at_ms: Some(999),
+        }
+    }
+
+    #[test]
+    fn summary_round_trips_through_db_and_cascades_on_delete() {
+        let id = format!("summary-rt-{}", uuid::Uuid::new_v4());
+        upsert_meta(meta(&id, MeetingStatus::Recorded)).unwrap();
+
+        let summary = sample_summary();
+        save_summary(&id, &summary).unwrap();
+        assert_eq!(load_summary(&id).unwrap().unwrap(), summary);
+
+        let regenerated = MeetingSummary {
+            markdown: "## Conversation Summary\nSecond pass.".to_string(),
+            created_at_ms: 5_678,
+            ..sample_summary()
+        };
+        save_summary(&id, &regenerated).unwrap();
+        assert_eq!(load_summary(&id).unwrap().unwrap(), regenerated);
+
+        delete_meeting(&id).unwrap();
+        assert!(load_summary(&id).unwrap().is_none());
+    }
+
+    #[test]
+    fn save_summary_requires_existing_meeting() {
+        let id = format!("summary-missing-{}", uuid::Uuid::new_v4());
+        let error = save_summary(&id, &sample_summary()).unwrap_err();
+        assert!(error.contains("no longer exists"));
+    }
+
+    #[test]
+    fn load_summary_returns_none_for_unknown_meeting() {
+        let id = format!("summary-none-{}", uuid::Uuid::new_v4());
+        assert!(load_summary(&id).unwrap().is_none());
+    }
 
     fn meta(id: &str, status: MeetingStatus) -> MeetingMeta {
         MeetingMeta {
