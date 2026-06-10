@@ -192,6 +192,7 @@ pub fn get_detail_reconciled(id: &str, live_ids: &HashSet<String>) -> Result<Mee
         meta,
         source_path: source.to_string_lossy().to_string(),
         transcript: load_transcript(id).ok().flatten(),
+        summary: None,
     })
 }
 

@@ -10,6 +10,6 @@ pub mod types;
 pub use manager::MeetingSessionManager;
 #[allow(unused_imports)]
 pub use types::{
-    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingTranscript,
-    MeetingUpdate, TranscriptStatus, Utterance,
+    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingSummary,
+    MeetingTranscript, MeetingUpdate, TranscriptStatus, Utterance,
 };

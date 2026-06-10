@@ -48,6 +48,18 @@ pub struct MeetingDetail {
     pub source_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcript: Option<MeetingTranscript>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<MeetingSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MeetingSummary {
+    pub markdown: String,
+    pub model: String,
+    pub provider: String,
+    pub created_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_created_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
