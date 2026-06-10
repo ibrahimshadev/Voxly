@@ -938,6 +938,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                           onGenerateSummary={props.onGenerateSummary}
                           generating={Boolean(props.summaryGenerating()[meeting().meta.id])}
                           error={props.summaryErrors()[meeting().meta.id] ?? null}
+                          summaryModel={props.settings().summary_model}
                         />
                       }
                     >
@@ -1085,6 +1086,7 @@ function SummaryPanel(props: {
   onGenerateSummary: (id: string) => void;
   generating: boolean;
   error: string | null;
+  summaryModel: string;
 }) {
   const hasTranscript = () =>
     props.meeting.meta.transcript_status === 'completed' && Boolean(props.meeting.transcript);
@@ -1096,7 +1098,7 @@ function SummaryPanel(props: {
         <div>
           <h3 class="text-sm font-semibold text-white">AI meeting summary</h3>
           <p class="mt-1 text-xs text-zinc-500">
-            Generated with GPT-OSS-120B on Groq from the meeting transcript.
+            Generated from the meeting transcript with {summary()?.model ?? props.summaryModel}.
           </p>
         </div>
         <Show when={!summary()}>
@@ -1139,7 +1141,7 @@ function SummaryPanel(props: {
                 <div>
                   <p class="text-sm font-medium">Generating summary…</p>
                   <p class="mt-1 text-xs text-primary/80">
-                    GPT-OSS-120B is analyzing the transcript on Groq.
+                    {props.summaryModel} is analyzing the transcript.
                   </p>
                 </div>
               </div>
