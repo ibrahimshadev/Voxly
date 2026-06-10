@@ -105,10 +105,19 @@ export type MeetingTranscript = {
   created_at_ms: number;
 };
 
+export type MeetingSummary = {
+  markdown: string;
+  model: string;
+  provider: string;
+  created_at_ms: number;
+  transcript_created_at_ms?: number;
+};
+
 export type MeetingDetail = {
   meta: MeetingMeta;
   source_path: string;
   transcript?: MeetingTranscript;
+  summary?: MeetingSummary;
 };
 
 export type MeetingDevices = {
