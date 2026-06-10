@@ -1,3 +1,26 @@
+# [1.23.0](https://github.com/ibrahimshadev/Voxly/compare/v1.22.0...v1.23.0) (2026-06-10)
+
+
+### Features
+
+* **meeting:** add ffmpeg progress parser and emit throttle ([f518fb0](https://github.com/ibrahimshadev/Voxly/commit/f518fb07137bdb51434dfb0dbe93eeacaf1b51bc))
+* **meeting:** add groq gpt-oss-120b summary generation module ([e3f36ae](https://github.com/ibrahimshadev/Voxly/commit/e3f36ae204686c8918c30a96e2de78538ffb1e0e))
+* **meeting:** add MeetingSummary type to meeting detail ([64c7f56](https://github.com/ibrahimshadev/Voxly/commit/64c7f56f4199fa0ea14860bbe3414db875525662))
+* **meeting:** add non-joining signal to loopback recorder ([31b2315](https://github.com/ibrahimshadev/Voxly/commit/31b2315075f5ad04dd81a58fbecf86ca96d7dafe))
+* **meeting:** add processing status and progress field to meeting events ([6180ac0](https://github.com/ibrahimshadev/Voxly/commit/6180ac06536d2176c1df5288a7caa224506dc921))
+* **meeting:** expose generate_meeting_summary command ([11df5ab](https://github.com/ibrahimshadev/Voxly/commit/11df5abdd7af608738d26c2b21fc86b8022ebcfb))
+* **meeting:** finalize recordings in background with processing status ([d29a169](https://github.com/ibrahimshadev/Voxly/commit/d29a169abf1c59d662f0c4c81c8a8e4af69bc82c))
+* **meeting:** persist meeting summaries in sqlite ([b9992e3](https://github.com/ibrahimshadev/Voxly/commit/b9992e3052432f58953abf4256271b192a0bca41))
+* **meeting:** reconcile orphaned processing meetings over live id set ([e4015ed](https://github.com/ibrahimshadev/Voxly/commit/e4015eda528423a527e0aec570d59f089ccf81ff))
+* **meeting:** skip faststart on intermediate capture so quit is fast ([920ece9](https://github.com/ibrahimshadev/Voxly/commit/920ece952867f7e01b4b6966ee3ecf116390abc0))
+* **meeting:** split recorder stop into signal and progress-reporting finalize ([9f718be](https://github.com/ibrahimshadev/Voxly/commit/9f718bee76ffa5e9053a5604dfd2b1cfb9f98837))
+* **ui:** add markdown rendering foundation for meeting summaries ([9ba95c3](https://github.com/ibrahimshadev/Voxly/commit/9ba95c359b562a7fe4a44907c0e7f24aab87eeda))
+* **ui:** add size props to dictation sine wave ([43aeb32](https://github.com/ibrahimshadev/Voxly/commit/43aeb32aab9f52d91891558da5af270eb156cc17))
+* **ui:** allow dictation during meetings with combined pill ([ff26c33](https://github.com/ibrahimshadev/Voxly/commit/ff26c33e385c1b713dbceac9b398d0149f60b14f))
+* **ui:** generate and render AI meeting summaries ([d1e5bff](https://github.com/ibrahimshadev/Voxly/commit/d1e5bff6e432f7ab579e389be72189a7b52d0178))
+* **ui:** handle processing meeting state in pill ([346d98e](https://github.com/ibrahimshadev/Voxly/commit/346d98e4391c550268dfb3baed3eb1558f4b0e8e))
+* **ui:** show saving progress for finalizing meetings ([4ffb783](https://github.com/ibrahimshadev/Voxly/commit/4ffb7832e432febb5c912f0468627f72c0d36104))
+
 # [1.22.0](https://github.com/ibrahimshadev/Voxly/compare/v1.21.0...v1.22.0) (2026-06-03)
 
 
