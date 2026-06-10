@@ -1,6 +1,7 @@
 pub mod devices;
 pub mod loopback;
 pub mod manager;
+pub mod progress;
 pub mod recorder;
 pub mod storage;
 pub mod transcribe;
