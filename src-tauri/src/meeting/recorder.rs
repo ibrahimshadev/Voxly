@@ -134,13 +134,6 @@ impl RunningRecorder {
         }
     }
 
-    // Temporary shim so manager::stop keeps compiling; replaced by begin_stop in
-    // the next commit.
-    pub fn stop(mut self) -> Result<(), String> {
-        self.signal_stop();
-        self.finalize(0.0, &|_| {})
-    }
-
     /// Waits for the capture processes and runs the post-processing passes.
     /// Duration-proportional — must run off the main thread. `duration_secs`
     /// scales the progress percentages; pass 0.0 when unknown (no progress).

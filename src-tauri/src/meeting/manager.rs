@@ -1,4 +1,5 @@
-use std::sync::Mutex;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,6 +21,22 @@ struct ActiveMeeting {
 #[derive(Default)]
 pub struct MeetingSessionManager {
     active: Mutex<Option<ActiveMeeting>>,
+    // Meetings whose finalization task is currently running. Keeps reconciliation
+    // from declaring them orphaned and blocks deletion while FFmpeg holds files.
+    finalizing: Arc<Mutex<HashSet<String>>>,
+}
+
+struct FinalizingGuard {
+    set: Arc<Mutex<HashSet<String>>>,
+    id: String,
+}
+
+impl Drop for FinalizingGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.set.lock() {
+            set.remove(&self.id);
+        }
+    }
 }
 
 impl MeetingSessionManager {
@@ -127,45 +144,59 @@ impl MeetingSessionManager {
         Ok(meta)
     }
 
-    pub fn stop(&self) -> Result<MeetingMeta, String> {
+    /// Signals the capture to stop, marks the meeting `processing`, and hands
+    /// the duration-proportional finalization to a background task. Returns
+    /// immediately so the UI thread is never blocked on FFmpeg.
+    pub fn begin_stop(&self, app: AppHandle) -> Result<MeetingMeta, String> {
         let active = self
             .active
             .lock()
             .map_err(|_| "Meeting state lock poisoned".to_string())?
             .take();
 
-        let Some(active) = active else {
+        let Some(mut active) = active else {
             return Err("No meeting is recording.".to_string());
         };
 
-        let active_meta = active.meta;
-        let stop_result = active.recorder.stop();
+        active.recorder.signal_stop();
+
+        let id = active.meta.id.clone();
         let ended_at_ms = storage::now_ms()?;
-        let source_path = storage::source_path(&active_meta.id)?;
         let duration_secs = active.started.elapsed().as_secs_f64();
+        let source_path = storage::source_path(&id)?;
         let file_size_bytes = storage::file_size(&source_path);
-        let status = if stop_result.is_ok() {
-            MeetingStatus::Recorded
-        } else {
-            MeetingStatus::Error
-        };
-        let meta = storage::update_meta_by_id(&active_meta.id, |item| {
+
+        let meta = storage::update_meta_by_id(&id, |item| {
             item.ended_at_ms = Some(ended_at_ms);
             item.duration_secs = Some(duration_secs);
             item.file_size_bytes = file_size_bytes;
-            item.status = status.clone();
+            item.status = MeetingStatus::Processing;
             Ok(())
         })?
         .unwrap_or_else(|| {
-            let mut meta = active_meta;
+            let mut meta = active.meta.clone();
             meta.ended_at_ms = Some(ended_at_ms);
             meta.duration_secs = Some(duration_secs);
             meta.file_size_bytes = file_size_bytes;
-            meta.status = status;
+            meta.status = MeetingStatus::Processing;
             meta
         });
 
-        stop_result?;
+        self.finalizing
+            .lock()
+            .map_err(|_| "Meeting finalizing lock poisoned".to_string())?
+            .insert(id.clone());
+        let guard = FinalizingGuard {
+            set: Arc::clone(&self.finalizing),
+            id: id.clone(),
+        };
+
+        let recorder = active.recorder;
+        tauri::async_runtime::spawn_blocking(move || {
+            let _guard = guard;
+            run_finalize(app, recorder, id, duration_secs, source_path);
+        });
+
         Ok(meta)
     }
 
@@ -187,6 +218,14 @@ impl MeetingSessionManager {
         {
             return Err("Stop the active meeting before deleting it.".to_string());
         }
+        if self
+            .finalizing
+            .lock()
+            .map_err(|_| "Meeting finalizing lock poisoned".to_string())?
+            .contains(id)
+        {
+            return Err("Wait for the recording to finish saving before deleting it.".to_string());
+        }
         storage::delete_meeting(id)
     }
 
@@ -194,8 +233,8 @@ impl MeetingSessionManager {
         crate::meeting::devices::list_devices(app)
     }
 
-    fn live_ids(&self) -> Result<std::collections::HashSet<String>, String> {
-        let mut ids = std::collections::HashSet::new();
+    fn live_ids(&self) -> Result<HashSet<String>, String> {
+        let mut ids = HashSet::new();
         if let Some(active) = self
             .active
             .lock()
@@ -204,8 +243,81 @@ impl MeetingSessionManager {
         {
             ids.insert(active.meta.id.clone());
         }
+        ids.extend(
+            self.finalizing
+                .lock()
+                .map_err(|_| "Meeting finalizing lock poisoned".to_string())?
+                .iter()
+                .cloned(),
+        );
         Ok(ids)
     }
+}
+
+fn run_finalize(
+    app: AppHandle,
+    recorder: RunningRecorder,
+    id: String,
+    duration_secs: f64,
+    source_path: std::path::PathBuf,
+) {
+    let progress_app = app.clone();
+    let progress_id = id.clone();
+    let result = recorder.finalize(duration_secs, &move |pct| {
+        let _ = progress_app.emit(
+            "meeting:update",
+            MeetingUpdate {
+                state: "processing".to_string(),
+                meeting_id: Some(progress_id.clone()),
+                message: None,
+                elapsed_secs: None,
+                file_size_bytes: None,
+                progress_pct: Some(pct),
+            },
+        );
+    });
+
+    let file_size_bytes = storage::file_size(&source_path);
+    let status = if result.is_ok() {
+        MeetingStatus::Recorded
+    } else {
+        MeetingStatus::Error
+    };
+    let _ = storage::update_meta_by_id(&id, |item| {
+        item.status = status.clone();
+        item.file_size_bytes = file_size_bytes;
+        Ok(())
+    });
+
+    match result {
+        Ok(()) => {
+            let _ = app.emit(
+                "meeting:update",
+                MeetingUpdate {
+                    state: "stopped".to_string(),
+                    meeting_id: Some(id),
+                    message: None,
+                    elapsed_secs: Some(duration_secs.round() as u64),
+                    file_size_bytes,
+                    progress_pct: None,
+                },
+            );
+        }
+        Err(error) => {
+            let _ = app.emit(
+                "meeting:update",
+                MeetingUpdate {
+                    state: "error".to_string(),
+                    meeting_id: Some(id),
+                    message: Some(error),
+                    elapsed_secs: None,
+                    file_size_bytes,
+                    progress_pct: None,
+                },
+            );
+        }
+    }
+    let _ = app.emit("meetings-updated", ());
 }
 
 fn emit_progress(app: AppHandle, id: String, output_path: std::path::PathBuf) {
@@ -243,4 +355,35 @@ fn is_still_recording(app: &AppHandle, id: &str) -> bool {
         .ok()
         .and_then(|items| items.into_iter().find(|item| item.id == id))
         .is_some_and(|item| matches!(item.status, MeetingStatus::Recording))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    #[test]
+    fn finalizing_guard_removes_id_on_drop() {
+        let set = Arc::new(Mutex::new(HashSet::new()));
+        set.lock().unwrap().insert("m1".to_string());
+
+        let guard = FinalizingGuard {
+            set: Arc::clone(&set),
+            id: "m1".to_string(),
+        };
+        drop(guard);
+
+        assert!(set.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_is_rejected_while_meeting_is_finalizing() {
+        let manager = MeetingSessionManager::default();
+        manager.finalizing.lock().unwrap().insert("m1".to_string());
+
+        let error = manager.delete("m1").unwrap_err();
+
+        assert!(error.contains("finish saving"));
+    }
 }

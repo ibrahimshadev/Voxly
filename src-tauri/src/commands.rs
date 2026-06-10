@@ -173,7 +173,7 @@ pub fn clear_transcription_history() -> Result<(), String> {
     crate::transcription_history::clear_history()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_meeting(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -196,14 +196,14 @@ pub fn start_meeting(
     Ok(meta)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_meeting(app: AppHandle, state: State<'_, AppState>) -> Result<MeetingMeta, String> {
-    match state.meeting_manager.stop() {
+    match state.meeting_manager.begin_stop(app.clone()) {
         Ok(meta) => {
             let _ = app.emit(
                 "meeting:update",
                 MeetingUpdate {
-                    state: "stopped".to_string(),
+                    state: "processing".to_string(),
                     meeting_id: Some(meta.id.clone()),
                     message: None,
                     elapsed_secs: meta.duration_secs.map(|value| value.round() as u64),
