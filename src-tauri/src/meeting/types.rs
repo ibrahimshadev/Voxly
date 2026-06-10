@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_MEETING_TITLE: &str = "Untitled meeting";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingStatus {

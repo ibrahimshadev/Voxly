@@ -271,6 +271,18 @@ pub async fn generate_meeting_summary(
 }
 
 #[tauri::command]
+pub fn rename_meeting(
+    id: String,
+    title: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<MeetingMeta, String> {
+    let meta = state.meeting_manager.rename(&id, &title)?;
+    let _ = app.emit("meetings-updated", ());
+    Ok(meta)
+}
+
+#[tauri::command]
 pub fn list_meetings(state: State<'_, AppState>) -> Result<Vec<MeetingMeta>, String> {
     state.meeting_manager.list()
 }

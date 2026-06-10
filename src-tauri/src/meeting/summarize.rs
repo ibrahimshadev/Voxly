@@ -5,7 +5,9 @@ use std::time::Duration;
 use once_cell::sync::Lazy;
 
 use crate::meeting::storage;
-use crate::meeting::types::{MeetingDetail, MeetingSummary, MeetingTranscript, TranscriptStatus};
+use crate::meeting::types::{
+    MeetingDetail, MeetingSummary, MeetingTranscript, TranscriptStatus, DEFAULT_MEETING_TITLE,
+};
 use crate::settings::AppSettings;
 
 const MODEL: &str = "openai/gpt-oss-120b";
@@ -74,6 +76,9 @@ Write 3-4 sentences giving a high-level verdict on where the project stands. Men
 what is going well, what the main risks are, and what the critical path looks like
 going forward.
 "#;
+
+const TITLE_SYSTEM_PROMPT: &str = "You are given an AI-generated meeting summary. Reply with ONLY a concise descriptive meeting title for it: 3-8 words, plain text, no quotes, no markdown, no trailing punctuation.";
+const MAX_GENERATED_TITLE_CHARS: usize = 80;
 
 static IN_FLIGHT: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
@@ -195,12 +200,17 @@ fn check_transcript_len(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn request_body(provider: &str, model: &str, transcript_text: &str) -> serde_json::Value {
+fn request_body(
+    provider: &str,
+    model: &str,
+    system_prompt: &str,
+    user_content: &str,
+) -> serde_json::Value {
     let mut body = serde_json::json!({
         "model": model,
         "messages": [
-            { "role": "system", "content": SUMMARY_SYSTEM_PROMPT },
-            { "role": "user", "content": transcript_text }
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_content }
         ]
     });
     let params = body.as_object_mut().expect("request body is a JSON object");
@@ -240,6 +250,65 @@ fn parse_summary_content(body: &str) -> Result<String, String> {
         return Err("Summary response did not include content.".to_string());
     }
     Ok(content.to_string())
+}
+
+fn sanitize_generated_title(raw: &str) -> Option<String> {
+    let first_line = raw.lines().find(|line| !line.trim().is_empty())?;
+    let stripped = first_line
+        .trim()
+        .trim_start_matches("Title:")
+        .trim_start_matches("title:")
+        .trim()
+        .trim_matches(|c| matches!(c, '"' | '\'' | '\u{201c}' | '\u{201d}' | '\u{2018}' | '\u{2019}' | '`'))
+        .trim();
+    if stripped.is_empty() {
+        return None;
+    }
+    let capped: String = stripped.chars().take(MAX_GENERATED_TITLE_CHARS).collect();
+    Some(capped.trim_end().to_string())
+}
+
+async fn generate_and_store_title(
+    client: &reqwest::Client,
+    config: &SummaryConfig,
+    id: &str,
+    summary_markdown: &str,
+) -> Result<(), String> {
+    let response = client
+        .post(format!(
+            "{}/chat/completions",
+            config.base_url.trim_end_matches('/')
+        ))
+        .bearer_auth(&config.api_key)
+        .json(&request_body(
+            &config.provider,
+            &config.model,
+            TITLE_SYSTEM_PROMPT,
+            summary_markdown,
+        ))
+        .send()
+        .await
+        .map_err(|error| format!("Title request failed: {error}"))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("Failed to read title response: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("Title API error ({}) {status}", config.provider));
+    }
+
+    let title = parse_summary_content(&body)
+        .ok()
+        .and_then(|content| sanitize_generated_title(&content))
+        .ok_or_else(|| "Title response was empty.".to_string())?;
+    storage::update_meta_by_id(id, |meta| {
+        meta.title = title.clone();
+        Ok(())
+    })?
+    .ok_or_else(|| "Meeting no longer exists.".to_string())?;
+    Ok(())
 }
 
 fn with_rate_limit_hint(status: reqwest::StatusCode, body: &str, message: String) -> String {
@@ -288,6 +357,7 @@ pub async fn run(
         .json(&request_body(
             &config.provider,
             &config.model,
+            SUMMARY_SYSTEM_PROMPT,
             &transcript_text,
         ))
         .send()
@@ -318,6 +388,17 @@ pub async fn run(
         transcript_created_at_ms: Some(transcript.created_at_ms),
     };
     storage::save_summary(&id, &summary)?;
+
+    // Auto-title untouched meetings from the fresh summary. Best-effort: a title
+    // failure must never fail the summary itself.
+    if detail.meta.title.trim() == DEFAULT_MEETING_TITLE {
+        if let Err(error) =
+            generate_and_store_title(&client, &config, &id, &summary.markdown).await
+        {
+            eprintln!("Meeting title generation skipped: {error}");
+        }
+    }
+
     Ok(summary)
 }
 
@@ -541,7 +622,7 @@ mod tests {
 
     #[test]
     fn request_body_groq_gpt_oss_keeps_v1_reasoning_params() {
-        let body = request_body("groq", "openai/gpt-oss-120b", "transcript");
+        let body = request_body("groq", "openai/gpt-oss-120b", SUMMARY_SYSTEM_PROMPT, "transcript");
         assert_eq!(body["model"], "openai/gpt-oss-120b");
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][1]["content"], "transcript");
@@ -555,7 +636,7 @@ mod tests {
     #[test]
     fn request_body_groq_qwen3_disables_thinking() {
         // Probes 6/8 (spec §11.3): default leaks <think> into content; "none" is clean.
-        let body = request_body("groq", "qwen/qwen3-32b", "t");
+        let body = request_body("groq", "qwen/qwen3-32b", SUMMARY_SYSTEM_PROMPT, "t");
         assert_eq!(body["reasoning_effort"], "none");
         assert!(body.get("include_reasoning").is_none());
         assert_eq!(body["temperature"], 0.3);
@@ -565,7 +646,7 @@ mod tests {
     #[test]
     fn request_body_groq_other_models_omit_reasoning_params() {
         // Probe 5: llama-3.3 rejects reasoning_effort outright.
-        let body = request_body("groq", "llama-3.3-70b-versatile", "t");
+        let body = request_body("groq", "llama-3.3-70b-versatile", SUMMARY_SYSTEM_PROMPT, "t");
         assert!(body.get("reasoning_effort").is_none());
         assert!(body.get("include_reasoning").is_none());
     }
@@ -573,7 +654,7 @@ mod tests {
     #[test]
     fn request_body_openai_omits_temperature_and_include_reasoning() {
         // Probes 3 & 7: include_reasoning = unknown param; temperature rejected on 5.4-mini.
-        let body = request_body("openai", "gpt-5.4-mini", "t");
+        let body = request_body("openai", "gpt-5.4-mini", SUMMARY_SYSTEM_PROMPT, "t");
         assert!(body.get("temperature").is_none());
         assert!(body.get("include_reasoning").is_none());
         assert_eq!(body["reasoning_effort"], "low");
@@ -583,11 +664,40 @@ mod tests {
 
     #[test]
     fn request_body_custom_uses_broadest_compat_params() {
-        let body = request_body("custom", "llama3:70b", "t");
+        let body = request_body("custom", "llama3:70b", SUMMARY_SYSTEM_PROMPT, "t");
         assert_eq!(body["temperature"], 0.3);
         assert_eq!(body["max_tokens"], 8_192);
         assert!(body.get("max_completion_tokens").is_none());
         assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn sanitize_generated_title_strips_quotes_and_takes_first_line() {
+        assert_eq!(
+            sanitize_generated_title("\"Q3 Launch Planning\"\nextra line").unwrap(),
+            "Q3 Launch Planning"
+        );
+    }
+
+    #[test]
+    fn sanitize_generated_title_strips_title_prefix() {
+        assert_eq!(
+            sanitize_generated_title("Title: Budget Review").unwrap(),
+            "Budget Review"
+        );
+    }
+
+    #[test]
+    fn sanitize_generated_title_caps_length() {
+        let long = "word ".repeat(40);
+        let title = sanitize_generated_title(&long).unwrap();
+        assert!(title.chars().count() <= 80);
+        assert!(!title.ends_with(' '));
+    }
+
+    #[test]
+    fn sanitize_generated_title_rejects_empty_content() {
+        assert!(sanitize_generated_title("  \n \"\" ").is_none());
     }
 
     #[test]
