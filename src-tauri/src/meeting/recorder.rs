@@ -8,11 +8,20 @@ use std::{fs, io};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::meeting::loopback::{temp_system_audio_path, LoopbackRecorder};
+use crate::meeting::progress::{parse_out_time_secs, progress_pct, ProgressThrottle};
 use crate::meeting::types::{MeetingStartOptions, MeetingUpdate};
 
 const MEETING_AUDIO_GAIN_FILTER: &str = "volume=2.0";
 const MEETING_MIC_GAIN_FILTER: &str = "volume=3.0";
 const MEETING_AUDIO_LIMITER_FILTER: &str = "alimiter=limit=0.95";
+// Last-resort ceiling for the recording FFmpeg after `q`. Killing it mid-
+// finalization corrupts the file, so this must comfortably cover faststart
+// rewrites of multi-GB captures; finalization runs off the main thread.
+const FFMPEG_QUIT_TIMEOUT: Duration = Duration::from_secs(300);
+// Startup-failure cleanup (loopback spawn failed right after FFmpeg started):
+// the capture is <1s old, so a short wait keeps the manager lock from being
+// held for minutes and a kill has no corruption cost.
+const FFMPEG_STARTUP_QUIT_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -112,50 +121,126 @@ impl RunningRecorder {
         })
     }
 
+    /// Tells the capture processes to wind down without waiting. Instant.
+    pub fn signal_stop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = stdin.write_all(b"q\n");
+                let _ = stdin.flush();
+            }
+        }
+        if let Some(loopback) = self.loopback.as_ref() {
+            loopback.signal();
+        }
+    }
+
+    // Temporary shim so manager::stop keeps compiling; replaced by begin_stop in
+    // the next commit.
     pub fn stop(mut self) -> Result<(), String> {
-        let ffmpeg_result = if let Some(child) = self.child.take() {
-            stop_ffmpeg(child)
-        } else {
-            Ok(())
+        self.signal_stop();
+        self.finalize(0.0, &|_| {})
+    }
+
+    /// Waits for the capture processes and runs the post-processing passes.
+    /// Duration-proportional — must run off the main thread. `duration_secs`
+    /// scales the progress percentages; pass 0.0 when unknown (no progress).
+    pub fn finalize(
+        mut self,
+        duration_secs: f64,
+        on_progress: &(dyn Fn(f32) + Send + Sync),
+    ) -> Result<(), String> {
+        let ffmpeg_result = match self.child.take() {
+            Some(child) => wait_ffmpeg(child, FFMPEG_QUIT_TIMEOUT),
+            None => Ok(()),
         };
-        let loopback_result = if let Some(loopback) = self.loopback.take() {
-            loopback.stop()
-        } else {
-            Ok(())
+        let loopback_result = match self.loopback.take() {
+            Some(loopback) => loopback.stop(),
+            None => Ok(()),
         };
 
         ffmpeg_result?;
         loopback_result?;
 
         if self.system_audio_path.is_some() {
-            if let Err(error) = mux_outputs(
-                &self.ffmpeg_path,
-                &self.final_path,
+            self.run_post_process(duration_secs, on_progress)?;
+        }
+
+        Ok(())
+    }
+
+    fn run_post_process(
+        &mut self,
+        duration_secs: f64,
+        on_progress: &(dyn Fn(f32) + Send + Sync),
+    ) -> Result<(), String> {
+        let Some(system_audio_path) = self.system_audio_path.clone() else {
+            return Ok(());
+        };
+        let transcript_audio_path = if self.has_primary_audio && self.primary_path.is_some() {
+            transcript_audio_path_for(&self.final_path)
+        } else {
+            None
+        };
+
+        let combined_args = post_process_args(
+            self.primary_path.as_deref(),
+            &system_audio_path,
+            &self.final_path,
+            transcript_audio_path.as_deref(),
+            self.has_video,
+            self.has_primary_audio,
+            self.system_audio_offset_ms,
+        );
+        let mut result =
+            run_ffmpeg_with_progress(&self.ffmpeg_path, &combined_args, duration_secs, on_progress);
+
+        // The transcript track must stay non-fatal (it was a separate, logged-only
+        // pass before the merge): retry producing only the final mix.
+        if result.is_err() && transcript_audio_path.is_some() {
+            if let Err(error) = &result {
+                eprintln!("Combined mux+transcript pass failed, retrying mix-only: {error}");
+            }
+            let mix_only_args = post_process_args(
                 self.primary_path.as_deref(),
-                self.system_audio_path.as_deref(),
+                &system_audio_path,
+                &self.final_path,
+                None,
                 self.has_video,
                 self.has_primary_audio,
                 self.system_audio_offset_ms,
-                transcript_audio_path_for(&self.final_path).as_deref(),
-            ) {
-                if let Some(primary_path) = self.primary_path.as_deref() {
-                    if primary_path != self.final_path {
-                        promote_primary_capture(primary_path, &self.final_path).map_err(
-                            |fallback_error| {
-                                format!(
-                                    "{error}. Also failed to keep the primary capture: {fallback_error}"
-                                )
-                            },
-                        )?;
-                        return Err(format!(
-                            "{error}. Saved the screen/mic capture without the system-audio mix."
-                        ));
-                    }
-                }
-                return Err(error);
-            }
+            );
+            result = run_ffmpeg_with_progress(
+                &self.ffmpeg_path,
+                &mix_only_args,
+                duration_secs,
+                on_progress,
+            );
         }
 
+        if let Err(error) = result {
+            if let Some(primary_path) = self.primary_path.as_deref() {
+                if primary_path != self.final_path {
+                    promote_primary_capture(primary_path, &self.final_path).map_err(
+                        |fallback_error| {
+                            format!(
+                                "{error}. Also failed to keep the primary capture: {fallback_error}"
+                            )
+                        },
+                    )?;
+                    return Err(format!(
+                        "{error}. Saved the screen/mic capture without the system-audio mix."
+                    ));
+                }
+            }
+            return Err(error);
+        }
+
+        if let Some(primary_path) = self.primary_path.as_deref() {
+            if primary_path != self.final_path {
+                let _ = std::fs::remove_file(primary_path);
+            }
+        }
+        let _ = std::fs::remove_file(&system_audio_path);
         Ok(())
     }
 }
@@ -222,12 +307,17 @@ fn spawn_ffmpeg(
     Ok(SpawnedFfmpeg { child, started_at })
 }
 
+// Used only by the loopback-spawn-failure cleanup in `spawn`; the normal stop
+// path signals via `signal_stop` and waits in `finalize`.
 fn stop_ffmpeg(mut child: Child) -> Result<(), String> {
     if let Some(stdin) = child.stdin.as_mut() {
         let _ = stdin.write_all(b"q\n");
         let _ = stdin.flush();
     }
+    wait_ffmpeg(child, FFMPEG_STARTUP_QUIT_TIMEOUT)
+}
 
+fn wait_ffmpeg(mut child: Child, timeout: Duration) -> Result<(), String> {
     let started = Instant::now();
     loop {
         match child.try_wait() {
@@ -238,7 +328,9 @@ fn stop_ffmpeg(mut child: Child) -> Result<(), String> {
                 return Err(format!("FFmpeg exited with status {status}"));
             }
             Ok(None) => {
-                if started.elapsed() > Duration::from_secs(8) {
+                if started.elapsed() > timeout {
+                    // Last resort for a truly wedged process — killing FFmpeg
+                    // while it finalizes the file can corrupt the recording.
                     let _ = child.kill();
                     let _ = child.wait();
                     return Err("FFmpeg did not stop cleanly and was killed".to_string());
@@ -250,21 +342,124 @@ fn stop_ffmpeg(mut child: Child) -> Result<(), String> {
     }
 }
 
-fn mux_outputs(
+fn run_ffmpeg_with_progress(
     ffmpeg: &Path,
-    final_path: &Path,
+    args: &[String],
+    duration_secs: f64,
+    on_progress: &(dyn Fn(f32) + Send + Sync),
+) -> Result<(), String> {
+    let mut child = hidden_command(ffmpeg)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Failed to mux system audio with FFmpeg: {error}"))?;
+
+    let stderr_handle = child.stderr.take().map(|stderr| {
+        thread::spawn(move || {
+            let mut buffer = String::new();
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                buffer.push_str(&line);
+                buffer.push('\n');
+            }
+            buffer
+        })
+    });
+
+    if let Some(stdout) = child.stdout.take() {
+        let mut throttle = ProgressThrottle::new();
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let Some(out_time_secs) = parse_out_time_secs(&line) else {
+                continue;
+            };
+            let Some(pct) = progress_pct(out_time_secs, duration_secs) else {
+                continue;
+            };
+            if throttle.should_emit(pct, Instant::now()) {
+                on_progress(pct);
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .map_err(|error| format!("Failed to wait for FFmpeg: {error}"))?;
+    let stderr_output = stderr_handle
+        .and_then(|handle| handle.join().ok())
+        .unwrap_or_default();
+    if !status.success() {
+        return Err(format!(
+            "Failed to mux system audio with FFmpeg: {stderr_output}"
+        ));
+    }
+    Ok(())
+}
+
+fn signed_offset_ms(value: Instant, baseline: Instant) -> i64 {
+    if let Some(duration) = value.checked_duration_since(baseline) {
+        duration.as_millis().min(i64::MAX as u128) as i64
+    } else {
+        -(baseline
+            .duration_since(value)
+            .as_millis()
+            .min(i64::MAX as u128) as i64)
+    }
+}
+
+fn offset_filter_steps(offset_ms: i64) -> Vec<String> {
+    let mut filters = Vec::new();
+    if offset_ms > 0 {
+        filters.push("asetpts=PTS-STARTPTS".to_string());
+        filters.push(format!("adelay={offset_ms}:all=1"));
+    } else if offset_ms < 0 {
+        filters.push(format!("atrim=start={:.3}", (-offset_ms as f64) / 1000.0));
+        filters.push("asetpts=PTS-STARTPTS".to_string());
+    } else {
+        filters.push("asetpts=PTS-STARTPTS".to_string());
+    }
+    filters
+}
+
+fn audio_offset_filter(input: &str, output: &str, offset_ms: i64, apply_gain: bool) -> String {
+    let mut filters = offset_filter_steps(offset_ms);
+    if apply_gain {
+        filters.push(MEETING_AUDIO_GAIN_FILTER.to_string());
+    }
+    format!("{input}{}{output}", filters.join(","))
+}
+
+// One filter graph feeding both outputs: the mic/system mix for the final
+// recording and the dual-channel (mic|system) track AssemblyAI transcribes.
+// Inputs are decoded once; asplit fans each source into both branches.
+fn combined_post_filter(system_audio_offset_ms: i64) -> String {
+    let sys_chain = offset_filter_steps(system_audio_offset_ms).join(",");
+    format!(
+        "[0:a]asetpts=PTS-STARTPTS,{MEETING_MIC_GAIN_FILTER},asplit=2[mic_mix][mic_tr];\
+[1:a]{sys_chain},asplit=2[sys_mix][sys_tr];\
+[mic_mix][sys_mix]amix=inputs=2:duration=longest:normalize=0,{MEETING_AUDIO_LIMITER_FILTER}[aout];\
+[mic_tr]pan=mono|c0=c0,apad=pad_dur=3[mt];\
+[sys_tr]pan=mono|c0=0.5*c0+0.5*c1,apad=pad_dur=3[st];\
+[mt][st]join=inputs=2:channel_layout=stereo[tout]"
+    )
+}
+
+fn post_process_args(
     primary_path: Option<&Path>,
-    system_audio_path: Option<&Path>,
+    system_audio_path: &Path,
+    final_path: &Path,
+    transcript_audio_path: Option<&Path>,
     has_video: bool,
     has_primary_audio: bool,
     system_audio_offset_ms: i64,
-    transcript_audio_path: Option<&Path>,
-) -> Result<(), String> {
-    let Some(system_audio_path) = system_audio_path else {
-        return Ok(());
-    };
-
-    let mut args = vec!["-hide_banner".to_string(), "-y".to_string()];
+) -> Vec<String> {
+    let mut args = vec![
+        "-hide_banner".to_string(),
+        "-y".to_string(),
+        "-progress".to_string(),
+        "pipe:1".to_string(),
+        "-nostats".to_string(),
+    ];
     if let Some(primary_path) = primary_path {
         args.extend(["-i".to_string(), primary_path.to_string_lossy().to_string()]);
     }
@@ -273,12 +468,17 @@ fn mux_outputs(
         system_audio_path.to_string_lossy().to_string(),
     ]);
 
+    let combined =
+        transcript_audio_path.is_some() && primary_path.is_some() && has_primary_audio;
+
     match (primary_path.is_some(), has_primary_audio) {
         (true, true) => {
-            args.extend([
-                "-filter_complex".to_string(),
-                mic_system_mix_filter(system_audio_offset_ms),
-            ]);
+            let filter = if combined {
+                combined_post_filter(system_audio_offset_ms)
+            } else {
+                mic_system_mix_filter(system_audio_offset_ms)
+            };
+            args.extend(["-filter_complex".to_string(), filter]);
             if has_video {
                 args.extend(["-map".to_string(), "0:v?".to_string()]);
             }
@@ -316,119 +516,21 @@ fn mux_outputs(
         final_path.to_string_lossy().to_string(),
     ]);
 
-    let output = hidden_command(ffmpeg)
-        .args(&args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| format!("Failed to mux system audio with FFmpeg: {error}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to mux system audio with FFmpeg: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    if has_primary_audio {
+    if combined {
         if let Some(transcript_audio_path) = transcript_audio_path {
-            if let Err(error) = create_dual_channel_transcript_audio(
-                ffmpeg,
-                transcript_audio_path,
-                primary_path,
-                Some(system_audio_path),
-                system_audio_offset_ms,
-            ) {
-                eprintln!("{error}");
-            }
+            args.extend([
+                "-map".to_string(),
+                "[tout]".to_string(),
+                "-c:a".to_string(),
+                "aac".to_string(),
+                "-b:a".to_string(),
+                "96k".to_string(),
+                transcript_audio_path.to_string_lossy().to_string(),
+            ]);
         }
     }
 
-    if let Some(primary_path) = primary_path {
-        if primary_path != final_path {
-            let _ = std::fs::remove_file(primary_path);
-        }
-    }
-    let _ = std::fs::remove_file(system_audio_path);
-    Ok(())
-}
-
-fn create_dual_channel_transcript_audio(
-    ffmpeg: &Path,
-    output_path: &Path,
-    primary_path: Option<&Path>,
-    system_audio_path: Option<&Path>,
-    system_audio_offset_ms: i64,
-) -> Result<(), String> {
-    let (Some(primary_path), Some(system_audio_path)) = (primary_path, system_audio_path) else {
-        return Ok(());
-    };
-
-    let system_filter = audio_offset_filter("[1:a]", "[sys_offset]", system_audio_offset_ms, false);
-    let filter = format!(
-        "[0:a]asetpts=PTS-STARTPTS,{MEETING_MIC_GAIN_FILTER},pan=mono|c0=c0,apad=pad_dur=3[mic];{system_filter};[sys_offset]pan=mono|c0=0.5*c0+0.5*c1,apad=pad_dur=3[sys];[mic][sys]join=inputs=2:channel_layout=stereo[aout]"
-    );
-    let args = vec![
-        "-hide_banner".to_string(),
-        "-y".to_string(),
-        "-i".to_string(),
-        primary_path.to_string_lossy().to_string(),
-        "-i".to_string(),
-        system_audio_path.to_string_lossy().to_string(),
-        "-filter_complex".to_string(),
-        filter,
-        "-map".to_string(),
-        "[aout]".to_string(),
-        "-c:a".to_string(),
-        "aac".to_string(),
-        "-b:a".to_string(),
-        "96k".to_string(),
-        output_path.to_string_lossy().to_string(),
-    ];
-
-    let output = hidden_command(ffmpeg)
-        .args(&args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| format!("Failed to create transcript audio with FFmpeg: {error}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to create transcript audio with FFmpeg: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    Ok(())
-}
-
-fn signed_offset_ms(value: Instant, baseline: Instant) -> i64 {
-    if let Some(duration) = value.checked_duration_since(baseline) {
-        duration.as_millis().min(i64::MAX as u128) as i64
-    } else {
-        -(baseline
-            .duration_since(value)
-            .as_millis()
-            .min(i64::MAX as u128) as i64)
-    }
-}
-
-fn audio_offset_filter(input: &str, output: &str, offset_ms: i64, apply_gain: bool) -> String {
-    let mut filters = Vec::new();
-    if offset_ms > 0 {
-        filters.push("asetpts=PTS-STARTPTS".to_string());
-        filters.push(format!("adelay={offset_ms}:all=1"));
-    } else if offset_ms < 0 {
-        filters.push(format!("atrim=start={:.3}", (-offset_ms as f64) / 1000.0));
-        filters.push("asetpts=PTS-STARTPTS".to_string());
-    } else {
-        filters.push("asetpts=PTS-STARTPTS".to_string());
-    }
-    if apply_gain {
-        filters.push(MEETING_AUDIO_GAIN_FILTER.to_string());
-    }
-    format!("{input}{}{output}", filters.join(","))
+    args
 }
 
 fn mic_system_mix_filter(system_audio_offset_ms: i64) -> String {
@@ -841,5 +943,81 @@ mod tests {
             mic_system_mix_filter(250),
             "[0:a]asetpts=PTS-STARTPTS,volume=3.0[mic];[1:a]asetpts=PTS-STARTPTS,adelay=250:all=1[sys];[mic][sys]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout]"
         );
+    }
+
+    #[test]
+    fn combined_post_filter_splits_mic_and_system_into_mix_and_transcript() {
+        assert_eq!(
+            combined_post_filter(0),
+            "[0:a]asetpts=PTS-STARTPTS,volume=3.0,asplit=2[mic_mix][mic_tr];[1:a]asetpts=PTS-STARTPTS,asplit=2[sys_mix][sys_tr];[mic_mix][sys_mix]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout];[mic_tr]pan=mono|c0=c0,apad=pad_dur=3[mt];[sys_tr]pan=mono|c0=0.5*c0+0.5*c1,apad=pad_dur=3[st];[mt][st]join=inputs=2:channel_layout=stereo[tout]"
+        );
+    }
+
+    #[test]
+    fn combined_post_filter_preserves_system_offset() {
+        assert!(combined_post_filter(250)
+            .contains("[1:a]asetpts=PTS-STARTPTS,adelay=250:all=1,asplit=2[sys_mix][sys_tr]"));
+        assert!(combined_post_filter(-1250)
+            .contains("[1:a]atrim=start=1.250,asetpts=PTS-STARTPTS,asplit=2[sys_mix][sys_tr]"));
+    }
+
+    #[test]
+    fn post_process_args_builds_two_outputs_with_progress() {
+        let args = post_process_args(
+            Some(Path::new("capture.mp4")),
+            Path::new("system.wav"),
+            Path::new("final.mp4"),
+            Some(Path::new("transcript.m4a")),
+            true,
+            true,
+            0,
+        );
+
+        assert!(has_pair(&args, "-progress", "pipe:1"));
+        assert!(args.contains(&"-nostats".to_string()));
+        assert!(has_pair(&args, "-map", "0:v?"));
+        assert!(has_pair(&args, "-c:v", "copy"));
+        assert!(has_pair(&args, "-map", "[aout]"));
+        assert!(has_pair(&args, "-map", "[tout]"));
+        assert!(has_pair(&args, "-movflags", "+faststart"));
+
+        let final_pos = args.iter().position(|a| a == "final.mp4").unwrap();
+        let transcript_pos = args.iter().position(|a| a == "transcript.m4a").unwrap();
+        assert!(final_pos < transcript_pos);
+        let faststart_pos = args.iter().position(|a| a == "+faststart").unwrap();
+        assert!(faststart_pos < final_pos);
+    }
+
+    #[test]
+    fn post_process_args_without_transcript_matches_mix_only_shape() {
+        let args = post_process_args(
+            Some(Path::new("capture.mp4")),
+            Path::new("system.wav"),
+            Path::new("final.mp4"),
+            None,
+            true,
+            true,
+            0,
+        );
+
+        assert!(!args.iter().any(|a| a.contains("[tout]")));
+        assert!(args.iter().any(|a| a.contains("amix=inputs=2")));
+        assert_eq!(args.last().unwrap(), "final.mp4");
+    }
+
+    #[test]
+    fn post_process_args_system_only_uses_first_input() {
+        let args = post_process_args(
+            None,
+            Path::new("system.wav"),
+            Path::new("final.mp4"),
+            None,
+            false,
+            false,
+            0,
+        );
+
+        assert!(args.iter().any(|a| a.starts_with("[0:a]")));
+        assert!(!has_pair(&args, "-c:v", "copy"));
     }
 }
