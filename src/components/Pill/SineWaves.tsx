@@ -1,7 +1,13 @@
 import { onMount, onCleanup } from 'solid-js';
 import SiriWave from 'siriwave';
 
-export default function SineWaves() {
+type SineWavesProps = {
+  width?: number;
+  height?: number;
+  amplitude?: number;
+};
+
+export default function SineWaves(props: SineWavesProps) {
   let container: HTMLDivElement | undefined;
   let wave: SiriWave | undefined;
 
@@ -9,11 +15,11 @@ export default function SineWaves() {
     if (container) {
       wave = new SiriWave({
         container,
-        width: 90,
-        height: 35,
+        width: props.width ?? 90,
+        height: props.height ?? 35,
         style: 'ios9',
         speed: 0.06,
-        amplitude: 4,
+        amplitude: props.amplitude ?? 4,
         autostart: true,
       });
     }
