@@ -122,6 +122,7 @@ fn main() {
             commands::start_meeting,
             commands::stop_meeting,
             commands::transcribe_meeting,
+            commands::generate_meeting_summary,
             commands::list_meetings,
             commands::get_meeting,
             commands::delete_meeting,
