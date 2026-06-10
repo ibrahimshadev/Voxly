@@ -225,6 +225,7 @@ fn emit_progress(app: AppHandle, id: String, output_path: std::path::PathBuf) {
                     message: None,
                     elapsed_secs: Some(elapsed_secs),
                     file_size_bytes,
+                    progress_pct: None,
                 },
             );
             if emit_result.is_err() {

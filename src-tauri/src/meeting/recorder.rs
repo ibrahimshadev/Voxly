@@ -202,6 +202,7 @@ fn spawn_ffmpeg(
                         message: Some(trimmed.to_string()),
                         elapsed_secs: None,
                         file_size_bytes: None,
+                        progress_pct: None,
                     },
                 );
             }

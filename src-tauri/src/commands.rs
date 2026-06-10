@@ -189,6 +189,7 @@ pub fn start_meeting(
             message: None,
             elapsed_secs: Some(0),
             file_size_bytes: meta.file_size_bytes,
+            progress_pct: None,
         },
     );
     let _ = app.emit("meetings-updated", ());
@@ -207,6 +208,7 @@ pub fn stop_meeting(app: AppHandle, state: State<'_, AppState>) -> Result<Meetin
                     message: None,
                     elapsed_secs: meta.duration_secs.map(|value| value.round() as u64),
                     file_size_bytes: meta.file_size_bytes,
+                    progress_pct: None,
                 },
             );
             let _ = app.emit("meetings-updated", ());
@@ -221,6 +223,7 @@ pub fn stop_meeting(app: AppHandle, state: State<'_, AppState>) -> Result<Meetin
                     message: Some(error.clone()),
                     elapsed_secs: None,
                     file_size_bytes: None,
+                    progress_pct: None,
                 },
             );
             let _ = app.emit("meetings-updated", ());

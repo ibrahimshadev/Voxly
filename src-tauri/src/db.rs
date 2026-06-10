@@ -371,6 +371,7 @@ fn bool_to_i64(value: bool) -> i64 {
 fn meeting_status_to_str(status: &MeetingStatus) -> &'static str {
     match status {
         MeetingStatus::Recording => "recording",
+        MeetingStatus::Processing => "processing",
         MeetingStatus::Recorded => "recorded",
         MeetingStatus::Error => "error",
     }
@@ -379,6 +380,7 @@ fn meeting_status_to_str(status: &MeetingStatus) -> &'static str {
 fn meeting_status_from_str(value: &str) -> Option<MeetingStatus> {
     match value {
         "recording" => Some(MeetingStatus::Recording),
+        "processing" => Some(MeetingStatus::Processing),
         "recorded" => Some(MeetingStatus::Recorded),
         "error" => Some(MeetingStatus::Error),
         _ => None,
@@ -541,5 +543,14 @@ mod tests {
         drop(conn);
 
         fs::remove_dir_all(app_dir).unwrap();
+    }
+
+    #[test]
+    fn meeting_status_processing_round_trips() {
+        assert_eq!(meeting_status_to_str(&MeetingStatus::Processing), "processing");
+        assert!(matches!(
+            meeting_status_from_str("processing"),
+            Some(MeetingStatus::Processing)
+        ));
     }
 }

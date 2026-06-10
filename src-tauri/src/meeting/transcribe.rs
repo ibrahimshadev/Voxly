@@ -578,6 +578,7 @@ fn emit_update(app: &AppHandle, state: &str, id: &str, message: Option<String>) 
             message,
             elapsed_secs: None,
             file_size_bytes: None,
+            progress_pct: None,
         },
     );
 }
