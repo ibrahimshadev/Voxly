@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Bot,
   Calendar,
+  ChevronDown,
   Clock,
   Copy,
   Download,
@@ -29,6 +30,7 @@ import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } f
 import { PROVIDERS, SUMMARY_MODELS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
+import { createPanelResize } from '../../lib/panelResize';
 import Select from './Select';
 import { GroqIcon, OpenAIIcon } from './SettingsPage';
 
@@ -205,6 +207,34 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   const [showSummaryKey, setShowSummaryKey] = createSignal(false);
   const [editingTitleId, setEditingTitleId] = createSignal<string | null>(null);
   const [titleDraft, setTitleDraft] = createSignal('');
+  const [configCollapsed, setConfigCollapsed] = createSignal(
+    localStorage.getItem('meetings.configCollapsed') === '1',
+  );
+
+  const toggleConfigCollapsed = () => {
+    const next = !configCollapsed();
+    setConfigCollapsed(next);
+    try {
+      localStorage.setItem('meetings.configCollapsed', next ? '1' : '0');
+    } catch {
+      // Best-effort persistence only.
+    }
+  };
+
+  const leftResize = createPanelResize({
+    storageKey: 'meetings.leftPanelPercent',
+    defaultPercent: 45,
+    minPercent: 28,
+    maxPercent: 65,
+    axis: 'x',
+  });
+  const videoResize = createPanelResize({
+    storageKey: 'meetings.videoPanelPercent',
+    defaultPercent: 40,
+    minPercent: 20,
+    maxPercent: 75,
+    axis: 'y',
+  });
 
   const startTitleEdit = (meeting: MeetingDetail) => {
     setTitleDraft(meeting.meta.title);
@@ -385,7 +415,18 @@ export default function MeetingsPage(props: MeetingsPageProps) {
         </div>
       </header>
 
-      <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[45%_55%] overflow-hidden">
+      <div
+        class="relative flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[var(--meetings-left)_minmax(0,1fr)] overflow-hidden"
+        style={{ '--meetings-left': `${leftResize.percent()}%` }}
+      >
+        <div
+          class={`hidden xl:block absolute inset-y-0 z-20 w-[7px] -translate-x-1/2 cursor-col-resize transition-colors ${
+            leftResize.dragging() ? 'bg-primary/40' : 'hover:bg-primary/25'
+          }`}
+          style={{ left: 'var(--meetings-left)' }}
+          onPointerDown={leftResize.onPointerDown}
+          title="Drag to resize"
+        />
         <section class="min-h-0 flex flex-col border-r border-white/5 bg-background-dark overflow-hidden">
           <div class="shrink-0 border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
             <div class="space-y-3">
@@ -419,6 +460,25 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   </div>
               </Show>
 
+              <button
+                type="button"
+                onClick={toggleConfigCollapsed}
+                class="w-full flex items-center justify-between gap-2 text-left cursor-pointer group"
+                title={configCollapsed() ? 'Expand configuration' : 'Collapse configuration'}
+              >
+                <span class="text-[11px] font-mono uppercase tracking-wider text-zinc-400 group-hover:text-zinc-200 transition-colors">
+                  Configuration
+                </span>
+                <ChevronDown
+                  size={15}
+                  class={`text-zinc-500 group-hover:text-zinc-200 transition-transform ${
+                    configCollapsed() ? '-rotate-90' : ''
+                  }`}
+                />
+              </button>
+
+              <Show when={!configCollapsed()}>
+                <div class="space-y-3">
               <div class="flex items-center gap-1 border-b border-white/5">
                 <For each={CONFIG_TABS}>
                   {(tab) => (
@@ -707,6 +767,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   </div>
                 </div>
               </Show>
+                </div>
+              </Show>
             </div>
           </div>
 
@@ -796,7 +858,10 @@ export default function MeetingsPage(props: MeetingsPageProps) {
           >
             {(meeting) => (
               <>
-                <section class="relative h-[40%] min-h-[300px] border-b border-border-dark bg-background-dark">
+                <section
+                  class="relative shrink-0 min-h-[140px] border-b border-border-dark bg-background-dark"
+                  style={{ height: `${videoResize.percent()}%` }}
+                >
                   <Show
                     keyed
                     when={selectedSourceUrl()}
@@ -848,6 +913,14 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     )}
                   </Show>
                 </section>
+
+                <div
+                  class={`relative z-20 h-[7px] -my-[3.5px] shrink-0 cursor-row-resize transition-colors ${
+                    videoResize.dragging() ? 'bg-primary/40' : 'hover:bg-primary/25'
+                  }`}
+                  onPointerDown={videoResize.onPointerDown}
+                  title="Drag to resize"
+                />
 
                 <section class="shrink-0 border-b border-border-dark bg-[#111111] px-4 lg:px-5 py-3">
                   <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
