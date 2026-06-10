@@ -369,8 +369,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
     meeting.meta.transcript_status !== 'pending';
 
   return (
-    <div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-background-dark">
-      <header class="shrink-0 border-b border-white/5 bg-background-dark px-6 lg:px-10 py-5">
+    <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <header class="shrink-0 border-b border-white/5 px-6 lg:px-10 py-5">
         <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div>
             <h1 class="text-white text-[30px] leading-9 font-bold tracking-tight">Meetings</h1>
