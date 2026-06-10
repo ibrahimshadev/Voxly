@@ -27,6 +27,7 @@ use tauri::{
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
         .setup(|app| {
             if let Err(error) = crate::db::init() {
@@ -124,6 +125,7 @@ fn main() {
             commands::transcribe_meeting,
             commands::generate_meeting_summary,
             commands::rename_meeting,
+            commands::export_text_file,
             commands::list_meetings,
             commands::get_meeting,
             commands::delete_meeting,

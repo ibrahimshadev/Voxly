@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import {
   AlertTriangle,
   Bot,
@@ -353,6 +353,26 @@ export default function MeetingsPage(props: MeetingsPageProps) {
       notifySuccess('Transcript copied.');
     } catch (err) {
       notifyError(err, 'Failed to copy transcript.');
+    }
+  };
+
+  const exportableText = (meeting: MeetingDetail) =>
+    activeTab() === 'summary' ? (meeting.summary?.markdown ?? '') : transcriptText(meeting);
+
+  const exportActiveTab = async (meeting: MeetingDetail) => {
+    const summaryTab = activeTab() === 'summary';
+    const contents = exportableText(meeting);
+    if (!contents.trim()) return;
+    try {
+      const savedPath = await invoke<string | null>('export_text_file', {
+        fileName: `${meeting.meta.title} ${summaryTab ? 'summary' : 'transcript'}`,
+        extension: summaryTab ? 'md' : 'txt',
+        filterName: summaryTab ? 'Markdown' : 'Text',
+        contents,
+      });
+      if (savedPath) notifySuccess(`Exported to ${savedPath}`);
+    } catch (err) {
+      notifyError(err, 'Failed to export.');
     }
   };
 
@@ -1052,8 +1072,16 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       </Show>
                       <button
                         type="button"
-                        disabled
-                        class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-600 flex items-center gap-1.5 cursor-not-allowed"
+                        onClick={() => void exportActiveTab(meeting())}
+                        disabled={!exportableText(meeting()).trim()}
+                        title={
+                          exportableText(meeting()).trim()
+                            ? undefined
+                            : activeTab() === 'summary'
+                              ? 'Generate a summary first'
+                              : 'Transcribe this meeting first'
+                        }
+                        class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer disabled:text-zinc-600 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                       >
                         <Download size={13} />
                         Export

@@ -463,3 +463,101 @@ fn windows_work_area() -> Option<(i32, i32, i32, i32)> {
     }
     Some((rect.left, rect.top, rect.right, rect.bottom))
 }
+
+const MAX_EXPORT_FILE_NAME_CHARS: usize = 100;
+
+/// Makes a meeting title safe to suggest as a file name: strips characters
+/// Windows rejects, collapses whitespace, caps length, and never returns empty.
+fn sanitize_export_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect();
+    let collapsed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let capped: String = collapsed.chars().take(MAX_EXPORT_FILE_NAME_CHARS).collect();
+    let trimmed = capped.trim().trim_end_matches('.');
+    if trimmed.is_empty() {
+        "export".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Opens a native Save As dialog and writes `contents` to the chosen path.
+/// Returns the saved path, or None when the user cancels.
+#[tauri::command]
+pub async fn export_text_file(
+    app: AppHandle,
+    file_name: String,
+    extension: String,
+    filter_name: String,
+    contents: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let extension = if !extension.is_empty() && extension.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        extension
+    } else {
+        "txt".to_string()
+    };
+    let dialog = app
+        .dialog()
+        .file()
+        .set_file_name(format!(
+            "{}.{extension}",
+            sanitize_export_file_name(&file_name)
+        ))
+        .add_filter(filter_name, &[extension.as_str()]);
+
+    // The blocking dialog API must not run on the main thread.
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+        .await
+        .map_err(|error| format!("Export dialog failed: {error}"))?;
+
+    let Some(file_path) = picked else {
+        return Ok(None);
+    };
+    let path = file_path
+        .into_path()
+        .map_err(|error| format!("Export path is not usable: {error}"))?;
+    std::fs::write(&path, contents)
+        .map_err(|error| format!("Failed to write {}: {error}", path.display()))?;
+    Ok(Some(path.display().to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_export_file_name_strips_invalid_windows_chars() {
+        assert_eq!(
+            sanitize_export_file_name("Sprint: weekly / sync?"),
+            "Sprint weekly sync"
+        );
+    }
+
+    #[test]
+    fn sanitize_export_file_name_falls_back_when_nothing_survives() {
+        assert_eq!(sanitize_export_file_name("  ??** "), "export");
+    }
+
+    #[test]
+    fn sanitize_export_file_name_caps_length() {
+        let long = "x".repeat(300);
+        assert_eq!(
+            sanitize_export_file_name(&long).chars().count(),
+            MAX_EXPORT_FILE_NAME_CHARS
+        );
+    }
+
+    #[test]
+    fn sanitize_export_file_name_drops_trailing_dots() {
+        assert_eq!(sanitize_export_file_name("notes..."), "notes");
+    }
+}
