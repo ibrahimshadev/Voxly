@@ -538,6 +538,7 @@ mod tests {
         assert_eq!(meeting_count(&conn).unwrap(), 1);
         assert!(history_path.exists());
         assert!(transcript_path.exists());
+        drop(conn);
 
         fs::remove_dir_all(app_dir).unwrap();
     }
