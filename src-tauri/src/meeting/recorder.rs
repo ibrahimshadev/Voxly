@@ -563,7 +563,7 @@ fn build_args(
     output_path: &Path,
     options: &MeetingStartOptions,
     include_system_audio: bool,
-    apply_audio_gain: bool,
+    is_final_output: bool,
 ) -> Result<Vec<String>, String> {
     if !cfg!(windows) {
         return Err("Meeting recording is currently implemented for Windows only.".to_string());
@@ -667,7 +667,7 @@ fn build_args(
     }
 
     if !audio_inputs.is_empty() {
-        if apply_audio_gain {
+        if is_final_output {
             args.extend(["-af".to_string(), MEETING_AUDIO_GAIN_FILTER.to_string()]);
         }
         args.extend([
@@ -680,11 +680,12 @@ fn build_args(
         ]);
     }
 
-    args.extend([
-        "-movflags".to_string(),
-        "+faststart".to_string(),
-        output_path.to_string_lossy().to_string(),
-    ]);
+    // The intermediate capture gets remuxed into the final file, so faststart's
+    // whole-file rewrite at quit time would be wasted work that delays stop.
+    if is_final_output {
+        args.extend(["-movflags".to_string(), "+faststart".to_string()]);
+    }
+    args.push(output_path.to_string_lossy().to_string());
 
     Ok(args)
 }
@@ -768,6 +769,38 @@ mod tests {
         assert!(error.contains("does not exist"));
         assert!(!final_path.exists());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    fn mic_only_options() -> MeetingStartOptions {
+        MeetingStartOptions {
+            title: None,
+            record_video: false,
+            record_mic: true,
+            record_system_audio: false,
+            video_preset: "audio_only".to_string(),
+            mic_device: Some("Test Mic".to_string()),
+            system_audio_device: None,
+        }
+    }
+
+    fn has_pair(args: &[String], a: &str, b: &str) -> bool {
+        args.windows(2).any(|w| w[0] == a && w[1] == b)
+    }
+
+    #[test]
+    fn build_args_keeps_faststart_and_gain_for_final_output() {
+        let args = build_args(Path::new("out.mp4"), &mic_only_options(), false, true).unwrap();
+
+        assert!(has_pair(&args, "-movflags", "+faststart"));
+        assert!(has_pair(&args, "-af", MEETING_AUDIO_GAIN_FILTER));
+    }
+
+    #[test]
+    fn build_args_omits_faststart_and_gain_for_intermediate_capture() {
+        let args = build_args(Path::new("capture.mp4"), &mic_only_options(), false, false).unwrap();
+
+        assert!(!args.contains(&"+faststart".to_string()));
+        assert!(!args.contains(&"-af".to_string()));
     }
 
     #[test]
