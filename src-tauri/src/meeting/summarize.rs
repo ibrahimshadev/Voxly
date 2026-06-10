@@ -100,27 +100,6 @@ fn acquire_in_flight(id: &str) -> Result<InFlightGuard, String> {
     Ok(InFlightGuard { id: id.to_string() })
 }
 
-pub fn resolve_groq_key(settings: &AppSettings) -> Result<String, String> {
-    if let Some(key) = settings
-        .provider_api_keys
-        .get("groq")
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-    {
-        return Ok(key.to_string());
-    }
-    if settings.provider == "groq" {
-        let key = settings.api_key.trim();
-        if !key.is_empty() {
-            return Ok(key.to_string());
-        }
-    }
-    Err(
-        "Add a Groq API key in Settings (switch the provider to Groq and save) to generate meeting summaries."
-            .to_string(),
-    )
-}
-
 pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, String> {
     let provider = {
         let trimmed = settings.summary_provider.trim();
@@ -252,19 +231,29 @@ fn request_body(provider: &str, model: &str, transcript_text: &str) -> serde_jso
 
 fn parse_summary_content(body: &str) -> Result<String, String> {
     let json: serde_json::Value = serde_json::from_str(body)
-        .map_err(|error| format!("Failed to parse Groq response: {error}"))?;
+        .map_err(|error| format!("Failed to parse summary response: {error}"))?;
     let content = json["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("")
         .trim();
     if content.is_empty() {
-        return Err("Groq response did not include summary content.".to_string());
+        return Err("Summary response did not include content.".to_string());
     }
     Ok(content.to_string())
 }
 
+fn with_rate_limit_hint(status: reqwest::StatusCode, body: &str, message: String) -> String {
+    let rate_limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || body.to_ascii_lowercase().contains("rate_limit");
+    if rate_limited {
+        format!("{message} Rate or token limit hit — try a smaller model or a different provider under Meetings → AI Summary.")
+    } else {
+        message
+    }
+}
+
 pub async fn run(
-    groq_key: String,
+    config: SummaryConfig,
     id: String,
     detail: MeetingDetail,
 ) -> Result<MeetingSummary, String> {
@@ -291,9 +280,16 @@ pub async fn run(
         .build()
         .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
     let response = client
-        .post(format!("{GROQ_BASE_URL}/chat/completions"))
-        .bearer_auth(&groq_key)
-        .json(&request_body("groq", MODEL, &transcript_text))
+        .post(format!(
+            "{}/chat/completions",
+            config.base_url.trim_end_matches('/')
+        ))
+        .bearer_auth(&config.api_key)
+        .json(&request_body(
+            &config.provider,
+            &config.model,
+            &transcript_text,
+        ))
         .send()
         .await
         .map_err(|error| format!("Summary request failed: {error}"))?;
@@ -304,13 +300,20 @@ pub async fn run(
         .await
         .map_err(|error| format!("Failed to read summary response: {error}"))?;
     if !status.is_success() {
-        return Err(format!("Groq API error {status}: {response_body}"));
+        return Err(with_rate_limit_hint(
+            status,
+            &response_body,
+            format!(
+                "Summary API error ({}) {status}: {response_body}",
+                config.provider
+            ),
+        ));
     }
 
     let summary = MeetingSummary {
         markdown: parse_summary_content(&response_body)?,
-        model: MODEL.to_string(),
-        provider: "groq".to_string(),
+        model: config.model.clone(),
+        provider: config.provider.clone(),
         created_at_ms: storage::now_ms()?,
         transcript_created_at_ms: Some(transcript.created_at_ms),
     };
@@ -492,30 +495,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_groq_key_prefers_saved_groq_provider_key() {
-        let settings = settings_with("openai", "openai-key", Some("groq-key"));
-        assert_eq!(resolve_groq_key(&settings).unwrap(), "groq-key");
-    }
-
-    #[test]
-    fn resolve_groq_key_falls_back_to_api_key_only_when_groq_is_active() {
-        let settings = settings_with("groq", "active-groq-key", None);
-        assert_eq!(resolve_groq_key(&settings).unwrap(), "active-groq-key");
-    }
-
-    #[test]
-    fn resolve_groq_key_rejects_api_key_of_other_providers() {
-        let settings = settings_with("openai", "openai-key", None);
-        assert!(resolve_groq_key(&settings).is_err());
-    }
-
-    #[test]
-    fn resolve_groq_key_rejects_blank_keys() {
-        let settings = settings_with("groq", "   ", Some("  "));
-        assert!(resolve_groq_key(&settings).is_err());
-    }
-
-    #[test]
     fn build_transcript_text_joins_speaker_labeled_utterances() {
         let transcript = transcript(
             vec![
@@ -609,6 +588,33 @@ mod tests {
         assert_eq!(body["max_tokens"], 8_192);
         assert!(body.get("max_completion_tokens").is_none());
         assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn rate_limit_hint_appends_on_429() {
+        let message = with_rate_limit_hint(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            "{}",
+            "Summary API error (groq) 429: {}".to_string(),
+        );
+        assert!(message.contains("try a smaller model or a different provider"));
+    }
+
+    #[test]
+    fn rate_limit_hint_appends_on_rate_limit_body() {
+        let message = with_rate_limit_hint(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"error":{"code":"RATE_LIMIT_EXCEEDED"}}"#,
+            "base".to_string(),
+        );
+        assert!(message.contains("Meetings → AI Summary"));
+    }
+
+    #[test]
+    fn rate_limit_hint_leaves_other_errors_unchanged() {
+        let message =
+            with_rate_limit_hint(reqwest::StatusCode::UNAUTHORIZED, "{}", "base".to_string());
+        assert_eq!(message, "base");
     }
 
     #[test]
