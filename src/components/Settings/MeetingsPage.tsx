@@ -154,7 +154,7 @@ function statusClass(meeting: MeetingMeta) {
     return 'border-sky-400/35 bg-sky-500/10 text-sky-300';
   }
   if (label === 'Transcribing') {
-    return 'border-zinc-500/40 bg-zinc-500/10 text-zinc-300';
+    return 'border-gray-500/40 bg-gray-500/10 text-gray-300';
   }
   if (label === 'Recording') {
     return 'border-red-400/35 bg-red-500/10 text-red-300';
@@ -395,7 +395,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
         <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div>
             <h1 class="text-white text-[30px] leading-9 font-bold tracking-tight">Meetings</h1>
-            <p class="mt-1 text-sm text-zinc-500">
+            <p class="mt-1 text-sm text-gray-500">
               Record MP4 meetings and generate speaker-labeled transcripts.
             </p>
           </div>
@@ -404,7 +404,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
             <button
               type="button"
               onClick={props.onRefreshDevices}
-              class="h-9 w-10 rounded-lg border border-white/10 bg-surface-dark text-zinc-500 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+              class="h-9 w-10 rounded-lg border border-white/10 bg-surface-dark text-gray-500 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
               title="Refresh devices"
             >
               <RefreshCcw size={16} />
@@ -426,7 +426,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
               <button
                 type="button"
                 onClick={props.onStopRecording}
-                class="h-9 px-5 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 transition-colors text-sm font-semibold flex items-center gap-2 cursor-pointer"
+                class="h-9 px-5 rounded-lg bg-white text-background-dark hover:bg-white/85 transition-colors text-sm font-semibold flex items-center gap-2 cursor-pointer"
               >
                 <Square size={14} />
                 Stop Recording
@@ -487,12 +487,12 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                 class="w-full flex items-center justify-between gap-2 text-left cursor-pointer group"
                 title={configCollapsed() ? 'Expand configuration' : 'Collapse configuration'}
               >
-                <span class="text-[11px] font-mono uppercase tracking-wider text-zinc-400 group-hover:text-zinc-200 transition-colors">
+                <span class="text-[11px] font-mono uppercase tracking-wider text-gray-400 group-hover:text-gray-200 transition-colors">
                   Configuration
                 </span>
                 <ChevronDown
                   size={15}
-                  class={`text-zinc-500 group-hover:text-zinc-200 transition-transform ${
+                  class={`text-gray-500 group-hover:text-gray-200 transition-transform ${
                     configCollapsed() ? '-rotate-90' : ''
                   }`}
                 />
@@ -509,7 +509,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
                         configTab() === tab.value
                           ? 'border-primary text-primary'
-                          : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                          : 'border-transparent text-gray-500 hover:text-gray-200'
                       }`}
                     >
                       {tab.label}
@@ -560,7 +560,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     onBlur={() => void props.onSaveSettings()}
                     class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 hover:border-primary/50 transition-colors"
                   />
-                  <p class="mt-1 text-[11px] text-zinc-600">
+                  <p class="mt-1 text-[11px] text-gray-600">
                     Windows: {formatHotkeyForDisplay(props.settings().meeting_hotkey)}
                   </p>
                 </div>
@@ -774,7 +774,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       <button
                         type="button"
                         onClick={() => setShowSummaryKey((value) => !value)}
-                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors cursor-pointer"
                         title={showSummaryKey() ? 'Hide key' : 'Show key'}
                       >
                         <Show when={showSummaryKey()} fallback={<Eye size={15} />}>
@@ -782,7 +782,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         </Show>
                       </button>
                     </div>
-                    <p class="mt-1 text-[11px] text-zinc-600">
+                    <p class="mt-1 text-[11px] text-gray-600">
                       Used only for meeting summaries. Transcription settings are unaffected.
                     </p>
                   </div>
@@ -793,9 +793,9 @@ export default function MeetingsPage(props: MeetingsPageProps) {
             </div>
           </div>
 
-          <div class="shrink-0 border-b border-border-dark bg-[#111111] px-4 py-3 flex items-center justify-between">
-            <h3 class="text-[11px] font-mono uppercase tracking-wider text-zinc-500">Saved Meetings</h3>
-            <span class="border border-border-dark bg-background-dark px-2 py-1 text-[10px] font-mono text-zinc-500">
+          <div class="shrink-0 border-b border-border-dark bg-surface-dark px-4 py-3 flex items-center justify-between">
+            <h3 class="text-[11px] font-mono uppercase tracking-wider text-gray-500">Saved Meetings</h3>
+            <span class="border border-border-dark bg-background-dark px-2 py-1 text-[10px] font-mono text-gray-500">
               {props.meetings().length} items
             </span>
           </div>
@@ -804,7 +804,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
             <Show
               when={props.meetings().length > 0}
               fallback={
-                <div class="p-6 text-sm text-zinc-500 leading-relaxed">
+                <div class="p-6 text-sm text-gray-500 leading-relaxed">
                   No meetings recorded yet. Use Start Recording or the Windows hotkey after saving capture settings.
                 </div>
               }
@@ -827,7 +827,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       />
                       <div class="pl-1">
                         <div class="flex items-start justify-between gap-3">
-                          <p class="min-w-0 text-sm font-semibold text-zinc-100 truncate">{meeting.title}</p>
+                          <p class="min-w-0 text-sm font-semibold text-white truncate">{meeting.title}</p>
                           <span class={`shrink-0 border px-2 py-0.5 text-[10px] font-mono uppercase ${statusClass(meeting)}`}>
                             {transcriptStatusLabel(meeting)}
                             {meeting.status === 'processing' && props.processingMeetings()[meeting.id] != null
@@ -835,7 +835,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                               : ''}
                           </span>
                         </div>
-                        <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-zinc-500">
+                        <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-gray-500">
                           <span class="flex items-center gap-1">
                             <Calendar size={13} />
                             {formatDate(meeting.started_at_ms)}
@@ -846,7 +846,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                           </span>
                           <span>{formatBytes(meeting.file_size_bytes)}</span>
                         </div>
-                        <div class="mt-3 flex items-center gap-2 text-zinc-600">
+                        <div class="mt-3 flex items-center gap-2 text-gray-600">
                           <Mic size={14} class={meeting.has_mic ? 'text-primary' : ''} />
                           <Monitor size={14} class={meeting.has_video ? 'text-primary' : ''} />
                           <Volume2 size={14} class={meeting.has_system_audio ? 'text-primary' : ''} />
@@ -860,17 +860,17 @@ export default function MeetingsPage(props: MeetingsPageProps) {
           </div>
         </section>
 
-        <main class="min-h-0 flex flex-col bg-[#111111] overflow-hidden">
+        <main class="min-h-0 flex flex-col bg-surface-dark overflow-hidden">
           <Show
             when={props.selectedMeeting()}
             fallback={
               <div class="h-full flex items-center justify-center bg-background-dark">
                 <div class="text-center max-w-sm px-6">
-                  <div class="mx-auto w-12 h-12 border border-border-dark bg-surface-dark flex items-center justify-center text-zinc-500">
+                  <div class="mx-auto w-12 h-12 border border-border-dark bg-surface-dark flex items-center justify-center text-gray-500">
                     <Play size={20} />
                   </div>
-                  <h2 class="mt-4 text-lg font-semibold text-zinc-200">Select a recording</h2>
-                  <p class="mt-2 text-sm text-zinc-500">
+                  <h2 class="mt-4 text-lg font-semibold text-gray-200">Select a recording</h2>
+                  <p class="mt-2 text-sm text-gray-500">
                     Saved MP4 files play here. Transcripts and summaries stay attached to the selected recording.
                   </p>
                 </div>
@@ -889,14 +889,14 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     fallback={
                       <div class="h-full flex items-center justify-center px-6 text-center">
                         <div class="w-full max-w-xs">
-                          <p class="text-sm font-medium text-zinc-300">
+                          <p class="text-sm font-medium text-gray-300">
                             {meeting().meta.status === 'recording'
                               ? 'Recording in progress'
                               : meeting().meta.status === 'processing'
                                 ? 'Saving recording…'
                                 : 'Recording file is not ready'}
                           </p>
-                          <p class="mt-1 text-xs text-zinc-500">
+                          <p class="mt-1 text-xs text-gray-500">
                             {meeting().meta.status === 'recording'
                               ? 'Playback will appear after the meeting is stopped.'
                               : meeting().meta.status === 'processing'
@@ -942,7 +942,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   title="Drag to resize"
                 />
 
-                <section class="shrink-0 border-b border-border-dark bg-[#111111] px-4 lg:px-5 py-3">
+                <section class="shrink-0 border-b border-border-dark bg-surface-dark px-4 lg:px-5 py-3">
                   <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                     <div class="min-w-0">
                       <Show
@@ -960,7 +960,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                               type="button"
                               onClick={() => startTitleEdit(meeting())}
                               title="Rename meeting"
-                              class="shrink-0 text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-zinc-200 transition-opacity cursor-pointer"
+                              class="shrink-0 text-gray-600 opacity-0 group-hover:opacity-100 hover:text-gray-200 transition-opacity cursor-pointer"
                             >
                               <Pencil size={13} />
                             </button>
@@ -981,7 +981,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                           class="w-full max-w-md bg-input-bg border border-white/15 rounded-lg py-1 px-2 text-base font-semibold text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                         />
                       </Show>
-                      <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-zinc-500">
+                      <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-gray-500">
                         <span class="flex items-center gap-1">
                           <Calendar size={13} />
                           {formatDate(meeting().meta.started_at_ms)}
@@ -998,7 +998,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     </div>
 
                     <div class="flex items-center gap-2">
-                      <p class="hidden 2xl:block max-w-[190px] text-right text-[10px] leading-snug text-zinc-500">
+                      <p class="hidden 2xl:block max-w-[190px] text-right text-[10px] leading-snug text-gray-500">
                         Uploads meeting audio to AssemblyAI cloud.
                       </p>
                       <div class="flex items-center gap-2">
@@ -1014,7 +1014,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         <button
                           type="button"
                           onClick={() => props.onDeleteMeeting(meeting().meta.id)}
-                          class="h-8 w-8 rounded-lg border border-white/10 text-zinc-500 hover:text-red-300 hover:border-red-400/30 hover:bg-red-500/10 transition-colors cursor-pointer flex items-center justify-center"
+                          class="h-8 w-8 rounded-lg border border-white/10 text-gray-500 hover:text-red-300 hover:border-red-400/30 hover:bg-red-500/10 transition-colors cursor-pointer flex items-center justify-center"
                           title="Delete meeting"
                         >
                           <Trash2 size={15} />
@@ -1025,7 +1025,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                 </section>
 
                 <section class="min-h-0 flex-1 flex flex-col bg-background-dark overflow-hidden">
-                  <div class="shrink-0 border-b border-border-dark bg-[#111111] px-4 lg:px-5 pt-2 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                  <div class="shrink-0 border-b border-border-dark bg-surface-dark px-4 lg:px-5 pt-2 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
                     <div class="flex items-end gap-2">
                       <button
                         type="button"
@@ -1033,7 +1033,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 transition-colors ${
                           activeTab() === 'transcript'
                             ? 'border-primary text-primary'
-                            : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                            : 'border-transparent text-gray-500 hover:text-gray-200'
                         }`}
                       >
                         <FileText size={14} />
@@ -1048,10 +1048,10 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                             ? undefined
                             : 'Transcribe this meeting first'
                         }
-                        class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 transition-colors disabled:cursor-not-allowed disabled:text-zinc-700 ${
+                        class={`px-3 pb-2 border-b-2 text-[11px] font-mono uppercase tracking-wider flex items-center gap-2 transition-colors disabled:cursor-not-allowed disabled:text-gray-700 ${
                           activeTab() === 'summary'
                             ? 'border-primary text-primary'
-                            : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                            : 'border-transparent text-gray-500 hover:text-gray-200'
                         }`}
                       >
                         <Bot size={14} />
@@ -1064,7 +1064,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         <button
                           type="button"
                           onClick={() => void copyTranscript(meeting())}
-                          class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer"
+                          class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-gray-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer"
                         >
                           <Copy size={13} />
                           Copy
@@ -1081,7 +1081,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                               ? 'Generate a summary first'
                               : 'Transcribe this meeting first'
                         }
-                        class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer disabled:text-zinc-600 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                        class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-gray-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-not-allowed"
                       >
                         <Download size={13} />
                         Export
@@ -1144,10 +1144,10 @@ function TranscriptPanel(props: {
               <Show
                 when={props.meeting.meta.transcript_status === 'error'}
                 fallback={
-                  <div class="border border-border-dark bg-[#111111] p-4 flex items-center justify-between gap-4">
+                  <div class="border border-border-dark bg-surface-dark p-4 flex items-center justify-between gap-4">
                     <div class="min-w-0">
-                      <p class="text-sm text-zinc-300">No transcript yet.</p>
-                      <p class="mt-1 text-xs text-zinc-500">
+                      <p class="text-sm text-gray-300">No transcript yet.</p>
+                      <p class="mt-1 text-xs text-gray-500">
                         Speaker labels work best with clear voices and limited crosstalk.
                       </p>
                     </div>
@@ -1200,7 +1200,7 @@ function TranscriptPanel(props: {
           <Show
             when={transcript().utterances.length > 0}
             fallback={
-              <div class="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
+              <div class="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
                 {transcript().text}
               </div>
             }
@@ -1213,7 +1213,7 @@ function TranscriptPanel(props: {
                     onClick={() => props.seekTo(utterance.start_ms)}
                     class="group w-full text-left grid grid-cols-[72px_minmax(0,1fr)] gap-4 hover:bg-white/[0.03] transition-colors cursor-pointer p-2 -m-2"
                   >
-                    <span class="pt-1 text-right text-[11px] font-mono text-zinc-600">
+                    <span class="pt-1 text-right text-[11px] font-mono text-gray-600">
                       {formatDuration(utterance.start_ms / 1000)}
                     </span>
                     <span class="min-w-0">
@@ -1221,12 +1221,12 @@ function TranscriptPanel(props: {
                         class={`inline-flex border px-1.5 py-0.5 text-[10px] font-mono uppercase ${
                           formatSpeakerLabel(utterance.speaker) === 'You'
                             ? 'border-primary/30 bg-primary/10 text-primary'
-                            : 'border-border-dark bg-[#111111] text-zinc-500'
+                            : 'border-border-dark bg-surface-dark text-gray-500'
                         }`}
                       >
                         {formatSpeakerLabel(utterance.speaker)}
                       </span>
-                      <span class="mt-2 block text-sm leading-relaxed text-zinc-300 group-hover:text-zinc-100">
+                      <span class="mt-2 block text-sm leading-relaxed text-gray-300 group-hover:text-white">
                         {utterance.text}
                       </span>
                     </span>
@@ -1257,7 +1257,7 @@ function SummaryPanel(props: {
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
           <h3 class="text-sm font-semibold text-white">AI meeting summary</h3>
-          <p class="mt-1 text-xs text-zinc-500">
+          <p class="mt-1 text-xs text-gray-500">
             Generated from the meeting transcript with {summary()?.model ?? props.summaryModel}.
           </p>
         </div>
@@ -1266,7 +1266,7 @@ function SummaryPanel(props: {
             type="button"
             onClick={() => props.onGenerateSummary(props.meeting.meta.id)}
             disabled={!hasTranscript() || props.generating}
-            class="px-4 py-2 border border-border-dark text-xs font-mono font-bold text-primary hover:bg-primary hover:text-black transition-colors disabled:text-zinc-600 disabled:hover:bg-transparent disabled:hover:text-zinc-600 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
+            class="px-4 py-2 border border-border-dark text-xs font-mono font-bold text-primary hover:bg-primary hover:text-black transition-colors disabled:text-gray-600 disabled:hover:bg-transparent disabled:hover:text-gray-600 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
           >
             <Show when={props.generating} fallback={<>Generate Summary</>}>
               <Loader2 size={14} class="animate-spin" />
@@ -1289,7 +1289,7 @@ function SummaryPanel(props: {
           <Show
             when={hasTranscript()}
             fallback={
-              <div class="border border-border-dark bg-[#111111] p-4 text-sm text-zinc-400">
+              <div class="border border-border-dark bg-surface-dark p-4 text-sm text-gray-400">
                 Transcribe this meeting first. The summary uses the transcript to extract key
                 topics, blockers, and action items.
               </div>
@@ -1313,14 +1313,14 @@ function SummaryPanel(props: {
           <div>
             <div class="summary-prose" innerHTML={renderMarkdown(current().markdown)} />
             <div class="mt-6 pt-4 border-t border-border-dark flex flex-wrap items-center justify-between gap-3">
-              <p class="text-[10px] font-mono uppercase tracking-wider text-zinc-600">
+              <p class="text-[10px] font-mono uppercase tracking-wider text-gray-600">
                 {current().model} · {formatDate(current().created_at_ms)}
               </p>
               <button
                 type="button"
                 onClick={() => props.onGenerateSummary(props.meeting.meta.id)}
                 disabled={props.generating}
-                class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-zinc-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                class="px-3 py-1 rounded-lg border border-white/10 text-[11px] font-mono text-gray-500 hover:text-white hover:bg-surface-dark transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Show when={props.generating} fallback={<RefreshCcw size={13} />}>
                   <Loader2 size={13} class="animate-spin" />
