@@ -1,3 +1,15 @@
+# [1.27.0](https://github.com/ibrahimshadev/Voxly/compare/v1.26.0...v1.27.0) (2026-06-15)
+
+
+### Bug Fixes
+
+* **meetings:** make the meetings page respect the light theme ([e4eaff9](https://github.com/ibrahimshadev/Voxly/commit/e4eaff9a66fb4aaa33c5d53b156ab27bdb449448)), closes [#111111](https://github.com/ibrahimshadev/Voxly/issues/111111)
+
+
+### Features
+
+* **meetings:** working export button for transcript and summary ([9fb7d8e](https://github.com/ibrahimshadev/Voxly/commit/9fb7d8e6e25fc2d74ca3cff74e035a43b9090998))
+
 # [1.26.0](https://github.com/ibrahimshadev/Voxly/compare/v1.25.0...v1.26.0) (2026-06-10)
 
 
