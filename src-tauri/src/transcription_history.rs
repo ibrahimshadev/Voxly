@@ -20,6 +20,10 @@ pub struct TranscriptionHistoryItem {
     pub mode_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_text: Option<String>,
+    /// Set when the user manually edits the transcription; doubles as the
+    /// "was edited" flag and the timestamp of the edit. `None` for untouched items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,7 +83,7 @@ pub fn load_history_page(
             let mut stmt = conn
                 .prepare(
                     r#"
-                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text
+                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text, edited_at_ms
                     FROM transcription_history
                     WHERE text LIKE ?1 OR original_text LIKE ?1 OR mode_name LIKE ?1
                     ORDER BY created_at_ms DESC
@@ -103,7 +107,7 @@ pub fn load_history_page(
             let mut stmt = conn
                 .prepare(
                     r#"
-                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text
+                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text, edited_at_ms
                     FROM transcription_history
                     ORDER BY created_at_ms DESC
                     LIMIT ?1 OFFSET ?2
@@ -174,9 +178,65 @@ pub fn append_item(params: AppendItemParams) -> Result<(), String> {
         language: params.language,
         mode_name: params.mode_name,
         original_text: params.original_text,
+        edited_at_ms: None,
     };
 
     crate::db::with_connection(|conn| crate::db::insert_history_item(conn, &item))
+}
+
+/// Replaces the text of an existing history item with a manual edit.
+///
+/// Stamps `edited_at_ms` so the UI can show the entry was edited, and preserves
+/// the original recognizer output in `original_text` the first time an item is
+/// edited (`COALESCE(original_text, text)` keeps any pre-existing value, e.g. the
+/// raw text saved when an AI mode reformatted the dictation). Returns the updated row.
+pub fn update_item(id: &str, text: &str) -> Result<TranscriptionHistoryItem, String> {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as i64;
+
+    crate::db::with_connection(|conn| update_item_in(conn, id, text, now_ms))
+}
+
+fn update_item_in(
+    conn: &rusqlite::Connection,
+    id: &str,
+    text: &str,
+    now_ms: i64,
+) -> Result<TranscriptionHistoryItem, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Transcription text cannot be empty.".to_string());
+    }
+
+    let affected = conn
+        .execute(
+            r#"
+            UPDATE transcription_history
+            SET original_text = COALESCE(original_text, text),
+                text = ?2,
+                edited_at_ms = ?3
+            WHERE id = ?1
+            "#,
+            params![id, text, now_ms],
+        )
+        .map_err(|error| format!("Failed to update transcription history item: {error}"))?;
+
+    if affected == 0 {
+        return Err(format!("Transcription history item '{id}' not found."));
+    }
+
+    conn.query_row(
+        r#"
+        SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text, edited_at_ms
+        FROM transcription_history
+        WHERE id = ?1
+        "#,
+        params![id],
+        history_item_from_row,
+    )
+    .map_err(|error| format!("Failed to load updated transcription history item: {error}"))
 }
 
 pub fn delete_item(id: &str) -> Result<(), String> {
@@ -218,6 +278,7 @@ fn history_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Transcript
         language: row.get("language")?,
         mode_name: row.get("mode_name")?,
         original_text: row.get("original_text")?,
+        edited_at_ms: row.get("edited_at_ms")?,
     })
 }
 
@@ -238,7 +299,8 @@ mod tests {
                 duration_secs REAL,
                 language TEXT,
                 mode_name TEXT,
-                original_text TEXT
+                original_text TEXT,
+                edited_at_ms INTEGER
             );
             CREATE INDEX idx_history_created_at ON transcription_history(created_at_ms DESC);
             "#,
@@ -258,6 +320,7 @@ mod tests {
                 language: Some("en".to_string()),
                 mode_name: Some("Clean Draft".to_string()),
                 original_text: None,
+                edited_at_ms: None,
             },
         )
         .unwrap();
@@ -271,7 +334,7 @@ mod tests {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text FROM transcription_history ORDER BY created_at_ms DESC",
+                "SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text, edited_at_ms FROM transcription_history ORDER BY created_at_ms DESC",
             )
             .unwrap();
         let rows = stmt
@@ -304,6 +367,53 @@ mod tests {
             .optional()
             .unwrap();
         assert_eq!(remaining.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn editing_preserves_first_original_text_and_stamps_edited_at() {
+        let conn = test_conn();
+        // `insert` stores original_text = None, so `text` is the raw recognizer output.
+        insert(&conn, "a", "raw transcription", 1);
+
+        let first = update_item_in(&conn, "a", "  first edit  ", 100).unwrap();
+        assert_eq!(first.text, "first edit", "edited text is trimmed and saved");
+        assert_eq!(
+            first.original_text.as_deref(),
+            Some("raw transcription"),
+            "raw recognizer output is preserved into original_text on first edit"
+        );
+        assert_eq!(first.edited_at_ms, Some(100));
+
+        let second = update_item_in(&conn, "a", "second edit", 200).unwrap();
+        assert_eq!(second.text, "second edit");
+        assert_eq!(
+            second.original_text.as_deref(),
+            Some("raw transcription"),
+            "the preserved original is never overwritten by later edits"
+        );
+        assert_eq!(second.edited_at_ms, Some(200));
+    }
+
+    #[test]
+    fn editing_missing_item_is_an_error() {
+        let conn = test_conn();
+        assert!(update_item_in(&conn, "missing", "text", 1).is_err());
+    }
+
+    #[test]
+    fn editing_to_empty_text_is_rejected() {
+        let conn = test_conn();
+        insert(&conn, "a", "raw transcription", 1);
+        assert!(update_item_in(&conn, "a", "   ", 100).is_err());
+        // The original row is left untouched.
+        let text: String = conn
+            .query_row(
+                "SELECT text FROM transcription_history WHERE id = ?1",
+                params!["a"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(text, "raw transcription");
     }
 
     #[test]
