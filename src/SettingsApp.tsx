@@ -431,6 +431,22 @@ export default function SettingsApp() {
     }
   };
 
+  const updateHistoryItem = async (id: string, text: string) => {
+    try {
+      const updated = await invoke<TranscriptionHistoryItem>('update_transcription_history_item', {
+        id,
+        text,
+      });
+      // Patch in place: editing changes neither ordering nor counts, so a full
+      // reload would only cost a scroll jump.
+      setHistory((items) => items.map((item) => (item.id === id ? updated : item)));
+      notifySuccess('Entry updated.');
+    } catch (err) {
+      notifyError(err, 'Failed to update history entry.');
+      throw err; // keep the inline editor open so the unsaved edit isn't lost
+    }
+  };
+
   const deleteHistoryItem = async (id: string) => {
     try {
       await invoke('delete_transcription_history_item', { id });
@@ -825,6 +841,7 @@ export default function SettingsApp() {
             onSearchQueryChange={(value) => setHistorySearchQuery(value)}
             onPageChange={(page) => void loadHistory(page)}
             onCopy={copyHistoryText}
+            onEdit={updateHistoryItem}
             onDelete={deleteHistoryItem}
             onClearAll={clearHistory}
           />

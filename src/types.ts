@@ -53,6 +53,7 @@ export type TranscriptionHistoryItem = {
   language?: string;
   mode_name?: string;
   original_text?: string;
+  edited_at_ms?: number;
 };
 
 export type TranscriptionHistoryPage = {

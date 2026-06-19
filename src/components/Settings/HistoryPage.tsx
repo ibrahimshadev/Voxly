@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createMemo, createSignal } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import type { TranscriptionHistoryItem } from '../../types';
 import {
@@ -25,6 +25,9 @@ import {
   ChevronRight,
   Mail,
   Code,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-solid';
 import type { Component } from 'solid-js';
 
@@ -49,6 +52,7 @@ export type HistoryPageProps = {
   onSearchQueryChange: (value: string) => void;
   onPageChange: (page: number) => void;
   onCopy: (text: string) => void;
+  onEdit: (id: string, text: string) => Promise<void>;
   onDelete: (id: string) => void;
   onClearAll: () => void;
 };
@@ -56,41 +60,143 @@ export type HistoryPageProps = {
 function HistoryItem(props: {
   item: TranscriptionHistoryItem;
   onCopy: (text: string) => void;
+  onEdit: (id: string, text: string) => Promise<void>;
   onDelete: (id: string) => void;
 }) {
+  const [editing, setEditing] = createSignal(false);
+  const [draft, setDraft] = createSignal('');
+  const [saving, setSaving] = createSignal(false);
+
   const hasOriginalText = () =>
     props.item.original_text != null && props.item.original_text !== props.item.text;
 
   const isNonEnglish = () =>
     props.item.language != null && props.item.language !== 'english' && props.item.language !== '';
 
+  const autosize = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+  };
+
+  const startEdit = () => {
+    setDraft(props.item.text);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraft('');
+  };
+
+  const saveEdit = async () => {
+    const next = draft().trim();
+    if (!next) return; // keep editing \u2014 an empty transcription isn't useful
+    if (next === props.item.text) {
+      cancelEdit();
+      return;
+    }
+    setSaving(true);
+    try {
+      await props.onEdit(props.item.id, next);
+      setEditing(false);
+    } catch {
+      // The handler already surfaced the error; keep the editor open so the
+      // unsaved edit isn't lost and the user can retry.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelEdit();
+    } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void saveEdit();
+    }
+  };
+
   return (
     <div class="group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex flex-col gap-2">
-      <div class="pr-12">
-        <p class={`text-white text-[15px] leading-relaxed ${isNonEnglish() ? 'italic' : ''}`}>
-          {isNonEnglish() && '\u201C'}{props.item.text}{isNonEnglish() && '\u201D'}
-        </p>
+      <Show
+        when={editing()}
+        fallback={
+          <div class="pr-12">
+            <p class={`text-white text-[15px] leading-relaxed whitespace-pre-wrap ${isNonEnglish() ? 'italic' : ''}`}>
+              {isNonEnglish() && '\u201C'}{props.item.text}{isNonEnglish() && '\u201D'}
+            </p>
 
-        <Show when={hasOriginalText()}>
-          <details class="group/details mt-3">
-            <summary class="cursor-pointer text-xs text-primary font-medium hover:brightness-110 transition-colors list-none flex items-center gap-1 w-fit select-none">
-              Show original
-              <ChevronDown size={12} class="group-open/details:rotate-180 transition-transform" />
-            </summary>
-            <div class="mt-2 p-3 bg-black/20 rounded-md border-l-2 border-white/10 text-gray-500 text-sm break-words relative group/original">
-              {props.item.original_text}
-              <button
-                type="button"
-                onClick={() => props.onCopy(props.item.original_text!)}
-                class="absolute top-2 right-2 p-1 rounded-lg text-gray-600 hover:text-white hover:bg-white/10 transition-colors opacity-0 group-hover/original:opacity-100"
-                title="Copy original text"
-              >
-                <Copy size={14} />
-              </button>
-            </div>
-          </details>
-        </Show>
-      </div>
+            <Show when={hasOriginalText()}>
+              <details class="group/details mt-3">
+                <summary class="cursor-pointer text-xs text-primary font-medium hover:brightness-110 transition-colors list-none flex items-center gap-1 w-fit select-none">
+                  Show original
+                  <ChevronDown size={12} class="group-open/details:rotate-180 transition-transform" />
+                </summary>
+                <div class="mt-2 p-3 bg-black/20 rounded-md border-l-2 border-white/10 text-gray-500 text-sm break-words relative group/original">
+                  {props.item.original_text}
+                  <button
+                    type="button"
+                    onClick={() => props.onCopy(props.item.original_text!)}
+                    class="absolute top-2 right-2 p-1 rounded-lg text-gray-600 hover:text-white hover:bg-white/10 transition-colors opacity-0 group-hover/original:opacity-100"
+                    title="Copy original text"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+              </details>
+            </Show>
+          </div>
+        }
+      >
+        <div class="flex flex-col gap-2">
+          <textarea
+            ref={(el) => {
+              // Solid runs ref callbacks before the node is attached, so defer
+              // to a microtask: focus only works and scrollHeight is only
+              // measurable once the textarea is in the DOM.
+              queueMicrotask(() => {
+                autosize(el);
+                el.focus();
+                const end = el.value.length;
+                el.setSelectionRange(end, end);
+              });
+            }}
+            value={draft()}
+            disabled={saving()}
+            onInput={(e) => {
+              setDraft(e.currentTarget.value);
+              autosize(e.currentTarget);
+            }}
+            onKeyDown={handleKeyDown}
+            rows={2}
+            class="w-full resize-none rounded-lg bg-surface-dark border border-white/10 focus:border-primary focus:ring-1 focus:ring-primary text-white text-[15px] leading-relaxed p-3 outline-none transition-colors scrollbar-hide disabled:opacity-50"
+          />
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void saveEdit()}
+              disabled={saving() || draft().trim().length === 0}
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-black text-sm font-semibold hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Check size={14} />
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              disabled={saving()}
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
+              <X size={14} />
+              Cancel
+            </button>
+            <span class="ml-auto text-xs text-gray-600 select-none hidden sm:block">
+              {'\u2318'}/Ctrl+{'\u21B5'} to save \u00B7 Esc to cancel
+            </span>
+          </div>
+        </div>
+      </Show>
 
       <div class="flex items-center gap-4 mt-1 text-xs text-gray-500 select-none">
         <Show when={isNonEnglish()}>
@@ -120,26 +226,46 @@ function HistoryItem(props: {
           <Clock size={12} />
           <span>{formatItemTime(props.item.created_at_ms)}</span>
         </div>
+
+        <Show when={props.item.edited_at_ms != null}>
+          <div
+            class="flex items-center gap-1 text-gray-500"
+            title={`Edited ${formatExactTime(props.item.edited_at_ms!)}`}
+          >
+            <Pencil size={11} />
+            <span>edited</span>
+          </div>
+        </Show>
       </div>
 
-      <div class="absolute right-3 top-3 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <button
-          type="button"
-          onClick={() => props.onCopy(props.item.text)}
-          class="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
-          title="Copy text"
-        >
-          <Copy size={16} />
-        </button>
-        <button
-          type="button"
-          onClick={() => props.onDelete(props.item.id)}
-          class="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-          title="Delete entry"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
+      <Show when={!editing()}>
+        <div class="absolute right-3 top-3 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <button
+            type="button"
+            onClick={() => props.onCopy(props.item.text)}
+            class="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+            title="Copy text"
+          >
+            <Copy size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={startEdit}
+            class="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+            title="Edit text"
+          >
+            <Pencil size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => props.onDelete(props.item.id)}
+            class="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            title="Delete entry"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </Show>
     </div>
   );
 }
@@ -338,6 +464,7 @@ export default function HistoryPage(props: HistoryPageProps) {
                         <HistoryItem
                           item={item}
                           onCopy={props.onCopy}
+                          onEdit={props.onEdit}
                           onDelete={props.onDelete}
                         />
                       )}

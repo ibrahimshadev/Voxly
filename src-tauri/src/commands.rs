@@ -6,7 +6,7 @@ use crate::meeting::{
 };
 use crate::settings::AppSettings;
 use crate::state::AppState;
-use crate::transcription_history::{HistoryPage, HistoryStats};
+use crate::transcription_history::{HistoryPage, HistoryStats, TranscriptionHistoryItem};
 
 #[derive(serde::Serialize, Clone)]
 struct AudioLevelPayload {
@@ -161,6 +161,14 @@ pub fn get_transcription_history(
 #[tauri::command]
 pub fn get_transcription_history_stats(today_start_ms: i64) -> Result<HistoryStats, String> {
     crate::transcription_history::history_stats(today_start_ms)
+}
+
+#[tauri::command]
+pub fn update_transcription_history_item(
+    id: String,
+    text: String,
+) -> Result<TranscriptionHistoryItem, String> {
+    crate::transcription_history::update_item(&id, &text)
 }
 
 #[tauri::command]

@@ -74,6 +74,7 @@ fn open_database(db_path: &Path, app_dir: &Path) -> Result<Connection, String> {
         .map_err(|error| format!("Failed to open database '{}': {error}", db_path.display()))?;
     configure_connection(&conn)?;
     create_schema(&conn)?;
+    ensure_history_columns(&conn)?;
     migrate_json_if_needed(&mut conn, app_dir)?;
     Ok(conn)
 }
@@ -98,7 +99,8 @@ fn create_schema(conn: &Connection) -> Result<(), String> {
             duration_secs REAL,
             language TEXT,
             mode_name TEXT,
-            original_text TEXT
+            original_text TEXT,
+            edited_at_ms INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_history_created_at
             ON transcription_history(created_at_ms DESC);
@@ -136,6 +138,44 @@ fn create_schema(conn: &Connection) -> Result<(), String> {
         "#,
     )
     .map_err(|error| format!("Failed to create database schema: {error}"))
+}
+
+/// Adds columns introduced after the initial schema to pre-existing databases.
+/// `CREATE TABLE IF NOT EXISTS` never alters an existing table, so each column
+/// added later needs an idempotent `ALTER TABLE` guarded by a column-existence check.
+fn ensure_history_columns(conn: &Connection) -> Result<(), String> {
+    if !table_has_column(conn, "transcription_history", "edited_at_ms")? {
+        conn.execute(
+            "ALTER TABLE transcription_history ADD COLUMN edited_at_ms INTEGER",
+            [],
+        )
+        .map_err(|error| {
+            format!("Failed to add edited_at_ms column to transcription_history: {error}")
+        })?;
+    }
+    Ok(())
+}
+
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|error| format!("Failed to inspect {table} columns: {error}"))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|error| format!("Failed to inspect {table} columns: {error}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| format!("Failed to read {table} columns: {error}"))?
+    {
+        // PRAGMA table_info columns: cid(0), name(1), type(2), notnull(3), dflt_value(4), pk(5)
+        let name: String = row
+            .get(1)
+            .map_err(|error| format!("Failed to read {table} column name: {error}"))?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn migrate_json_if_needed(conn: &mut Connection, app_dir: &Path) -> Result<(), String> {
@@ -543,6 +583,48 @@ mod tests {
         drop(conn);
 
         fs::remove_dir_all(app_dir).unwrap();
+    }
+
+    #[test]
+    fn ensure_history_columns_adds_edited_at_to_legacy_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The transcription_history schema as shipped before edited_at_ms existed.
+        conn.execute_batch(
+            r#"
+            CREATE TABLE transcription_history (
+                id TEXT PRIMARY KEY,
+                text TEXT NOT NULL,
+                created_at_ms INTEGER NOT NULL,
+                duration_secs REAL,
+                language TEXT,
+                mode_name TEXT,
+                original_text TEXT
+            );
+            "#,
+        )
+        .unwrap();
+        assert!(!table_has_column(&conn, "transcription_history", "edited_at_ms").unwrap());
+
+        ensure_history_columns(&conn).unwrap();
+        assert!(table_has_column(&conn, "transcription_history", "edited_at_ms").unwrap());
+
+        // Idempotent: running again on an already-migrated table is a harmless no-op.
+        ensure_history_columns(&conn).unwrap();
+
+        // Existing rows get NULL for the new column (i.e. "never edited").
+        conn.execute(
+            "INSERT INTO transcription_history (id, text, created_at_ms) VALUES ('x', 'hi', 1)",
+            [],
+        )
+        .unwrap();
+        let edited: Option<i64> = conn
+            .query_row(
+                "SELECT edited_at_ms FROM transcription_history WHERE id = 'x'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(edited, None);
     }
 
     #[test]

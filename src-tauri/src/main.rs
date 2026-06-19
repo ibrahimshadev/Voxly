@@ -118,6 +118,7 @@ fn main() {
             commands::fetch_provider_models,
             commands::get_transcription_history,
             commands::get_transcription_history_stats,
+            commands::update_transcription_history_item,
             commands::delete_transcription_history_item,
             commands::clear_transcription_history,
             commands::start_meeting,
