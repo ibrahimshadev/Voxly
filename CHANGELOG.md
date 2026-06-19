@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/ibrahimshadev/Voxly/compare/v1.27.0...v1.28.0) (2026-06-19)
+
+
+### Features
+
+* **history:** inline edit of transcriptions with edited indicator ([7a953b3](https://github.com/ibrahimshadev/Voxly/commit/7a953b3356bef3210204f8bc3af4367e82b342af)), closes [#3](https://github.com/ibrahimshadev/Voxly/issues/3)
+
 # [1.27.0](https://github.com/ibrahimshadev/Voxly/compare/v1.26.0...v1.27.0) (2026-06-15)
 
 
