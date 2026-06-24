@@ -256,8 +256,14 @@ pub fn transcribe_meeting(
     }
 
     let meta = crate::meeting::transcribe::begin(&id)?;
+    // Track this run as live so reconciliation won't complete/error it mid-flight.
+    // Acquired after `begin` (which rejects duplicate requests) and held for the
+    // whole task, so it is released when transcription finishes, fails, or the app
+    // exits with the task.
+    let guard = state.meeting_manager.mark_transcribing(id.clone())?;
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
+        let _guard = guard;
         crate::meeting::transcribe::run(app2, api_key, id).await;
     });
     let _ = app.emit("meetings-updated", ());

@@ -77,7 +77,7 @@ pub fn load_index_reconciled(live_ids: &HashSet<String>) -> Result<Vec<MeetingMe
     let mut changed = reconcile_orphaned_recordings(&mut items, live_ids, ended_at_ms, |id| {
         Ok(file_size(&source_path(id)?))
     })?;
-    changed |= reconcile_stale_pending_transcripts(&mut items, ended_at_ms);
+    changed |= reconcile_stale_pending_transcripts(&mut items, ended_at_ms, live_ids, transcript_exists)?;
 
     if changed {
         save_index(&items)?;
@@ -288,6 +288,18 @@ pub fn meeting_exists(id: &str) -> Result<bool, String> {
     })
 }
 
+fn transcript_exists(id: &str) -> Result<bool, String> {
+    crate::db::with_connection(|conn| {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meeting_transcripts WHERE meeting_id = ?1)",
+            params![id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|value| value != 0)
+        .map_err(|error| format!("Failed to check transcript existence: {error}"))
+    })
+}
+
 pub fn delete_meeting(id: &str) -> Result<(), String> {
     let _guard = STORAGE_LOCK
         .lock()
@@ -310,13 +322,43 @@ pub fn file_size(path: &Path) -> Option<u64> {
     fs::metadata(path).ok().map(|metadata| metadata.len())
 }
 
-fn reconcile_stale_pending_transcripts(items: &mut [MeetingMeta], now_ms: i64) -> bool {
+fn reconcile_stale_pending_transcripts<F>(
+    items: &mut [MeetingMeta],
+    now_ms: i64,
+    live_ids: &HashSet<String>,
+    mut transcript_exists: F,
+) -> Result<bool, String>
+where
+    F: FnMut(&str) -> Result<bool, String>,
+{
     let mut changed = false;
 
     for item in items {
         if !matches!(item.transcript_status, Some(TranscriptStatus::Pending)) {
             continue;
         }
+
+        // A transcription started in this session is still running; never reconcile a
+        // transcript out from under the live task (it may be a re-transcription that
+        // will overwrite an older transcript on completion).
+        if live_ids.contains(&item.id) {
+            continue;
+        }
+
+        // Not in flight — the spawned transcription task is gone (the app was closed or
+        // crashed mid-transcription; tasks never survive a restart). If a transcript was
+        // already persisted, the only thing that failed was the final `Completed` status
+        // write in `transcribe::run_inner` (or it succeeded but a re-transcription was
+        // then interrupted). Recover the meeting as completed so the summary can be
+        // generated without paying to re-transcribe.
+        if transcript_exists(&item.id)? {
+            item.transcript_status = Some(TranscriptStatus::Completed);
+            item.transcript_error = None;
+            changed = true;
+            continue;
+        }
+
+        // No transcript was ever saved: fall back to interrupted/timeout handling.
         let Some(started_at_ms) = item.transcript_started_at_ms else {
             item.transcript_status = Some(TranscriptStatus::Error);
             item.transcript_error =
@@ -334,7 +376,7 @@ fn reconcile_stale_pending_transcripts(items: &mut [MeetingMeta], now_ms: i64) -
         }
     }
 
-    changed
+    Ok(changed)
 }
 
 #[cfg(test)]
@@ -472,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_pending_transcript_is_marked_error() {
+    fn stale_pending_transcript_without_saved_transcript_is_marked_error() {
         let mut items = vec![MeetingMeta {
             transcript_status: Some(TranscriptStatus::Pending),
             transcript_started_at_ms: Some(1_000),
@@ -482,7 +524,10 @@ mod tests {
         let changed = reconcile_stale_pending_transcripts(
             &mut items,
             1_000 + STALE_PENDING_TRANSCRIPT_MS + 1,
-        );
+            &live(&[]),
+            |_| Ok(false),
+        )
+        .unwrap();
 
         assert!(changed);
         assert!(matches!(
@@ -494,5 +539,73 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("Retry"));
+    }
+
+    #[test]
+    fn pending_transcript_with_saved_transcript_is_recovered_as_completed() {
+        // The transcript was saved but the `Completed` status write never landed (or a
+        // re-transcription was interrupted, leaving a valid prior transcript). With no
+        // live transcription task, recovery must restore it without re-transcribing.
+        let mut items = vec![MeetingMeta {
+            transcript_status: Some(TranscriptStatus::Pending),
+            transcript_started_at_ms: Some(5_000),
+            transcript_error: Some("stale".to_string()),
+            ..meta("pending", MeetingStatus::Recorded)
+        }];
+
+        let changed =
+            reconcile_stale_pending_transcripts(&mut items, 6_000, &live(&[]), |_| Ok(true))
+                .unwrap();
+
+        assert!(changed);
+        assert!(matches!(
+            items[0].transcript_status,
+            Some(TranscriptStatus::Completed)
+        ));
+        assert!(items[0].transcript_error.is_none());
+    }
+
+    #[test]
+    fn pending_transcript_recovers_when_started_timestamp_is_missing() {
+        // Legacy/odd rows with no start timestamp but a saved transcript should be
+        // recovered as completed rather than discarded as an interrupted run.
+        let mut items = vec![MeetingMeta {
+            transcript_status: Some(TranscriptStatus::Pending),
+            transcript_started_at_ms: None,
+            ..meta("pending", MeetingStatus::Recorded)
+        }];
+
+        let changed =
+            reconcile_stale_pending_transcripts(&mut items, 2_000, &live(&[]), |_| Ok(true))
+                .unwrap();
+
+        assert!(changed);
+        assert!(matches!(
+            items[0].transcript_status,
+            Some(TranscriptStatus::Completed)
+        ));
+    }
+
+    #[test]
+    fn pending_transcript_in_flight_is_left_untouched() {
+        // A transcription running in this session is tracked as live; reconciliation
+        // must not complete it even though a prior transcript exists on disk.
+        let mut items = vec![MeetingMeta {
+            transcript_status: Some(TranscriptStatus::Pending),
+            transcript_started_at_ms: Some(5_000),
+            ..meta("pending", MeetingStatus::Recorded)
+        }];
+
+        let changed =
+            reconcile_stale_pending_transcripts(&mut items, 6_000, &live(&["pending"]), |_| {
+                Ok(true)
+            })
+            .unwrap();
+
+        assert!(!changed);
+        assert!(matches!(
+            items[0].transcript_status,
+            Some(TranscriptStatus::Pending)
+        ));
     }
 }

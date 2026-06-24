@@ -24,6 +24,9 @@ pub struct MeetingSessionManager {
     // Meetings whose finalization task is currently running. Keeps reconciliation
     // from declaring them orphaned and blocks deletion while FFmpeg holds files.
     finalizing: Arc<Mutex<HashSet<String>>>,
+    // Meetings whose transcription task is currently running this session. Keeps
+    // reconciliation from completing or erroring a transcript that is still in flight.
+    transcribing: Arc<Mutex<HashSet<String>>>,
 }
 
 struct FinalizingGuard {
@@ -32,6 +35,22 @@ struct FinalizingGuard {
 }
 
 impl Drop for FinalizingGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.set.lock() {
+            set.remove(&self.id);
+        }
+    }
+}
+
+/// Marks a meeting as actively transcribing for the duration of its run; removes
+/// it from the live set on drop so a finished or crashed task stops being treated
+/// as in flight.
+pub struct TranscribingGuard {
+    set: Arc<Mutex<HashSet<String>>>,
+    id: String,
+}
+
+impl Drop for TranscribingGuard {
     fn drop(&mut self) {
         if let Ok(mut set) = self.set.lock() {
             set.remove(&self.id);
@@ -242,6 +261,22 @@ impl MeetingSessionManager {
         crate::meeting::devices::list_devices(app)
     }
 
+    /// Registers a meeting as actively transcribing. The returned guard removes it
+    /// from the live set when dropped (i.e. when the transcription task ends), so
+    /// reconciliation only recovers a stuck `pending` meeting once nothing is working
+    /// on it. Acquire this *after* `transcribe::begin` so a duplicate request is
+    /// rejected by `begin` before it can disturb the in-flight registration.
+    pub fn mark_transcribing(&self, id: String) -> Result<TranscribingGuard, String> {
+        self.transcribing
+            .lock()
+            .map_err(|_| "Meeting transcribing lock poisoned".to_string())?
+            .insert(id.clone());
+        Ok(TranscribingGuard {
+            set: Arc::clone(&self.transcribing),
+            id,
+        })
+    }
+
     fn live_ids(&self) -> Result<HashSet<String>, String> {
         let mut ids = HashSet::new();
         if let Some(active) = self
@@ -256,6 +291,13 @@ impl MeetingSessionManager {
             self.finalizing
                 .lock()
                 .map_err(|_| "Meeting finalizing lock poisoned".to_string())?
+                .iter()
+                .cloned(),
+        );
+        ids.extend(
+            self.transcribing
+                .lock()
+                .map_err(|_| "Meeting transcribing lock poisoned".to_string())?
                 .iter()
                 .cloned(),
         );
@@ -394,6 +436,17 @@ mod tests {
         drop(guard);
 
         assert!(set.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn mark_transcribing_registers_in_live_ids_and_clears_on_drop() {
+        let manager = MeetingSessionManager::default();
+
+        let guard = manager.mark_transcribing("m1".to_string()).unwrap();
+        assert!(manager.live_ids().unwrap().contains("m1"));
+
+        drop(guard);
+        assert!(!manager.live_ids().unwrap().contains("m1"));
     }
 
     #[test]
