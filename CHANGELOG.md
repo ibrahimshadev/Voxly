@@ -1,3 +1,10 @@
+# [1.29.0](https://github.com/ibrahimshadev/Voxly/compare/v1.28.0...v1.29.0) (2026-06-26)
+
+
+### Features
+
+* **meetings:** migrate transcription to Deepgram ([1f4b88a](https://github.com/ibrahimshadev/Voxly/commit/1f4b88a05da064fcefc72783d8ca3293a3776c2c))
+
 # [1.28.0](https://github.com/ibrahimshadev/Voxly/compare/v1.27.0...v1.28.0) (2026-06-19)
 
 
