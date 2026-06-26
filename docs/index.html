@@ -347,7 +347,7 @@
         <span class="text-xs font-medium text-primary uppercase tracking-wider">New in v1.20</span>
     </div>
     <h2 class="text-3xl font-bold mb-4">One hotkey. Full meeting capture.</h2>
-    <p class="text-gray-400 max-w-xl mx-auto leading-relaxed">Record screen, mic, and system audio as a local MP4. When done, click Transcribe — Voxly sends the audio to AssemblyAI and returns a speaker-labeled transcript with your voice and system audio on separate channels.</p>
+    <p class="text-gray-400 max-w-xl mx-auto leading-relaxed">Record screen, mic, and system audio as a local MP4. When done, click Transcribe — Voxly sends the audio to Deepgram and returns a speaker-labeled transcript with your voice and remote speakers separated.</p>
 </div>
 
 <div class="grid lg:grid-cols-[44%_56%] gap-12 items-start">
@@ -372,7 +372,7 @@
                 </div>
                 <div>
                     <p class="text-sm font-bold text-white">Transcribe</p>
-                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">Click Transcribe. Voxly extracts a dual-channel audio file — mic on channel 1, system audio on channel 2 — and uploads it to AssemblyAI for multichannel diarization.</p>
+                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">Click Transcribe. Voxly extracts a dual-channel audio file — mic on channel 1, system audio on channel 2 — and sends it to Deepgram for multichannel diarization.</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 text-gray-600 pl-8">
@@ -384,7 +384,7 @@
                 </div>
                 <div>
                     <p class="text-sm font-bold text-white">Speaker-labeled transcript</p>
-                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">You and System — not generic Speaker A/B. Mic bleed from system audio is filtered automatically. Click any line to seek the video.</p>
+                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">You plus distinct remote speakers — not one flattened System label. Mic bleed from system audio is filtered automatically. Click any line to seek the video.</p>
                 </div>
             </div>
         </div>
@@ -400,7 +400,7 @@
             </div>
             <div class="p-3 rounded border border-surface-border bg-[#050505] text-center">
                 <p class="text-[10px] font-mono text-gray-600 uppercase tracking-wider mb-1">Provider</p>
-                <p class="text-sm font-bold text-primary">AssemblyAI</p>
+                <p class="text-sm font-bold text-primary">Deepgram</p>
             </div>
         </div>
     </div>
@@ -843,7 +843,7 @@
             '<div class="flex-1 flex items-center">' +
             '<div class="border border-surface-border bg-[#111111] p-5 w-full flex items-center justify-between gap-4">' +
             '<div><p class="text-sm text-zinc-300">No transcript yet.</p>' +
-            '<p class="mt-1 text-xs text-zinc-500 leading-relaxed">Click Transcribe to generate a speaker-labeled transcript with AssemblyAI.</p></div>' +
+            '<p class="mt-1 text-xs text-zinc-500 leading-relaxed">Click Transcribe to generate a speaker-labeled transcript with Deepgram.</p></div>' +
             '<span class="material-symbols-outlined text-gray-700 text-3xl shrink-0">transcribe</span>' +
             '</div></div>';
     }
@@ -856,7 +856,7 @@
             '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>' +
             '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>' +
             '<div><p class="text-sm font-medium">Transcribing…</p>' +
-            '<p class="mt-0.5 text-xs text-primary/70">AssemblyAI is processing dual-channel meeting audio.</p>' +
+            '<p class="mt-0.5 text-xs text-primary/70">Deepgram is processing dual-channel meeting audio.</p>' +
             '</div></div></div>';
     }
 

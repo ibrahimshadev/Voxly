@@ -6,11 +6,11 @@ use std::path::PathBuf;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::types::{Mode, VocabularyEntry};
+use crate::domain::types::{KeytermEntry, Mode, VocabularyEntry};
 
 const SERVICE_NAME: &str = "dikt";
 const API_KEY_USER: &str = "api-key";
-const ASSEMBLYAI_KEY_USER: &str = "assemblyai-api-key";
+const DEEPGRAM_KEY_USER: &str = "deepgram-api-key";
 // Use Tauri's canonical modifier name. This resolves to Ctrl on Windows/Linux and Cmd on macOS.
 const DEFAULT_HOTKEY: &str = "CommandOrControl+Space";
 const DEFAULT_MEETING_HOTKEY: &str = "CommandOrControl+Alt+M";
@@ -44,7 +44,17 @@ pub struct AppSettings {
     pub meeting_consent_acknowledged: bool,
     pub api_key: String,
     #[serde(default)]
-    pub assemblyai_api_key: String,
+    pub deepgram_api_key: String,
+    #[serde(default)]
+    pub keyterm_glossary: Vec<KeytermEntry>,
+    #[serde(default = "default_meeting_language")]
+    pub meeting_language: String,
+    #[serde(default)]
+    pub deepgram_redaction_enabled: bool,
+    #[serde(default = "default_true")]
+    pub deepgram_redact_pii: bool,
+    #[serde(default = "default_true")]
+    pub deepgram_redact_pci: bool,
     #[serde(default)]
     pub provider_api_keys: HashMap<String, String>,
     #[serde(default = "default_summary_provider")]
@@ -89,6 +99,10 @@ fn default_copy_to_clipboard_on_success() -> bool {
     false
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_meeting_hotkey() -> String {
     DEFAULT_MEETING_HOTKEY.to_string()
 }
@@ -107,6 +121,10 @@ fn default_meeting_record_system_audio() -> bool {
 
 fn default_meeting_video_preset() -> String {
     "screen_720p_30".to_string()
+}
+
+fn default_meeting_language() -> String {
+    "en".to_string()
 }
 
 fn default_modes(provider: &str) -> Vec<Mode> {
@@ -163,7 +181,17 @@ struct StoredSettings {
     #[serde(default)]
     encrypted_api_key: Option<String>,
     #[serde(default)]
-    encrypted_assemblyai_api_key: Option<String>,
+    encrypted_deepgram_api_key: Option<String>,
+    #[serde(default)]
+    keyterm_glossary: Vec<KeytermEntry>,
+    #[serde(default = "default_meeting_language")]
+    meeting_language: String,
+    #[serde(default)]
+    deepgram_redaction_enabled: bool,
+    #[serde(default = "default_true")]
+    deepgram_redact_pii: bool,
+    #[serde(default = "default_true")]
+    deepgram_redact_pci: bool,
     #[serde(default)]
     encrypted_provider_api_keys: HashMap<String, String>,
     #[serde(default = "default_summary_provider")]
@@ -200,7 +228,12 @@ impl Default for AppSettings {
             meeting_system_audio_device: None,
             meeting_consent_acknowledged: false,
             api_key: String::new(),
-            assemblyai_api_key: String::new(),
+            deepgram_api_key: String::new(),
+            keyterm_glossary: Vec::new(),
+            meeting_language: default_meeting_language(),
+            deepgram_redaction_enabled: false,
+            deepgram_redact_pii: true,
+            deepgram_redact_pci: true,
             provider_api_keys: HashMap::new(),
             summary_provider: default_summary_provider(),
             summary_base_url: default_summary_base_url(),
@@ -257,7 +290,12 @@ pub fn load_settings() -> AppSettings {
                     meeting_system_audio_device,
                     meeting_consent_acknowledged,
                     encrypted_api_key: _,
-                    encrypted_assemblyai_api_key: _,
+                    encrypted_deepgram_api_key: _,
+                    keyterm_glossary,
+                    meeting_language,
+                    deepgram_redaction_enabled,
+                    deepgram_redact_pii,
+                    deepgram_redact_pci,
                     encrypted_provider_api_keys,
                     summary_provider,
                     summary_base_url,
@@ -282,6 +320,11 @@ pub fn load_settings() -> AppSettings {
                 settings.meeting_mic_device = meeting_mic_device;
                 settings.meeting_system_audio_device = meeting_system_audio_device;
                 settings.meeting_consent_acknowledged = meeting_consent_acknowledged;
+                settings.keyterm_glossary = keyterm_glossary;
+                settings.meeting_language = normalize_meeting_language(&meeting_language);
+                settings.deepgram_redaction_enabled = deepgram_redaction_enabled;
+                settings.deepgram_redact_pii = deepgram_redact_pii;
+                settings.deepgram_redact_pci = deepgram_redact_pci;
                 settings.vocabulary = vocabulary;
                 settings.active_mode_id = active_mode_id;
                 settings.modes = modes;
@@ -295,7 +338,9 @@ pub fn load_settings() -> AppSettings {
                 }
                 for (provider, encrypted) in encrypted_summary_provider_api_keys {
                     if let Some(decrypted) = decrypt_api_key(&encrypted) {
-                        settings.summary_provider_api_keys.insert(provider, decrypted);
+                        settings
+                            .summary_provider_api_keys
+                            .insert(provider, decrypted);
                     }
                 }
                 should_seed_default_modes = !has_modes_field;
@@ -322,8 +367,8 @@ pub fn load_settings() -> AppSettings {
         settings.summary_api_key = summary_key;
     }
 
-    if let Ok(Some(api_key)) = get_assemblyai_api_key() {
-        settings.assemblyai_api_key = api_key;
+    if let Ok(Some(api_key)) = get_deepgram_api_key() {
+        settings.deepgram_api_key = api_key;
     }
 
     if should_seed_default_modes && settings.modes.is_empty() {
@@ -338,6 +383,13 @@ fn json_has_modes_field(contents: &str) -> bool {
         .ok()
         .and_then(|value| value.as_object().map(|obj| obj.contains_key("modes")))
         .unwrap_or(false)
+}
+
+fn normalize_meeting_language(value: &str) -> String {
+    match value.trim() {
+        "multi" => "multi".to_string(),
+        _ => default_meeting_language(),
+    }
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
@@ -390,7 +442,12 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         meeting_system_audio_device: settings.meeting_system_audio_device.clone(),
         meeting_consent_acknowledged: settings.meeting_consent_acknowledged,
         encrypted_api_key: None,
-        encrypted_assemblyai_api_key: None,
+        encrypted_deepgram_api_key: None,
+        keyterm_glossary: settings.keyterm_glossary.clone(),
+        meeting_language: normalize_meeting_language(&settings.meeting_language),
+        deepgram_redaction_enabled: settings.deepgram_redaction_enabled,
+        deepgram_redact_pii: settings.deepgram_redact_pii,
+        deepgram_redact_pci: settings.deepgram_redact_pci,
         encrypted_provider_api_keys,
         summary_provider: settings.summary_provider.clone(),
         summary_base_url: settings.summary_base_url.clone(),
@@ -414,10 +471,10 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         store_api_key(&settings.api_key)?;
     }
 
-    if settings.assemblyai_api_key.trim().is_empty() {
-        delete_assemblyai_api_key()?;
+    if settings.deepgram_api_key.trim().is_empty() {
+        delete_deepgram_api_key()?;
     } else {
-        store_assemblyai_api_key(&settings.assemblyai_api_key)?;
+        store_deepgram_api_key(&settings.deepgram_api_key)?;
     }
 
     Ok(())
@@ -577,18 +634,18 @@ fn clear_encrypted_api_key_fallback() {
     }
 }
 
-fn store_assemblyai_api_key(api_key: &str) -> Result<(), String> {
-    store_encrypted_assemblyai_api_key_fallback(api_key)?;
+fn store_deepgram_api_key(api_key: &str) -> Result<(), String> {
+    store_encrypted_deepgram_api_key_fallback(api_key)?;
 
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, ASSEMBLYAI_KEY_USER) {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, DEEPGRAM_KEY_USER) {
         let _ = entry.set_password(api_key);
     }
 
     Ok(())
 }
 
-fn get_assemblyai_api_key() -> Result<Option<String>, String> {
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, ASSEMBLYAI_KEY_USER) {
+fn get_deepgram_api_key() -> Result<Option<String>, String> {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, DEEPGRAM_KEY_USER) {
         match entry.get_password() {
             Ok(value) => return Ok(Some(value)),
             Err(keyring::Error::NoEntry) => {}
@@ -596,19 +653,19 @@ fn get_assemblyai_api_key() -> Result<Option<String>, String> {
         }
     }
 
-    get_encrypted_assemblyai_api_key_fallback()
+    get_encrypted_deepgram_api_key_fallback()
 }
 
-fn delete_assemblyai_api_key() -> Result<(), String> {
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, ASSEMBLYAI_KEY_USER) {
+fn delete_deepgram_api_key() -> Result<(), String> {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, DEEPGRAM_KEY_USER) {
         let _ = entry.delete_credential();
     }
 
-    clear_encrypted_assemblyai_api_key_fallback();
+    clear_encrypted_deepgram_api_key_fallback();
     Ok(())
 }
 
-fn store_encrypted_assemblyai_api_key_fallback(api_key: &str) -> Result<(), String> {
+fn store_encrypted_deepgram_api_key_fallback(api_key: &str) -> Result<(), String> {
     let path = settings_path()?;
     let mut stored = if let Ok(contents) = fs::read_to_string(&path) {
         serde_json::from_str::<StoredSettings>(&contents)
@@ -617,7 +674,7 @@ fn store_encrypted_assemblyai_api_key_fallback(api_key: &str) -> Result<(), Stri
         default_stored_settings()
     };
 
-    stored.encrypted_assemblyai_api_key = Some(encrypt_api_key(api_key));
+    stored.encrypted_deepgram_api_key = Some(encrypt_api_key(api_key));
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -628,11 +685,11 @@ fn store_encrypted_assemblyai_api_key_fallback(api_key: &str) -> Result<(), Stri
     Ok(())
 }
 
-fn get_encrypted_assemblyai_api_key_fallback() -> Result<Option<String>, String> {
+fn get_encrypted_deepgram_api_key_fallback() -> Result<Option<String>, String> {
     let path = settings_path()?;
     if let Ok(contents) = fs::read_to_string(&path) {
         if let Ok(stored) = serde_json::from_str::<StoredSettings>(&contents) {
-            if let Some(encrypted) = stored.encrypted_assemblyai_api_key {
+            if let Some(encrypted) = stored.encrypted_deepgram_api_key {
                 return Ok(decrypt_api_key(&encrypted));
             }
         }
@@ -640,11 +697,11 @@ fn get_encrypted_assemblyai_api_key_fallback() -> Result<Option<String>, String>
     Ok(None)
 }
 
-fn clear_encrypted_assemblyai_api_key_fallback() {
+fn clear_encrypted_deepgram_api_key_fallback() {
     if let Ok(path) = settings_path() {
         if let Ok(contents) = fs::read_to_string(&path) {
             if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
-                stored.encrypted_assemblyai_api_key = None;
+                stored.encrypted_deepgram_api_key = None;
                 if let Ok(new_contents) = serde_json::to_string_pretty(&stored) {
                     let _ = fs::write(&path, new_contents);
                 }
@@ -670,7 +727,12 @@ fn default_stored_settings() -> StoredSettings {
         meeting_system_audio_device: None,
         meeting_consent_acknowledged: false,
         encrypted_api_key: None,
-        encrypted_assemblyai_api_key: None,
+        encrypted_deepgram_api_key: None,
+        keyterm_glossary: Vec::new(),
+        meeting_language: default_meeting_language(),
+        deepgram_redaction_enabled: false,
+        deepgram_redact_pii: true,
+        deepgram_redact_pci: true,
         encrypted_provider_api_keys: HashMap::new(),
         summary_provider: default_summary_provider(),
         summary_base_url: default_summary_base_url(),

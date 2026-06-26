@@ -31,9 +31,10 @@ pub struct SummaryConfig {
 
 const SUMMARY_SYSTEM_PROMPT: &str = r#"You are an expert meeting analyst. You will be given a meeting transcript with
 speaker labels. In these transcripts, "You" is the local microphone speaker (the
-person running this app) and "System" is the remote/other participants captured from
-system audio; treat any other label as a distinct speaker. Output GitHub-Flavored
-Markdown ONLY (no preamble, no code fences around the whole reply, no raw HTML).
+person running this app). Labels like "Sys-A", "Sys-B", or real names are distinct
+remote participants captured from system audio. Older transcripts may use "System"
+for all remote participants. Output GitHub-Flavored Markdown ONLY (no preamble, no
+code fences around the whole reply, no raw HTML).
 
 Analyze the following meeting transcript and produce a structured summary using
 exactly this format:
@@ -65,9 +66,9 @@ state what it is and what it is blocking downstream.
 ## ✅ Next Action Items
 Present a table with 2 columns:
 | Owner | Action |
-Assign every action item to a specific person mentioned in the transcript. Be specific
-and actionable — not vague. If a deadline or dependency was mentioned, include it in
-the action description.
+Assign every action item to a specific person mentioned in the transcript when possible,
+using renamed participant labels when present. Be specific and actionable — not vague.
+If a deadline or dependency was mentioned, include it in the action description.
 
 ---
 
@@ -140,8 +141,7 @@ pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, S
                 })
         })
         .ok_or_else(|| {
-            "Add an API key under Meetings → AI Summary to generate meeting summaries."
-                .to_string()
+            "Add an API key under Meetings → AI Summary to generate meeting summaries.".to_string()
         })?;
 
     let base_url = match non_empty(&settings.summary_base_url) {
@@ -185,7 +185,14 @@ fn build_transcript_text(transcript: &MeetingTranscript) -> String {
     transcript
         .utterances
         .iter()
-        .map(|utterance| format!("{}: {}", utterance.speaker, utterance.text.trim()))
+        .map(|utterance| {
+            let speaker = transcript
+                .speaker_names
+                .get(&utterance.speaker)
+                .map(String::as_str)
+                .unwrap_or(utterance.speaker.as_str());
+            format!("{}: {}", speaker, utterance.text.trim())
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -259,7 +266,12 @@ fn sanitize_generated_title(raw: &str) -> Option<String> {
         .trim_start_matches("Title:")
         .trim_start_matches("title:")
         .trim()
-        .trim_matches(|c| matches!(c, '"' | '\'' | '\u{201c}' | '\u{201d}' | '\u{2018}' | '\u{2019}' | '`'))
+        .trim_matches(|c| {
+            matches!(
+                c,
+                '"' | '\'' | '\u{201c}' | '\u{201d}' | '\u{2018}' | '\u{2019}' | '`'
+            )
+        })
         .trim();
     if stripped.is_empty() {
         return None;
@@ -392,8 +404,7 @@ pub async fn run(
     // Auto-title untouched meetings from the fresh summary. Best-effort: a title
     // failure must never fail the summary itself.
     if detail.meta.title.trim() == DEFAULT_MEETING_TITLE {
-        if let Err(error) =
-            generate_and_store_title(&client, &config, &id, &summary.markdown).await
+        if let Err(error) = generate_and_store_title(&client, &config, &id, &summary.markdown).await
         {
             eprintln!("Meeting title generation skipped: {error}");
         }
@@ -428,6 +439,7 @@ mod tests {
             language_code: None,
             provider: "assemblyai".to_string(),
             created_at_ms: 0,
+            speaker_names: std::collections::HashMap::new(),
         }
     }
 
@@ -479,7 +491,10 @@ mod tests {
             "  ",
             Some("map-key"),
         );
-        assert_eq!(resolve_summary_config(&settings).unwrap().api_key, "map-key");
+        assert_eq!(
+            resolve_summary_config(&settings).unwrap().api_key,
+            "map-key"
+        );
     }
 
     #[test]
@@ -591,6 +606,22 @@ mod tests {
     }
 
     #[test]
+    fn build_transcript_text_uses_speaker_name_overrides() {
+        let mut transcript = transcript(
+            vec![utterance("Sys-B", "I will send the contract.")],
+            "raw fallback",
+        );
+        transcript
+            .speaker_names
+            .insert("Sys-B".to_string(), "Maya".to_string());
+
+        assert_eq!(
+            build_transcript_text(&transcript),
+            "Maya: I will send the contract."
+        );
+    }
+
+    #[test]
     fn build_transcript_text_falls_back_to_raw_text() {
         let transcript = transcript(vec![], "  plain transcript text  ");
         assert_eq!(build_transcript_text(&transcript), "plain transcript text");
@@ -622,7 +653,12 @@ mod tests {
 
     #[test]
     fn request_body_groq_gpt_oss_keeps_v1_reasoning_params() {
-        let body = request_body("groq", "openai/gpt-oss-120b", SUMMARY_SYSTEM_PROMPT, "transcript");
+        let body = request_body(
+            "groq",
+            "openai/gpt-oss-120b",
+            SUMMARY_SYSTEM_PROMPT,
+            "transcript",
+        );
         assert_eq!(body["model"], "openai/gpt-oss-120b");
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][1]["content"], "transcript");
@@ -646,7 +682,12 @@ mod tests {
     #[test]
     fn request_body_groq_other_models_omit_reasoning_params() {
         // Probe 5: llama-3.3 rejects reasoning_effort outright.
-        let body = request_body("groq", "llama-3.3-70b-versatile", SUMMARY_SYSTEM_PROMPT, "t");
+        let body = request_body(
+            "groq",
+            "llama-3.3-70b-versatile",
+            SUMMARY_SYSTEM_PROMPT,
+            "t",
+        );
         assert!(body.get("reasoning_effort").is_none());
         assert!(body.get("include_reasoning").is_none());
     }

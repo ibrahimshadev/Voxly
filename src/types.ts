@@ -10,6 +10,12 @@ export type VocabularyEntry = {
   enabled: boolean;
 };
 
+export type KeytermEntry = {
+  id: string;
+  term: string;
+  enabled: boolean;
+};
+
 export type Mode = {
   id: string;
   name: string;
@@ -33,7 +39,12 @@ export type Settings = {
   meeting_system_audio_device: string | null;
   meeting_consent_acknowledged: boolean;
   api_key: string;
-  assemblyai_api_key: string;
+  deepgram_api_key: string;
+  keyterm_glossary: KeytermEntry[];
+  meeting_language: 'en' | 'multi';
+  deepgram_redaction_enabled: boolean;
+  deepgram_redact_pii: boolean;
+  deepgram_redact_pci: boolean;
   provider_api_keys: Partial<Record<Provider, string>>;
   summary_provider: Provider;
   summary_base_url: string;
@@ -109,6 +120,7 @@ export type MeetingTranscript = {
   language_code?: string;
   provider: string;
   created_at_ms: number;
+  speaker_names?: Record<string, string>;
 };
 
 export type MeetingSummary = {

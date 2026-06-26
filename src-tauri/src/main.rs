@@ -126,6 +126,7 @@ fn main() {
             commands::transcribe_meeting,
             commands::generate_meeting_summary,
             commands::rename_meeting,
+            commands::rename_meeting_speaker,
             commands::export_text_file,
             commands::list_meetings,
             commands::get_meeting,

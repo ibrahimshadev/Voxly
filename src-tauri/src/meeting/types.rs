@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MEETING_TITLE: &str = "Untitled meeting";
@@ -72,6 +74,8 @@ pub struct MeetingTranscript {
     pub language_code: Option<String>,
     pub provider: String,
     pub created_at_ms: i64,
+    #[serde(default)]
+    pub speaker_names: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

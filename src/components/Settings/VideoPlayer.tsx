@@ -42,10 +42,19 @@ function formatTime(totalSeconds: number): string {
 type VideoPlayerProps = {
   src: string;
   utterances?: Utterance[];
+  speakerNames?: Record<string, string>;
   /** Used for seek math until the file reports its own duration. */
   fallbackDurationSecs?: number;
   ref?: (el: HTMLVideoElement) => void;
 };
+
+function formatSpeaker(speaker: string, names?: Record<string, string>): string {
+  const renamed = names?.[speaker]?.trim();
+  if (renamed) return renamed;
+  if (speaker === 'You' || speaker === 'System') return speaker;
+  if (speaker.startsWith('Sys-') || /^Ch\d+-/.test(speaker)) return speaker;
+  return `Speaker ${speaker}`;
+}
 
 export default function VideoPlayer(props: VideoPlayerProps) {
   let containerRef: HTMLDivElement | undefined;
@@ -396,7 +405,11 @@ export default function VideoPlayer(props: VideoPlayerProps) {
             >
               {formatTime(hoverSecs())}
               <Show when={speakerAt(hoverSecs())}>
-                {(speaker) => <span class="ml-1.5 text-zinc-400">· {speaker()}</span>}
+                {(speaker) => (
+                  <span class="ml-1.5 text-zinc-400">
+                    · {formatSpeaker(speaker(), props.speakerNames)}
+                  </span>
+                )}
               </Show>
             </div>
           </Show>

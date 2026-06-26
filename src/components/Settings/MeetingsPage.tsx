@@ -18,7 +18,9 @@ import {
   Monitor,
   Pencil,
   Play,
+  Plus,
   RefreshCcw,
+  Shield,
   Square,
   Trash2,
   UploadCloud,
@@ -27,7 +29,7 @@ import {
 } from 'lucide-solid';
 import type { JSX } from 'solid-js';
 import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } from '../../types';
-import { PROVIDERS, SUMMARY_MODELS } from '../../constants';
+import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDERS, SUMMARY_MODELS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
 import { createPanelResize } from '../../lib/panelResize';
@@ -52,6 +54,7 @@ type MeetingsPageProps = {
   onTranscribeMeeting: (id: string) => void;
   onGenerateSummary: (id: string) => void;
   onRenameMeeting: (id: string, title: string) => void;
+  onRenameSpeaker: (id: string, speaker: string, name: string) => void;
   summaryGenerating: Accessor<Record<string, boolean>>;
   summaryErrors: Accessor<Record<string, string>>;
   onSaveSettings: () => Promise<boolean>;
@@ -131,8 +134,30 @@ function formatHotkeyForDisplay(hotkey: string) {
     .replace(/\+/g, ' + ');
 }
 
-function formatSpeakerLabel(speaker: string) {
-  return speaker === 'You' || speaker === 'System' ? speaker : `Speaker ${speaker}`;
+const SPEAKER_BADGE_CLASSES = [
+  'border-sky-400/30 bg-sky-500/10 text-sky-300',
+  'border-violet-400/30 bg-violet-500/10 text-violet-300',
+  'border-amber-400/30 bg-amber-500/10 text-amber-300',
+  'border-rose-400/30 bg-rose-500/10 text-rose-300',
+  'border-cyan-400/30 bg-cyan-500/10 text-cyan-300',
+  'border-lime-400/30 bg-lime-500/10 text-lime-300',
+];
+
+function formatSpeakerLabel(speaker: string, names?: Record<string, string>) {
+  const renamed = names?.[speaker]?.trim();
+  if (renamed) return renamed;
+  if (speaker === 'You' || speaker === 'System') return speaker;
+  if (speaker.startsWith('Sys-') || /^Ch\d+-/.test(speaker)) return speaker;
+  return `Speaker ${speaker}`;
+}
+
+function speakerBadgeClass(speaker: string) {
+  if (speaker === 'You') return 'border-primary/30 bg-primary/10 text-primary';
+  let hash = 0;
+  for (let i = 0; i < speaker.length; i += 1) {
+    hash = (hash * 31 + speaker.charCodeAt(i)) >>> 0;
+  }
+  return SPEAKER_BADGE_CLASSES[hash % SPEAKER_BADGE_CLASSES.length];
 }
 
 function transcriptStatusLabel(meeting: MeetingMeta) {
@@ -206,6 +231,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   const [activeTab, setActiveTab] = createSignal<TranscriptTab>('transcript');
   const [configTab, setConfigTab] = createSignal<ConfigTab>('capture');
   const [showSummaryKey, setShowSummaryKey] = createSignal(false);
+  const [showDeepgramKey, setShowDeepgramKey] = createSignal(false);
+  const [keytermDraft, setKeytermDraft] = createSignal('');
   const [editingTitleId, setEditingTitleId] = createSignal<string | null>(null);
   const [titleDraft, setTitleDraft] = createSignal('');
   const [configCollapsed, setConfigCollapsed] = createSignal(
@@ -338,12 +365,58 @@ export default function MeetingsPage(props: MeetingsPageProps) {
     void props.onSaveSettings();
   };
 
+  const addKeyterm = () => {
+    const term = keytermDraft().trim().slice(0, MAX_KEYTERM_LEN);
+    if (!term) return;
+    applyChange((current) => {
+      if (current.keyterm_glossary.length >= MAX_KEYTERMS) return current;
+      const exists = current.keyterm_glossary.some(
+        (entry) => entry.term.trim().toLocaleLowerCase() === term.toLocaleLowerCase()
+      );
+      if (exists) return current;
+      return {
+        ...current,
+        keyterm_glossary: [
+          ...current.keyterm_glossary,
+          {
+            id:
+              typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                ? crypto.randomUUID()
+                : `keyterm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            term,
+            enabled: true,
+          },
+        ],
+      };
+    });
+    setKeytermDraft('');
+  };
+
+  const toggleKeyterm = (id: string) => {
+    applyChange((current) => ({
+      ...current,
+      keyterm_glossary: current.keyterm_glossary.map((entry) =>
+        entry.id === id ? { ...entry, enabled: !entry.enabled } : entry
+      ),
+    }));
+  };
+
+  const deleteKeyterm = (id: string) => {
+    applyChange((current) => ({
+      ...current,
+      keyterm_glossary: current.keyterm_glossary.filter((entry) => entry.id !== id),
+    }));
+  };
+
   const transcriptText = (meeting: MeetingDetail) => {
     const transcript = meeting.transcript;
     if (!transcript) return '';
     if (transcript.utterances.length === 0) return transcript.text;
     return transcript.utterances
-      .map((utterance) => `${formatSpeakerLabel(utterance.speaker)}: ${utterance.text}`)
+      .map(
+        (utterance) =>
+          `${formatSpeakerLabel(utterance.speaker, transcript.speaker_names)}: ${utterance.text}`
+      )
       .join('\n');
   };
 
@@ -383,7 +456,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   };
 
   const canTranscribe = (meeting: MeetingDetail) =>
-    props.settings().assemblyai_api_key.trim() &&
+    props.settings().deepgram_api_key.trim() &&
     props.settings().meeting_consent_acknowledged &&
     (meeting.meta.has_mic || meeting.meta.has_system_audio) &&
     meeting.meta.status === 'recorded' &&
@@ -519,24 +592,175 @@ export default function MeetingsPage(props: MeetingsPageProps) {
               </div>
 
               <Show when={configTab() === 'transcription'}>
-                <div class="space-y-3">
+                <div class="space-y-4">
                   <div>
                     <label class="text-xs text-gray-500 font-medium ml-1">
-                      AssemblyAI API key
+                      Deepgram API key
                     </label>
-                    <input
-                      type="password"
-                      value={props.settings().assemblyai_api_key}
-                      onInput={(e) =>
-                        props.setSettings((current) => ({
+                    <div class="relative mt-1.5">
+                      <input
+                        type={showDeepgramKey() ? 'text' : 'password'}
+                        value={props.settings().deepgram_api_key}
+                        onInput={(e) =>
+                          props.setSettings((current) => ({
+                            ...current,
+                            deepgram_api_key: (e.target as HTMLInputElement).value,
+                          }))
+                        }
+                        onBlur={() => void props.onSaveSettings()}
+                        placeholder="Deepgram key for meeting transcripts"
+                        class="w-full bg-input-bg border border-white/15 rounded-lg py-1.5 pl-3 pr-10 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowDeepgramKey((value) => !value)}
+                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors cursor-pointer"
+                        title={showDeepgramKey() ? 'Hide key' : 'Show key'}
+                      >
+                        <Show when={showDeepgramKey()} fallback={<Eye size={15} />}>
+                          <EyeOff size={15} />
+                        </Show>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-gray-500 font-medium ml-1">Language</label>
+                    <Select
+                      value={props.settings().meeting_language}
+                      options={[
+                        { value: 'en', label: 'English' },
+                        { value: 'multi', label: 'Multilingual' },
+                      ]}
+                      class="mt-1.5 px-3 py-1.5"
+                      onChange={(value) =>
+                        applyChange((current) => ({
                           ...current,
-                          assemblyai_api_key: (e.target as HTMLInputElement).value,
+                          meeting_language: value === 'multi' ? 'multi' : 'en',
                         }))
                       }
-                      onBlur={() => void props.onSaveSettings()}
-                      placeholder="AssemblyAI key for meeting transcripts"
-                      class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
                     />
+                  </div>
+
+                  <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-2">
+                      <label class="text-xs text-gray-500 font-medium ml-1">Keyterm glossary</label>
+                      <span class="text-[10px] font-mono text-gray-600">
+                        {props.settings().keyterm_glossary.length}/{MAX_KEYTERMS}
+                      </span>
+                    </div>
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        value={keytermDraft()}
+                        maxLength={MAX_KEYTERM_LEN}
+                        onInput={(e) => setKeytermDraft((e.target as HTMLInputElement).value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addKeyterm();
+                          }
+                        }}
+                        placeholder="Name, product, acronym"
+                        class="min-w-0 flex-1 bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={addKeyterm}
+                        disabled={
+                          !keytermDraft().trim() ||
+                          props.settings().keyterm_glossary.length >= MAX_KEYTERMS
+                        }
+                        class="h-[34px] w-[38px] rounded-lg border border-white/10 text-gray-500 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center cursor-pointer"
+                        title="Add keyterm"
+                      >
+                        <Plus size={15} />
+                      </button>
+                    </div>
+                    <Show when={props.settings().keyterm_glossary.length > 0}>
+                      <div class="max-h-32 overflow-y-auto rounded-lg border border-white/10 bg-white/[0.02]">
+                        <For each={props.settings().keyterm_glossary}>
+                          {(entry) => (
+                            <div class="flex items-center gap-2 border-b border-white/5 px-2 py-1.5 last:border-b-0">
+                              <button
+                                type="button"
+                                onClick={() => toggleKeyterm(entry.id)}
+                                class={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                                  entry.enabled ? 'bg-primary' : 'bg-white/10'
+                                }`}
+                                title={entry.enabled ? 'Disable keyterm' : 'Enable keyterm'}
+                              >
+                                <span
+                                  class={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                                    entry.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                                  }`}
+                                />
+                              </button>
+                              <span
+                                class={`min-w-0 flex-1 truncate text-xs ${
+                                  entry.enabled ? 'text-gray-300' : 'text-gray-600'
+                                }`}
+                                title={entry.term}
+                              >
+                                {entry.term}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => deleteKeyterm(entry.id)}
+                                class="h-7 w-7 rounded-md text-gray-600 hover:text-red-300 hover:bg-red-500/10 transition-colors flex items-center justify-center cursor-pointer"
+                                title="Delete keyterm"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
+
+                  <div class="space-y-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                    <ToggleRow
+                      label="Redact sensitive text"
+                      description="Saved transcripts and summaries will use Deepgram redaction placeholders."
+                      checked={props.settings().deepgram_redaction_enabled}
+                      onChange={(checked) =>
+                        applyChange((current) => ({
+                          ...current,
+                          deepgram_redaction_enabled: checked,
+                        }))
+                      }
+                    />
+                    <Show when={props.settings().deepgram_redaction_enabled}>
+                      <div class="grid grid-cols-2 gap-2">
+                        <ToggleRow
+                          label="PII"
+                          description="Names, email, phone"
+                          checked={props.settings().deepgram_redact_pii}
+                          onChange={(checked) =>
+                            applyChange((current) => ({
+                              ...current,
+                              deepgram_redact_pii: checked,
+                            }))
+                          }
+                        />
+                        <ToggleRow
+                          label="PCI"
+                          description="Payment data"
+                          checked={props.settings().deepgram_redact_pci}
+                          onChange={(checked) =>
+                            applyChange((current) => ({
+                              ...current,
+                              deepgram_redact_pci: checked,
+                            }))
+                          }
+                        />
+                      </div>
+                      <p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-200/80">
+                        <Shield size={13} class="mt-0.5 shrink-0" />
+                        Redaction is destructive for the stored transcript.
+                      </p>
+                    </Show>
                   </div>
                 </div>
               </Show>
@@ -928,6 +1152,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         ref={(el) => (videoRef = el)}
                         src={src}
                         utterances={meeting().transcript?.utterances}
+                        speakerNames={meeting().transcript?.speaker_names}
                         fallbackDurationSecs={meeting().meta.duration_secs}
                       />
                     )}
@@ -999,7 +1224,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
 
                     <div class="flex items-center gap-2">
                       <p class="hidden 2xl:block max-w-[190px] text-right text-[10px] leading-snug text-gray-500">
-                        Uploads meeting audio to AssemblyAI cloud.
+                        Sends meeting audio to Deepgram.
                       </p>
                       <div class="flex items-center gap-2">
                         <button
@@ -1106,6 +1331,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         meeting={meeting()}
                         settings={props.settings}
                         onTranscribeMeeting={props.onTranscribeMeeting}
+                        onRenameSpeaker={props.onRenameSpeaker}
                         seekTo={seekTo}
                       />
                     </Show>
@@ -1120,14 +1346,117 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   );
 }
 
+function SpeakerRoster(props: {
+  meeting: MeetingDetail;
+  onRenameSpeaker: (id: string, speaker: string, name: string) => void;
+}) {
+  const [editingSpeaker, setEditingSpeaker] = createSignal<string | null>(null);
+  const [speakerDraft, setSpeakerDraft] = createSignal('');
+
+  const speakers = createMemo(() => {
+    const transcript = props.meeting.transcript;
+    if (!transcript) return [];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const utterance of transcript.utterances) {
+      if (seen.has(utterance.speaker)) continue;
+      seen.add(utterance.speaker);
+      result.push(utterance.speaker);
+    }
+    return result;
+  });
+
+  const startEdit = (speaker: string) => {
+    setEditingSpeaker(speaker);
+    setSpeakerDraft(props.meeting.transcript?.speaker_names?.[speaker] ?? '');
+  };
+
+  const cancelEdit = () => {
+    setEditingSpeaker(null);
+    setSpeakerDraft('');
+  };
+
+  const commitEdit = () => {
+    const speaker = editingSpeaker();
+    if (!speaker) return;
+    setEditingSpeaker(null);
+    const current = props.meeting.transcript?.speaker_names?.[speaker] ?? '';
+    const next = speakerDraft().trim();
+    setSpeakerDraft('');
+    if (next === current) return;
+    props.onRenameSpeaker(props.meeting.meta.id, speaker, next);
+  };
+
+  return (
+    <Show when={speakers().length > 0}>
+      <div class="rounded-lg border border-white/10 bg-surface-dark/70 p-3">
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <p class="text-[11px] font-mono uppercase tracking-wider text-gray-500">Speakers</p>
+          <p class="text-[10px] font-mono text-gray-600">{speakers().length}</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <For each={speakers()}>
+            {(speaker) => (
+              <div class="flex min-h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-background-dark px-2 py-1">
+                <span
+                  class={`inline-flex shrink-0 border px-1.5 py-0.5 text-[10px] font-mono ${speakerBadgeClass(speaker)}`}
+                >
+                  {formatSpeakerLabel(speaker)}
+                </span>
+                <Show
+                  when={editingSpeaker() === speaker}
+                  fallback={
+                    <>
+                      <span class="max-w-[150px] truncate text-xs text-gray-300">
+                        {formatSpeakerLabel(speaker, props.meeting.transcript?.speaker_names)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(speaker)}
+                        class="h-6 w-6 rounded-md text-gray-600 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                        title="Rename speaker"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </>
+                  }
+                >
+                  <input
+                    type="text"
+                    value={speakerDraft()}
+                    maxLength={80}
+                    placeholder={formatSpeakerLabel(speaker)}
+                    ref={(el) => setTimeout(() => { el.focus(); el.select(); }, 0)}
+                    onInput={(e) => setSpeakerDraft((e.target as HTMLInputElement).value)}
+                    onBlur={commitEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelEdit();
+                      }
+                    }}
+                    class="h-6 w-36 rounded-md border border-white/15 bg-input-bg px-2 text-xs text-gray-200 outline-none focus:border-primary"
+                  />
+                </Show>
+              </div>
+            )}
+          </For>
+        </div>
+      </div>
+    </Show>
+  );
+}
+
 function TranscriptPanel(props: {
   meeting: MeetingDetail;
   settings: Accessor<Settings>;
   onTranscribeMeeting: (id: string) => void;
+  onRenameSpeaker: (id: string, speaker: string, name: string) => void;
   seekTo: (startMs: number) => void;
 }) {
   const canTranscribe =
-    props.settings().assemblyai_api_key.trim() &&
+    props.settings().deepgram_api_key.trim() &&
     props.settings().meeting_consent_acknowledged &&
     (props.meeting.meta.has_mic || props.meeting.meta.has_system_audio) &&
     props.meeting.meta.status === 'recorded' &&
@@ -1167,13 +1496,13 @@ function TranscriptPanel(props: {
                   <div class="min-w-0">
                     <p class="text-sm font-medium text-amber-200">Transcription failed</p>
                     <p class="mt-1 text-xs text-amber-100/70 leading-relaxed">
-                      {props.meeting.meta.transcript_error ?? 'AssemblyAI returned an error.'}
+                      {props.meeting.meta.transcript_error ?? 'Deepgram returned an error.'}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => props.onTranscribeMeeting(props.meeting.meta.id)}
-                    disabled={!props.settings().assemblyai_api_key.trim()}
+                    disabled={!props.settings().deepgram_api_key.trim()}
                     class="shrink-0 px-4 py-2 text-xs font-mono font-bold text-amber-100 hover:bg-amber-400/10 border border-amber-300/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Retry
@@ -1187,7 +1516,7 @@ function TranscriptPanel(props: {
               <div>
                 <p class="text-sm font-medium">Transcribing...</p>
                 <p class="mt-1 text-xs text-primary/80">
-                  AssemblyAI is processing the extracted meeting audio.
+                  Deepgram is processing the extracted meeting audio.
                 </p>
               </div>
             </div>
@@ -1206,6 +1535,10 @@ function TranscriptPanel(props: {
             }
           >
             <div class="space-y-6">
+              <SpeakerRoster
+                meeting={props.meeting}
+                onRenameSpeaker={props.onRenameSpeaker}
+              />
               <For each={transcript().utterances}>
                 {(utterance) => (
                   <button
@@ -1218,13 +1551,9 @@ function TranscriptPanel(props: {
                     </span>
                     <span class="min-w-0">
                       <span
-                        class={`inline-flex border px-1.5 py-0.5 text-[10px] font-mono uppercase ${
-                          formatSpeakerLabel(utterance.speaker) === 'You'
-                            ? 'border-primary/30 bg-primary/10 text-primary'
-                            : 'border-border-dark bg-surface-dark text-gray-500'
-                        }`}
+                        class={`inline-flex border px-1.5 py-0.5 text-[10px] font-mono ${speakerBadgeClass(utterance.speaker)}`}
                       >
-                        {formatSpeakerLabel(utterance.speaker)}
+                        {formatSpeakerLabel(utterance.speaker, transcript().speaker_names)}
                       </span>
                       <span class="mt-2 block text-sm leading-relaxed text-gray-300 group-hover:text-white">
                         {utterance.text}

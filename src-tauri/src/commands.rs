@@ -2,7 +2,8 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewWindow}
 
 use crate::domain::types::VocabularyEntry;
 use crate::meeting::{
-    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingUpdate,
+    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingTranscript,
+    MeetingUpdate,
 };
 use crate::settings::AppSettings;
 use crate::state::AppState;
@@ -250,18 +251,54 @@ pub fn transcribe_meeting(
     if !settings.meeting_consent_acknowledged {
         return Err("Acknowledge meeting consent in Settings first.".to_string());
     }
-    let api_key = settings.assemblyai_api_key.trim().to_string();
+    let api_key = settings.deepgram_api_key.trim().to_string();
     if api_key.is_empty() {
-        return Err("Add your AssemblyAI API key in Meeting settings.".to_string());
+        return Err("Add your Deepgram API key in Meeting settings.".to_string());
     }
+    let options = crate::meeting::transcribe::DeepgramTranscriptionOptions {
+        keyterms: enabled_keyterms(&settings.keyterm_glossary),
+        language: normalized_meeting_language(&settings.meeting_language),
+        redact_pii: settings.deepgram_redaction_enabled && settings.deepgram_redact_pii,
+        redact_pci: settings.deepgram_redaction_enabled && settings.deepgram_redact_pci,
+    };
 
     let meta = crate::meeting::transcribe::begin(&id)?;
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        crate::meeting::transcribe::run(app2, api_key, id).await;
+        crate::meeting::transcribe::run(app2, api_key, options, id).await;
     });
     let _ = app.emit("meetings-updated", ());
     Ok(meta)
+}
+
+fn enabled_keyterms(entries: &[crate::domain::types::KeytermEntry]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut terms = Vec::new();
+    for entry in entries {
+        if !entry.enabled {
+            continue;
+        }
+        let term = entry.term.trim();
+        if term.is_empty() {
+            continue;
+        }
+        let key = term.to_ascii_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+        terms.push(term.chars().take(120).collect::<String>());
+        if terms.len() >= 100 {
+            break;
+        }
+    }
+    terms
+}
+
+fn normalized_meeting_language(value: &str) -> String {
+    match value.trim() {
+        "multi" => "multi".to_string(),
+        _ => "en".to_string(),
+    }
 }
 
 #[tauri::command]
@@ -288,6 +325,19 @@ pub fn rename_meeting(
     let meta = state.meeting_manager.rename(&id, &title)?;
     let _ = app.emit("meetings-updated", ());
     Ok(meta)
+}
+
+#[tauri::command]
+pub fn rename_meeting_speaker(
+    id: String,
+    speaker: String,
+    name: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<MeetingTranscript, String> {
+    let transcript = state.meeting_manager.rename_speaker(&id, &speaker, &name)?;
+    let _ = app.emit("meetings-updated", ());
+    Ok(transcript)
 }
 
 #[tauri::command]

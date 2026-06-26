@@ -423,7 +423,7 @@ fn audio_offset_filter(input: &str, output: &str, offset_ms: i64, apply_gain: bo
 }
 
 // One filter graph feeding both outputs: the mic/system mix for the final
-// recording and the dual-channel (mic|system) track AssemblyAI transcribes.
+// recording and the dual-channel (mic|system) track the meeting transcription provider uses.
 // Inputs are decoded once; asplit fans each source into both branches.
 fn combined_post_filter(system_audio_offset_ms: i64) -> String {
     let sys_chain = offset_filter_steps(system_audio_offset_ms).join(",");

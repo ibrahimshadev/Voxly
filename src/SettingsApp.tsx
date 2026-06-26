@@ -3,10 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { Toaster } from 'solid-sonner';
 
-import type { Settings, Tab, VocabularyEntry, TranscriptionHistoryItem, TranscriptionHistoryPage, TranscriptionHistoryStats, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingSummary, MeetingUpdate } from './types';
+import type { Settings, Tab, VocabularyEntry, KeytermEntry, TranscriptionHistoryItem, TranscriptionHistoryPage, TranscriptionHistoryStats, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingSummary, MeetingUpdate, MeetingTranscript } from './types';
 import {
   CHAT_MODELS,
   DEFAULT_SETTINGS,
+  MAX_KEYTERM_LEN,
+  MAX_KEYTERMS,
   MAX_REPLACEMENTS_PER_ENTRY,
   MAX_VOCABULARY_ENTRIES
 } from './constants';
@@ -21,6 +23,13 @@ const createVocabularyId = (): string => {
     return crypto.randomUUID();
   }
   return `vocab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
+const createKeytermId = (): string => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `keyterm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 };
 
 const sanitizeVocabularyEntry = (entry: Partial<VocabularyEntry>): VocabularyEntry => {
@@ -46,6 +55,30 @@ const sanitizeVocabulary = (vocabulary: VocabularyEntry[]): VocabularyEntry[] =>
     .filter((entry) => entry.word.length > 0)
     .slice(0, MAX_VOCABULARY_ENTRIES);
 };
+
+const sanitizeKeytermEntry = (entry: Partial<KeytermEntry>): KeytermEntry => ({
+  id: (entry.id ?? '').trim() || createKeytermId(),
+  term: (entry.term ?? '').trim().slice(0, MAX_KEYTERM_LEN),
+  enabled: entry.enabled ?? true
+});
+
+const sanitizeKeyterms = (entries: KeytermEntry[]): KeytermEntry[] => {
+  const seen = new Set<string>();
+  const sanitized: KeytermEntry[] = [];
+  for (const entry of entries) {
+    const next = sanitizeKeytermEntry(entry);
+    if (!next.term) continue;
+    const key = next.term.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    sanitized.push(next);
+    if (sanitized.length >= MAX_KEYTERMS) break;
+  }
+  return sanitized;
+};
+
+const normalizeMeetingLanguage = (value: unknown): Settings['meeting_language'] =>
+  value === 'multi' ? 'multi' : 'en';
 
 export default function SettingsApp() {
   const [settings, setSettings] = createSignal<Settings>(DEFAULT_SETTINGS);
@@ -97,7 +130,15 @@ export default function SettingsApp() {
       const result = await invoke<Settings>('get_settings');
       const merged = { ...DEFAULT_SETTINGS, ...result };
       const vocabulary = sanitizeVocabulary(Array.isArray(merged.vocabulary) ? merged.vocabulary : []);
-      setSettings({ ...merged, vocabulary });
+      const keyterm_glossary = sanitizeKeyterms(
+        Array.isArray(merged.keyterm_glossary) ? merged.keyterm_glossary : []
+      );
+      setSettings({
+        ...merged,
+        vocabulary,
+        keyterm_glossary,
+        meeting_language: normalizeMeetingLanguage(merged.meeting_language)
+      });
     } catch (err) {
       notifyError(err, 'Failed to load settings.');
     }
@@ -118,7 +159,9 @@ export default function SettingsApp() {
     try {
       const sanitizedSettings = {
         ...settings(),
-        vocabulary: sanitizeVocabulary(settings().vocabulary)
+        vocabulary: sanitizeVocabulary(settings().vocabulary),
+        keyterm_glossary: sanitizeKeyterms(settings().keyterm_glossary),
+        meeting_language: normalizeMeetingLanguage(settings().meeting_language)
       };
       await invoke('save_settings', { settings: sanitizedSettings });
       setSettings(sanitizedSettings);
@@ -137,7 +180,9 @@ export default function SettingsApp() {
     try {
       const sanitizedSettings = {
         ...settings(),
-        vocabulary: sanitizeVocabulary(settings().vocabulary)
+        vocabulary: sanitizeVocabulary(settings().vocabulary),
+        keyterm_glossary: sanitizeKeyterms(settings().keyterm_glossary),
+        meeting_language: normalizeMeetingLanguage(settings().meeting_language)
       };
       await invoke('save_settings', { settings: sanitizedSettings });
       setSettings(sanitizedSettings);
@@ -428,6 +473,35 @@ export default function SettingsApp() {
       setSelectedMeeting((current) => (current?.meta.id === id ? { ...current, meta } : current));
     } catch (err) {
       notifyError(err, 'Failed to rename meeting.');
+    }
+  };
+
+  const renameMeetingSpeaker = async (id: string, speaker: string, name: string) => {
+    const previous = selectedMeeting();
+    const normalized = name.trim();
+    setSelectedMeeting((current) => {
+      if (current?.meta.id !== id || !current.transcript) return current;
+      const speakerNames = { ...(current.transcript.speaker_names ?? {}) };
+      if (normalized) speakerNames[speaker] = normalized;
+      else delete speakerNames[speaker];
+      return {
+        ...current,
+        transcript: { ...current.transcript, speaker_names: speakerNames }
+      };
+    });
+
+    try {
+      const transcript = await invoke<MeetingTranscript>('rename_meeting_speaker', {
+        id,
+        speaker,
+        name: normalized
+      });
+      setSelectedMeeting((current) =>
+        current?.meta.id === id ? { ...current, transcript } : current
+      );
+    } catch (err) {
+      if (previous?.meta.id === id) setSelectedMeeting(previous);
+      notifyError(err, 'Failed to rename speaker.');
     }
   };
 
@@ -897,6 +971,7 @@ export default function SettingsApp() {
             onTranscribeMeeting={transcribeMeeting}
             onGenerateSummary={(id) => void generateSummary(id)}
             onRenameMeeting={(id, title) => void renameMeeting(id, title)}
+            onRenameSpeaker={(id, speaker, name) => void renameMeetingSpeaker(id, speaker, name)}
             summaryGenerating={summaryGenerating}
             summaryErrors={summaryErrors}
             onSaveSettings={() => saveSettingsQuiet({

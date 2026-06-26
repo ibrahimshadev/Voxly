@@ -23,7 +23,7 @@ Optional meeting workflow:
 2. Acknowledge the recording consent notice
 3. Choose screen, microphone, and system-audio capture settings
 4. Click **Start Recording** or use the meeting hotkey (default: `Ctrl+Alt+M`)
-5. Stop the recording, then click **Transcribe** to create a speaker-labelled transcript with AssemblyAI
+5. Stop the recording, then click **Transcribe** to create a speaker-labelled transcript with Deepgram
 
 ## Features
 
@@ -73,9 +73,9 @@ You are responsible for getting permission from meeting participants before reco
 
 ### Meeting Transcripts
 
-Meeting transcription is manual. After stopping a recording, click **Transcribe** in the meeting detail view. Voxly extracts or reuses meeting audio, uploads it to AssemblyAI, polls until the transcript is ready, and saves `transcript.json` beside the recording.
+Meeting transcription is manual. After stopping a recording, click **Transcribe** in the meeting detail view. Voxly extracts or reuses meeting audio, sends it to Deepgram, and saves `transcript.json` beside the recording.
 
-When separate mic/system channels are available, Voxly uses AssemblyAI multichannel transcription so transcript rows can be labelled as **You** and **System**. If only mixed audio is available, Voxly falls back to speaker diarization with generic speaker labels. Obvious duplicate system-audio bleed picked up by the microphone is filtered from multichannel transcripts.
+When separate mic/system channels are available, Voxly uses Deepgram multichannel transcription with diarization so transcript rows can be labelled as **You** plus distinct remote speakers like **Sys-A** and **Sys-B**. If only mixed audio is available, Voxly falls back to speaker diarization with generic speaker labels. Obvious duplicate system-audio bleed picked up by the microphone is filtered from multichannel transcripts.
 
 ### Floating Overlay
 
@@ -95,7 +95,7 @@ Voxly minimizes to the system tray. Right-click for quick access to Settings, Re
 
 Voxly uses the OpenAI-compatible API format. Any provider that supports `/audio/transcriptions` (for speech-to-text) and `/chat/completions` (for modes) will work with the Custom provider option.
 
-Meeting transcripts use [AssemblyAI](https://www.assemblyai.com/) separately from the dictation provider. Add an AssemblyAI API key in Settings -> Meetings to enable meeting transcription.
+Meeting transcripts use [Deepgram](https://deepgram.com/) separately from the dictation provider. Add a Deepgram API key in Settings -> Meetings to enable meeting transcription.
 
 ## Platform Support
 
@@ -105,7 +105,7 @@ Voxly is built to be cross-platform (Windows, macOS, Linux), but has only been t
 
 - **Short dictation audio** is recorded locally and sent to your configured API endpoint for transcription. It is not saved as a reusable recording.
 - **Meeting recordings** are stored locally as MP4 files under the meetings directory until you delete them.
-- **Meeting transcription audio** is stored beside each meeting recording. Clicking **Transcribe** uploads extracted meeting audio to AssemblyAI.
+- **Meeting transcription audio** is stored beside each meeting recording. Clicking **Transcribe** sends extracted meeting audio to Deepgram.
 - **Transcription history, meeting metadata, meeting transcripts, and future meeting summaries** are stored in a local SQLite database:
   - Windows: `%APPDATA%\dikt\dikt.db`
   - Linux/macOS: `$XDG_CONFIG_HOME/dikt/dikt.db` (or `~/.config/dikt/dikt.db`)
@@ -166,7 +166,7 @@ npm run tauri build
 - **Backend**: Rust
 - **Audio**: [cpal](https://github.com/RustAudio/cpal)
 - **Short dictation transcription**: OpenAI-compatible Whisper/transcription API (cloud)
-- **Meeting transcription**: AssemblyAI async transcription API (cloud)
+- **Meeting transcription**: Deepgram Nova-3 pre-recorded transcription API (cloud)
 - **Formatting**: OpenAI-compatible Chat Completions API (cloud)
 
 ## License

@@ -182,7 +182,10 @@ pub fn upsert_meta(meta: MeetingMeta) -> Result<(), String> {
     crate::db::with_connection(|conn| crate::db::upsert_meeting_meta(conn, &meta))
 }
 
-pub fn get_detail_reconciled(id: &str, live_ids: &HashSet<String>) -> Result<MeetingDetail, String> {
+pub fn get_detail_reconciled(
+    id: &str,
+    live_ids: &HashSet<String>,
+) -> Result<MeetingDetail, String> {
     let meta = load_index_reconciled(live_ids)?
         .into_iter()
         .find(|item| item.id == id)
@@ -236,6 +239,64 @@ pub fn load_transcript(id: &str) -> Result<Option<MeetingTranscript>, String> {
             .map(Some)
             .map_err(|error| format!("Failed to parse meeting transcript: {error}"))
     })
+}
+
+pub fn update_transcript_speaker_name(
+    id: &str,
+    speaker: &str,
+    name: &str,
+) -> Result<MeetingTranscript, String> {
+    let speaker = speaker.trim();
+    if speaker.is_empty() {
+        return Err("Speaker label is required.".to_string());
+    }
+
+    let name = name.trim();
+    let normalized_name = name.chars().take(80).collect::<String>();
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    if !meeting_exists(id)? {
+        return Err("Meeting no longer exists.".to_string());
+    }
+
+    let contents = crate::db::with_connection(|conn| {
+        conn.query_row(
+            "SELECT json FROM meeting_transcripts WHERE meeting_id = ?1",
+            params![id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("Failed to load meeting transcript: {error}"))
+    })?
+    .ok_or_else(|| "Meeting transcript not found.".to_string())?;
+
+    let mut transcript: MeetingTranscript = serde_json::from_str(&contents)
+        .map_err(|error| format!("Failed to parse meeting transcript: {error}"))?;
+
+    if normalized_name.is_empty() {
+        transcript.speaker_names.remove(speaker);
+    } else {
+        transcript
+            .speaker_names
+            .insert(speaker.to_string(), normalized_name);
+    }
+
+    let contents = serde_json::to_string_pretty(&transcript).map_err(|e| e.to_string())?;
+    crate::db::with_connection(|conn| {
+        conn.execute(
+            r#"
+            INSERT OR REPLACE INTO meeting_transcripts (meeting_id, json)
+            VALUES (?1, ?2)
+            "#,
+            params![id, contents],
+        )
+        .map(|_| ())
+        .map_err(|error| format!("Failed to save meeting transcript: {error}"))
+    })?;
+
+    Ok(transcript)
 }
 
 pub fn save_summary(id: &str, summary: &MeetingSummary) -> Result<(), String> {
@@ -462,8 +523,7 @@ mod tests {
         let mut items = vec![meta("orphan", MeetingStatus::Processing)];
 
         let changed =
-            reconcile_orphaned_recordings(&mut items, &live(&[]), 6_000, |_| Ok(Some(42)))
-                .unwrap();
+            reconcile_orphaned_recordings(&mut items, &live(&[]), 6_000, |_| Ok(Some(42))).unwrap();
 
         assert!(changed);
         assert!(matches!(items[0].status, MeetingStatus::Error));

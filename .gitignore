@@ -75,6 +75,7 @@ coverage/
 *.lcov
 .nyc_output/
 **/mutants.out*/
+scripts/.deepgram-comparison/
 
 # =============================================================================
 # IDE & Editors

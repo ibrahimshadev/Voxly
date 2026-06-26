@@ -8,7 +8,8 @@ use tauri::{AppHandle, Emitter};
 use crate::meeting::recorder::RunningRecorder;
 use crate::meeting::storage;
 use crate::meeting::types::{
-    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingStatus, MeetingUpdate,
+    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingStatus,
+    MeetingTranscript, MeetingUpdate,
 };
 use crate::settings::AppSettings;
 
@@ -236,6 +237,15 @@ impl MeetingSessionManager {
             Ok(())
         })?
         .ok_or_else(|| "Meeting not found".to_string())
+    }
+
+    pub fn rename_speaker(
+        &self,
+        id: &str,
+        speaker: &str,
+        name: &str,
+    ) -> Result<MeetingTranscript, String> {
+        storage::update_transcript_speaker_name(id, speaker, name)
     }
 
     pub fn devices(&self, app: &AppHandle) -> MeetingDevices {

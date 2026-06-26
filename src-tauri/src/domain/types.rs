@@ -58,6 +58,16 @@ pub struct VocabularyEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct KeytermEntry {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub term: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Mode {
     #[serde(default)]
     pub id: String,

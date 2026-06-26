@@ -49,7 +49,12 @@ export const DEFAULT_SETTINGS: Settings = {
   meeting_system_audio_device: null,
   meeting_consent_acknowledged: false,
   api_key: '',
-  assemblyai_api_key: '',
+  deepgram_api_key: '',
+  keyterm_glossary: [],
+  meeting_language: 'en',
+  deepgram_redaction_enabled: false,
+  deepgram_redact_pii: true,
+  deepgram_redact_pci: true,
   provider_api_keys: {},
   summary_provider: 'groq',
   summary_base_url: PROVIDERS.groq.base_url,
@@ -63,3 +68,5 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const MAX_VOCABULARY_ENTRIES = 100;
 export const MAX_REPLACEMENTS_PER_ENTRY = 10;
+export const MAX_KEYTERMS = 100;
+export const MAX_KEYTERM_LEN = 120;
