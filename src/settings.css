@@ -193,6 +193,11 @@ input[type="range"]::-webkit-slider-runnable-track {
   --color-sky-300: oklch(50% 0.134 242.749);
   --color-sky-400: oklch(58.8% 0.158 241.966);
   --color-red-300: oklch(50.5% 0.213 27.518);
+  /* Remaining speaker-badge text tints */
+  --color-violet-300: oklch(49.1% 0.27 292.581);
+  --color-rose-300: oklch(51.4% 0.222 16.935);
+  --color-cyan-300: oklch(52% 0.105 223.128);
+  --color-lime-300: oklch(53.2% 0.157 131.589);
   --color-red-400: oklch(57.7% 0.245 27.325);
 }
 
