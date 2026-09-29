@@ -20,7 +20,6 @@ const DEEPGRAM_UTT_SPLIT_SECS: &str = "1.5";
 const TURN_MERGE_MAX_GAP_MS: i64 = 1_500;
 const TURN_MERGE_MAX_DURATION_MS: i64 = 30_000;
 const TURN_MERGE_MAX_CHARS: usize = 650;
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Default)]
 pub struct DeepgramTranscriptionOptions {
@@ -84,7 +83,8 @@ async fn run_inner(
     ensure_meeting_exists(id)?;
 
     let audio_upload = prepare_audio_upload(app, id).await?;
-    let cleanup_path = audio_upload.cleanup.then_some(audio_upload.path.clone());
+    // Only a freshly extracted mono file is temporary; the recorder's track is kept.
+    let cleanup_path = (!audio_upload.multichannel).then(|| audio_upload.path.clone());
     let result = async {
         ensure_meeting_exists(id)?;
 
@@ -177,7 +177,6 @@ fn ensure_meeting_exists(id: &str) -> Result<(), String> {
 
 struct AudioUpload {
     path: PathBuf,
-    cleanup: bool,
     multichannel: bool,
 }
 
@@ -186,14 +185,12 @@ async fn prepare_audio_upload(app: &AppHandle, id: &str) -> Result<AudioUpload, 
     if transcript_audio.exists() {
         return Ok(AudioUpload {
             path: transcript_audio,
-            cleanup: false,
             multichannel: true,
         });
     }
 
     Ok(AudioUpload {
         path: extract_audio(app, id).await?,
-        cleanup: true,
         multichannel: false,
     })
 }
@@ -211,22 +208,12 @@ async fn extract_audio(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
 
     let output = meeting_dir.join(format!("transcript-audio-{}.m4a", uuid::Uuid::new_v4()));
     let ffmpeg = recorder::ffmpeg_program(app);
-    let args = vec![
-        "-hide_banner".to_string(),
-        "-y".to_string(),
-        "-i".to_string(),
-        source.to_string_lossy().to_string(),
-        "-vn".to_string(),
-        "-ac".to_string(),
-        "1".to_string(),
-        "-c:a".to_string(),
-        "aac".to_string(),
-        "-b:a".to_string(),
-        "64k".to_string(),
-        output.to_string_lossy().to_string(),
-    ];
-    let mut command = hidden_tokio_command(&ffmpeg);
-    command.args(args);
+    let mut command = tokio::process::Command::from(recorder::hidden_command(&ffmpeg));
+    command
+        .args(["-hide_banner", "-y", "-i"])
+        .arg(&source)
+        .args(["-vn", "-ac", "1", "-c:a", "aac", "-b:a", "64k"])
+        .arg(&output);
 
     let output_result = command
         .output()
@@ -245,22 +232,6 @@ async fn extract_audio(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     }
 
     Ok(output)
-}
-
-fn hidden_tokio_command(program: &Path) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new(program);
-    hide_console_window(&mut command);
-    command
-}
-
-#[cfg(windows)]
-fn hide_console_window(command: &mut tokio::process::Command) {
-    command.creation_flags(CREATE_NO_WINDOW);
-}
-
-#[cfg(not(windows))]
-fn hide_console_window(_command: &mut tokio::process::Command) {
-    let _ = CREATE_NO_WINDOW;
 }
 
 async fn transcribe_deepgram(
@@ -289,24 +260,17 @@ async fn transcribe_deepgram(
             .post(DEEPGRAM_LISTEN_URL)
             .query(&params)
             .header(AUTHORIZATION, format!("Token {api_key}"))
-            .header(CONTENT_TYPE, content_type_for(path))
+            .header(CONTENT_TYPE, "audio/mp4")
             .header(reqwest::header::CONTENT_LENGTH, content_length)
             .body(reqwest::Body::wrap_stream(stream))
             .send()
             .await
-            .map_err(|error| ApiError::transport(error.to_string()));
+            .map_err(|error| ApiError::transport(error.to_string()))?;
 
-        match response {
-            Ok(response) => match parse_json_response(response).await {
-                Ok(parsed) => return Ok(parsed),
-                Err(error) if should_retry(&error) && attempt < REQUEST_MAX_ATTEMPTS => {
-                    sleep_retry(error.retry_after.unwrap_or(delay)).await;
-                    delay = next_delay(delay);
-                }
-                Err(error) => return Err(error),
-            },
+        match parse_json_response(response).await {
+            Ok(parsed) => return Ok(parsed),
             Err(error) if should_retry(&error) && attempt < REQUEST_MAX_ATTEMPTS => {
-                sleep_retry(error.retry_after.unwrap_or(delay)).await;
+                tokio::time::sleep(error.retry_after.unwrap_or(delay)).await;
                 delay = next_delay(delay);
             }
             Err(error) => return Err(error),
@@ -332,14 +296,7 @@ fn build_deepgram_query_params(
         ("utt_split", DEEPGRAM_UTT_SPLIT_SECS.to_string()),
         ("tag", "dikt-meeting".to_string()),
         ("extra", format!("meeting_id:{meeting_id}")),
-        (
-            "language",
-            if options.language.trim() == "multi" {
-                "multi".to_string()
-            } else {
-                "en".to_string()
-            },
-        ),
+        ("language", deepgram_language(&options.language).to_string()),
     ];
 
     if multichannel {
@@ -392,13 +349,8 @@ fn parse_deepgram(
 ) -> Result<ParsedDeepgramTranscript, String> {
     let request_id = response.metadata.request_id.clone();
     let duration = response.metadata.duration;
-    let language_code = detected_language(&response).or_else(|| {
-        Some(if requested_language.trim() == "multi" {
-            "multi".to_string()
-        } else {
-            "en".to_string()
-        })
-    });
+    let language_code = detected_language(&response)
+        .or_else(|| Some(deepgram_language(requested_language).to_string()));
     let fallback_text = fallback_transcript_text(&response);
     let mut utterances = parse_deepgram_utterances(response.results.utterances, multichannel);
 
@@ -547,8 +499,12 @@ fn detected_language(response: &DeepgramResponse) -> Option<String> {
         })
 }
 
-fn content_type_for(_path: &Path) -> &'static str {
-    "audio/mp4"
+fn deepgram_language(requested: &str) -> &'static str {
+    if requested.trim() == "multi" {
+        "multi"
+    } else {
+        "en"
+    }
 }
 
 fn letter_for_index(index: usize) -> String {
@@ -616,11 +572,10 @@ fn merge_adjacent_utterances(utterances: Vec<Utterance>) -> Vec<Utterance> {
 }
 
 fn merge_confidence(left: Option<f64>, right: Option<f64>) -> Option<f64> {
-    match (left, right) {
-        (Some(left), Some(right)) => Some((left + right) / 2.0),
-        (Some(value), None) | (None, Some(value)) => Some(value),
-        (None, None) => None,
-    }
+    left.zip(right)
+        .map(|(left, right)| (left + right) / 2.0)
+        .or(left)
+        .or(right)
 }
 
 fn is_system_bleed_duplicate(utterance: &Utterance, system_utterances: &[Utterance]) -> bool {
@@ -697,10 +652,6 @@ fn should_retry(error: &ApiError) -> bool {
 
 fn next_delay(current: Duration) -> Duration {
     std::cmp::min(current * 2, Duration::from_secs(30))
-}
-
-async fn sleep_retry(delay: Duration) {
-    tokio::time::sleep(delay).await;
 }
 
 fn parse_retry_after(value: &str) -> Option<Duration> {
