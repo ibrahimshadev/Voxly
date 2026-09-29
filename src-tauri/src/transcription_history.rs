@@ -40,20 +40,6 @@ pub struct HistoryStats {
     pub total_audio_secs: f64,
 }
 
-pub struct AppendItemParams {
-    pub text: String,
-    pub duration_secs: Option<f64>,
-    pub language: Option<String>,
-    pub mode_name: Option<String>,
-    pub original_text: Option<String>,
-}
-
-fn set_last_error(message: String) {
-    if let Ok(mut guard) = LAST_HISTORY_ERROR.lock() {
-        *guard = Some(message);
-    }
-}
-
 pub fn load_history_page(
     offset: u32,
     limit: u32,
@@ -164,22 +150,13 @@ pub fn history_stats(today_start_ms: i64) -> Result<HistoryStats, String> {
     })
 }
 
-pub fn append_item(params: AppendItemParams) -> Result<(), String> {
-    let now_ms = SystemTime::now()
+/// Inserts `item` as a new entry, assigning a fresh id and the current time.
+pub fn append_item(mut item: TranscriptionHistoryItem) -> Result<(), String> {
+    item.id = uuid::Uuid::new_v4().to_string();
+    item.created_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_millis() as i64;
-
-    let item = TranscriptionHistoryItem {
-        id: uuid::Uuid::new_v4().to_string(),
-        text: params.text,
-        created_at_ms: now_ms,
-        duration_secs: params.duration_secs,
-        language: params.language,
-        mode_name: params.mode_name,
-        original_text: params.original_text,
-        edited_at_ms: None,
-    };
 
     crate::db::with_connection(|conn| crate::db::insert_history_item(conn, &item))
 }
@@ -259,7 +236,9 @@ pub fn clear_history() -> Result<(), String> {
 }
 
 pub fn record_runtime_error(message: String) {
-    set_last_error(message);
+    if let Ok(mut guard) = LAST_HISTORY_ERROR.lock() {
+        *guard = Some(message);
+    }
 }
 
 pub fn take_runtime_error() -> Option<String> {
