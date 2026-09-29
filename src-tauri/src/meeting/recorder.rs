@@ -418,15 +418,18 @@ fn audio_offset_filter(input: &str, output: &str, offset_ms: i64, apply_gain: bo
 // One filter graph feeding both outputs: the mic/system mix for the final
 // recording and the dual-channel (mic|system) track the meeting transcription provider uses.
 // Inputs are decoded once; asplit fans each source into both branches.
+// The transcript track pans mic to the left and system to the right and sums
+// them with the same `amix duration=longest` as the recording, so it is never
+// shorter than the longest source (`join` would stop at the shortest).
 fn combined_post_filter(system_audio_offset_ms: i64) -> String {
     let sys_chain = offset_filter_steps(system_audio_offset_ms).join(",");
     format!(
         "[0:a]asetpts=PTS-STARTPTS,{MEETING_MIC_GAIN_FILTER},asplit=2[mic_mix][mic_tr];\
 [1:a]{sys_chain},asplit=2[sys_mix][sys_tr];\
 [mic_mix][sys_mix]amix=inputs=2:duration=longest:normalize=0,{MEETING_AUDIO_LIMITER_FILTER}[aout];\
-[mic_tr]pan=mono|c0=c0,apad=pad_dur=3[mt];\
-[sys_tr]pan=mono|c0=0.5*c0+0.5*c1,apad=pad_dur=3[st];\
-[mt][st]join=inputs=2:channel_layout=stereo[tout]"
+[mic_tr]pan=stereo|c0=c0[mt];\
+[sys_tr]pan=stereo|c1=0.5*c0+0.5*c1[st];\
+[mt][st]amix=inputs=2:duration=longest:normalize=0,apad=pad_dur=3[tout]"
     )
 }
 
@@ -814,7 +817,7 @@ mod tests {
     fn combined_post_filter_splits_mic_and_system_into_mix_and_transcript() {
         assert_eq!(
             combined_post_filter(0),
-            "[0:a]asetpts=PTS-STARTPTS,volume=3.0,asplit=2[mic_mix][mic_tr];[1:a]asetpts=PTS-STARTPTS,asplit=2[sys_mix][sys_tr];[mic_mix][sys_mix]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout];[mic_tr]pan=mono|c0=c0,apad=pad_dur=3[mt];[sys_tr]pan=mono|c0=0.5*c0+0.5*c1,apad=pad_dur=3[st];[mt][st]join=inputs=2:channel_layout=stereo[tout]"
+            "[0:a]asetpts=PTS-STARTPTS,volume=3.0,asplit=2[mic_mix][mic_tr];[1:a]asetpts=PTS-STARTPTS,asplit=2[sys_mix][sys_tr];[mic_mix][sys_mix]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[aout];[mic_tr]pan=stereo|c0=c0[mt];[sys_tr]pan=stereo|c1=0.5*c0+0.5*c1[st];[mt][st]amix=inputs=2:duration=longest:normalize=0,apad=pad_dur=3[tout]"
         );
     }
 
@@ -1032,6 +1035,128 @@ mod tests {
             .chain(["-map", "[tout]", "-c:a", "aac", "-b:a", "96k", "t.m4a"])
             .collect();
         assert_eq!(combined, strings(&expected));
+    }
+
+    fn run_tool(program: &str, args: &[&str]) -> Option<std::process::Output> {
+        Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+    }
+
+    fn probe_duration_secs(path: &Path) -> f64 {
+        let output = run_tool(
+            "ffprobe",
+            &[
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+                &path.to_string_lossy(),
+            ],
+        )
+        .expect("ffprobe failed");
+        String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse()
+            .unwrap()
+    }
+
+    fn channel_mean_volume_db(path: &Path, channel: usize, start: &str, duration: &str) -> f64 {
+        let filter = format!("pan=mono|c0=c{channel},volumedetect");
+        let output = run_tool(
+            "ffmpeg",
+            &[
+                "-hide_banner",
+                "-ss",
+                start,
+                "-t",
+                duration,
+                "-i",
+                &path.to_string_lossy(),
+                "-af",
+                &filter,
+                "-f",
+                "null",
+                "-",
+            ],
+        )
+        .expect("ffmpeg volumedetect failed");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        stderr
+            .lines()
+            .find_map(|line| line.split("mean_volume:").nth(1))
+            .and_then(|value| value.trim().trim_end_matches("dB").trim().parse().ok())
+            .unwrap_or(f64::NEG_INFINITY)
+    }
+
+    // Runs the real post-process argv on a 15 s "mic" and a 2 s "system" source,
+    // the shape of a meeting where nothing played for most of the call.
+    #[test]
+    fn transcript_audio_spans_longest_source_with_real_ffmpeg() {
+        if run_tool("ffmpeg", &["-version"]).is_none()
+            || run_tool("ffprobe", &["-version"]).is_none()
+        {
+            eprintln!("skipping: ffmpeg/ffprobe not on PATH");
+            return;
+        }
+        let dir = test_dir();
+        let capture = dir.join("capture.mp4");
+        let system = dir.join("system-audio.wav");
+        let final_path = dir.join("recording.mp4");
+        let transcript = dir.join("transcript-audio.m4a");
+        for (source, args) in [
+            (
+                &capture,
+                [
+                    "sine=frequency=440:duration=15:sample_rate=48000",
+                    "-c:a",
+                    "aac",
+                ],
+            ),
+            (
+                &system,
+                [
+                    "sine=frequency=880:duration=2:sample_rate=48000",
+                    "-ac",
+                    "2",
+                ],
+            ),
+        ] {
+            let mut full = vec!["-hide_banner", "-y", "-f", "lavfi", "-i"];
+            full.extend(args);
+            let source = source.to_string_lossy();
+            full.push(&source);
+            run_tool("ffmpeg", &full).expect("failed to generate test input");
+        }
+
+        let args = post_process_args(
+            Some(&capture),
+            &system,
+            &final_path,
+            Some(&transcript),
+            false,
+            true,
+            0,
+        );
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_tool("ffmpeg", &args).expect("post-process ffmpeg failed");
+
+        let recording_secs = probe_duration_secs(&final_path);
+        let transcript_secs = probe_duration_secs(&transcript);
+        assert!((recording_secs - 15.0).abs() < 0.2, "{recording_secs}");
+        assert!(
+            (transcript_secs - 18.0).abs() < 0.2,
+            "transcript audio {transcript_secs}s, expected 15s + 3s pad"
+        );
+        // Left = mic for the whole call; right = system, silent once it ended.
+        assert!(channel_mean_volume_db(&transcript, 0, "10", "4") > -30.0);
+        assert!(channel_mean_volume_db(&transcript, 1, "0.2", "1.5") > -30.0);
+        assert!(channel_mean_volume_db(&transcript, 1, "10", "4") < -80.0);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
