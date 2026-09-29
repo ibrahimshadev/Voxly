@@ -5,12 +5,12 @@ import { Toaster } from 'solid-sonner';
 
 import type { Settings, Tab, VocabularyEntry, KeytermEntry, TranscriptionHistoryItem, TranscriptionHistoryPage, TranscriptionHistoryStats, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingSummary, MeetingUpdate, MeetingTranscript } from './types';
 import {
-  CHAT_MODELS,
   DEFAULT_SETTINGS,
   MAX_KEYTERM_LEN,
   MAX_KEYTERMS,
   MAX_REPLACEMENTS_PER_ENTRY,
-  MAX_VOCABULARY_ENTRIES
+  MAX_VOCABULARY_ENTRIES,
+  PROVIDERS
 } from './constants';
 import { DEFAULT_MODES } from './defaultModes';
 import { Layout, SettingsPage, RightPanel, HistoryPage, DictionaryPage, ModesPage, MeetingsPage } from './components/Settings';
@@ -18,18 +18,16 @@ import { notifyError, notifyInfo, notifySuccess } from './lib/notify';
 
 const HISTORY_PAGE_SIZE = 50;
 
-const createVocabularyId = (): string => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `vocab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const EMPTY_HISTORY_STATS: TranscriptionHistoryStats = {
+  total_count: 0,
+  today_count: 0,
+  today_audio_secs: 0,
+  total_audio_secs: 0,
 };
 
-const createKeytermId = (): string => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `keyterm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const omit = <T,>(record: Record<string, T>, key: string): Record<string, T> => {
+  const { [key]: _removed, ...rest } = record;
+  return rest;
 };
 
 const sanitizeVocabularyEntry = (entry: Partial<VocabularyEntry>): VocabularyEntry => {
@@ -42,7 +40,7 @@ const sanitizeVocabularyEntry = (entry: Partial<VocabularyEntry>): VocabularyEnt
   ).slice(0, MAX_REPLACEMENTS_PER_ENTRY);
 
   return {
-    id: (entry.id ?? '').trim() || createVocabularyId(),
+    id: (entry.id ?? '').trim() || crypto.randomUUID(),
     word: (entry.word ?? '').trim(),
     replacements,
     enabled: entry.enabled ?? true
@@ -57,7 +55,7 @@ const sanitizeVocabulary = (vocabulary: VocabularyEntry[]): VocabularyEntry[] =>
 };
 
 const sanitizeKeytermEntry = (entry: Partial<KeytermEntry>): KeytermEntry => ({
-  id: (entry.id ?? '').trim() || createKeytermId(),
+  id: (entry.id ?? '').trim() || crypto.randomUUID(),
   term: (entry.term ?? '').trim().slice(0, MAX_KEYTERM_LEN),
   enabled: entry.enabled ?? true
 });
@@ -89,9 +87,7 @@ export default function SettingsApp() {
   const [history, setHistory] = createSignal<TranscriptionHistoryItem[]>([]);
   const [historyTotal, setHistoryTotal] = createSignal(0);
   const [historyPage, setHistoryPage] = createSignal(1);
-  const [historyTodayCount, setHistoryTodayCount] = createSignal(0);
-  const [historyTodayAudioSecs, setHistoryTodayAudioSecs] = createSignal(0);
-  const [historyTotalAudioSecs, setHistoryTotalAudioSecs] = createSignal(0);
+  const [historyStats, setHistoryStats] = createSignal(EMPTY_HISTORY_STATS);
   const [historySearchQuery, setHistorySearchQuery] = createSignal('');
   const [meetings, setMeetings] = createSignal<MeetingMeta[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = createSignal<string | null>(null);
@@ -104,8 +100,6 @@ export default function SettingsApp() {
   const meetingRecording = createMemo(() => meetings().some((meeting) => meeting.status === 'recording'));
 
   const [modelsList, setModelsList] = createSignal<string[]>([]);
-  const [modelsLoading, setModelsLoading] = createSignal(false);
-  const [modelsError, setModelsError] = createSignal('');
 
   const [isDark, setIsDark] = createSignal(true);
   const [audioLevel, setAudioLevel] = createSignal<{ rms_db: number; peak_db: number } | null>(null);
@@ -144,17 +138,6 @@ export default function SettingsApp() {
     }
   };
 
-  const closeSettingsWindow = async () => {
-    setActiveTab('settings');
-    setIsVocabularyEditorOpen(false);
-    setEditingVocabularyId(null);
-    try {
-      await invoke('hide_settings_window');
-    } catch (err) {
-      notifyError(err, 'Failed to close settings window.');
-    }
-  };
-
   const saveSettingsQuiet = async (options: SaveSettingsQuietOptions = {}): Promise<boolean> => {
     try {
       const sanitizedSettings = {
@@ -172,26 +155,6 @@ export default function SettingsApp() {
         notifyError(err, options.errorMessage ?? 'Failed to save settings.');
       }
       return false;
-    }
-  };
-
-  const saveSettings = async () => {
-    setSaving(true);
-    try {
-      const sanitizedSettings = {
-        ...settings(),
-        vocabulary: sanitizeVocabulary(settings().vocabulary),
-        keyterm_glossary: sanitizeKeyterms(settings().keyterm_glossary),
-        meeting_language: normalizeMeetingLanguage(settings().meeting_language)
-      };
-      await invoke('save_settings', { settings: sanitizedSettings });
-      setSettings(sanitizedSettings);
-      await emit('settings-updated');
-      await closeSettingsWindow();
-    } catch (err) {
-      notifyError(err, 'Failed to save settings.');
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -256,9 +219,7 @@ export default function SettingsApp() {
       const stats = await invoke<TranscriptionHistoryStats>('get_transcription_history_stats', {
         todayStartMs: todayStartMs(),
       });
-      setHistoryTodayCount(stats.today_count);
-      setHistoryTodayAudioSecs(stats.today_audio_secs);
-      setHistoryTotalAudioSecs(stats.total_audio_secs);
+      setHistoryStats(stats);
     } catch (err) {
       notifyError(err, 'Failed to load history stats.');
     }
@@ -328,6 +289,16 @@ export default function SettingsApp() {
     setSelectedMeeting((current) => (
       current?.meta.id === meta.id ? { ...current, meta } : current
     ));
+  };
+
+  // Optimistically patch a meeting in both the list and the open detail view.
+  const patchMeetingMeta = (id: string, patch: Partial<MeetingMeta>) => {
+    setMeetings((current) =>
+      current.map((meeting) => (meeting.id === id ? { ...meeting, ...patch } : meeting))
+    );
+    setSelectedMeeting((current) =>
+      current?.meta.id === id ? { ...current, meta: { ...current.meta, ...patch } } : current
+    );
   };
 
   const loadMeetingDetail = async (id: string) => {
@@ -446,10 +417,7 @@ export default function SettingsApp() {
   };
 
   const generateSummary = async (id: string) => {
-    setSummaryErrors((current) => {
-      const { [id]: _removed, ...rest } = current;
-      return rest;
-    });
+    setSummaryErrors((current) => omit(current, id));
     setSummaryGenerating((current) => ({ ...current, [id]: true }));
     try {
       const summary = await invoke<MeetingSummary>('generate_meeting_summary', { id });
@@ -460,10 +428,7 @@ export default function SettingsApp() {
       setSummaryErrors((current) => ({ ...current, [id]: message }));
       notifyError(err, 'Failed to generate meeting summary.');
     } finally {
-      setSummaryGenerating((current) => {
-        const { [id]: _removed, ...rest } = current;
-        return rest;
-      });
+      setSummaryGenerating((current) => omit(current, id));
     }
   };
 
@@ -538,9 +503,7 @@ export default function SettingsApp() {
       setHistoryPage(1);
       setHistory([]);
       setHistoryTotal(0);
-      setHistoryTodayCount(0);
-      setHistoryTodayAudioSecs(0);
-      setHistoryTotalAudioSecs(0);
+      setHistoryStats(EMPTY_HISTORY_STATS);
       notifySuccess('History cleared.');
     } catch (err) {
       notifyError(err, 'Failed to clear history.');
@@ -576,52 +539,33 @@ export default function SettingsApp() {
 
   const fetchModels = async (reconcileModes: boolean) => {
     const provider = settings().provider;
-    const baseUrl = settings().base_url;
-    const apiKey = settings().api_key;
-    setModelsLoading(true);
-    setModelsError('');
+    const fallback = PROVIDERS[provider].chatModels;
+    let available = fallback;
     try {
       const result = await invoke<string[]>('fetch_provider_models', {
-        baseUrl,
-        apiKey
+        baseUrl: settings().base_url,
+        apiKey: settings().api_key
       });
-      const fallback = CHAT_MODELS[provider] ?? [];
-      const availableModels = result.length > 0 ? result : fallback;
-      setModelsList(availableModels);
-      setModelsError(result.length === 0 ? 'API returned no models, using defaults' : '');
-      if (reconcileModes && provider !== 'custom' && availableModels.length > 0) {
-        const preferred = CHAT_MODELS[provider]?.[0] ?? availableModels[0];
-        const defaultModel = availableModels.includes(preferred) ? preferred : availableModels[0];
-        setSettings((current) => ({
-          ...current,
-          modes: current.modes.map((mode) =>
-            availableModels.includes(mode.model) ? mode : { ...mode, model: defaultModel }
-          )
-        }));
-      }
-    } catch (err) {
-      setModelsError('Model fetch failed: ' + String(err));
-      const fallback = CHAT_MODELS[provider] ?? [];
-      setModelsList(fallback);
-      if (reconcileModes && provider !== 'custom' && fallback.length > 0) {
-        const defaultModel = fallback[0];
-        setSettings((current) => ({
-          ...current,
-          modes: current.modes.map((mode) =>
-            fallback.includes(mode.model) ? mode : { ...mode, model: defaultModel }
-          )
-        }));
-      }
-    } finally {
-      setModelsLoading(false);
+      if (result.length > 0) available = result;
+    } catch {
+      // Keep the curated list when the provider can't be reached.
+    }
+    setModelsList(available);
+    if (reconcileModes && provider !== 'custom' && available.length > 0) {
+      const preferred = fallback[0] ?? available[0];
+      const defaultModel = available.includes(preferred) ? preferred : available[0];
+      setSettings((current) => ({
+        ...current,
+        modes: current.modes.map((mode) =>
+          available.includes(mode.model) ? mode : { ...mode, model: defaultModel }
+        )
+      }));
     }
   };
 
   const addMode = () => {
-    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `mode-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const preferred = CHAT_MODELS[settings().provider]?.[0] ?? '';
+    const id = crypto.randomUUID();
+    const preferred = PROVIDERS[settings().provider].chatModels[0] ?? '';
     const available = modelsList();
     const defaultModel = available.includes(preferred) ? preferred
       : available.length > 0 ? available[0]
@@ -692,22 +636,13 @@ export default function SettingsApp() {
       return;
     }
 
-    const replacements = Array.from(
-      new Set(
-        editorReplacements()
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-      )
-    ).slice(0, MAX_REPLACEMENTS_PER_ENTRY);
-
     const editingId = editingVocabularyId();
     const existingEntry = settings().vocabulary.find((entry) => entry.id === editingId);
 
     const nextEntry = sanitizeVocabularyEntry({
-      id: editingId ?? createVocabularyId(),
+      id: editingId ?? undefined,
       word,
-      replacements,
+      replacements: editorReplacements().split('\n'),
       enabled: existingEntry?.enabled ?? true
     });
 
@@ -716,12 +651,7 @@ export default function SettingsApp() {
       : [...settings().vocabulary, nextEntry];
 
     const saved = await persistVocabulary(nextVocabulary, 'Vocabulary entry saved.');
-    if (!saved) return;
-
-    setIsVocabularyEditorOpen(false);
-    setEditingVocabularyId(null);
-    setEditorWord('');
-    setEditorReplacements('');
+    if (saved) cancelVocabularyEditor();
   };
 
   const deleteVocabularyEntry = async (id: string) => {
@@ -790,51 +720,32 @@ export default function SettingsApp() {
       const id = payload.meeting_id;
       if (!id) return;
 
-      if (payload.state === 'processing') {
-        setProcessingMeetings((current) => ({ ...current, [id]: payload.progress_pct ?? null }));
-        setMeetings((current) =>
-          current.map((meeting) => (meeting.id === id ? { ...meeting, status: 'processing' as const } : meeting))
-        );
-        setSelectedMeeting((current) =>
-          current?.meta.id === id
-            ? { ...current, meta: { ...current.meta, status: 'processing' as const } }
-            : current
-        );
-      } else if (payload.state === 'stopped') {
-        setProcessingMeetings((current) => {
-          const { [id]: _removed, ...rest } = current;
-          return rest;
-        });
-        notifySuccess('Meeting recording saved.');
-        void loadMeetings();
-        if (selectedMeetingId() === id) void loadMeetingDetail(id);
-      } else if (payload.state === 'error') {
-        setProcessingMeetings((current) => {
-          const { [id]: _removed, ...rest } = current;
-          return rest;
-        });
-        notifyError(payload.message ?? 'Failed to save meeting recording.');
-        void loadMeetings();
-        if (selectedMeetingId() === id) void loadMeetingDetail(id);
-      } else if (payload.state === 'transcribing') {
-        setMeetings((current) =>
-          current.map((meeting) =>
-            meeting.id === id ? { ...meeting, transcript_status: 'pending', transcript_error: undefined } : meeting
-          )
-        );
-        setSelectedMeeting((current) =>
-          current?.meta.id === id
-            ? { ...current, meta: { ...current.meta, transcript_status: 'pending', transcript_error: undefined } }
-            : current
-        );
-      } else if (payload.state === 'transcribed') {
-        notifySuccess('Meeting transcript ready.');
-        void loadMeetings();
-        if (selectedMeetingId() === id) void loadMeetingDetail(id);
-      } else if (payload.state === 'transcription_error') {
-        notifyError(payload.message ?? 'Meeting transcription failed.');
-        void loadMeetings();
-        if (selectedMeetingId() === id) void loadMeetingDetail(id);
+      switch (payload.state) {
+        case 'processing':
+          setProcessingMeetings((current) => ({ ...current, [id]: payload.progress_pct ?? null }));
+          patchMeetingMeta(id, { status: 'processing' });
+          break;
+        case 'transcribing':
+          patchMeetingMeta(id, { transcript_status: 'pending', transcript_error: undefined });
+          break;
+        case 'stopped':
+          setProcessingMeetings((current) => omit(current, id));
+          notifySuccess('Meeting recording saved.');
+          void loadMeetings();
+          break;
+        case 'error':
+          setProcessingMeetings((current) => omit(current, id));
+          notifyError(payload.message ?? 'Failed to save meeting recording.');
+          void loadMeetings();
+          break;
+        case 'transcribed':
+          notifySuccess('Meeting transcript ready.');
+          void loadMeetings();
+          break;
+        case 'transcription_error':
+          notifyError(payload.message ?? 'Meeting transcription failed.');
+          void loadMeetings();
+          break;
       }
     });
 
@@ -879,7 +790,6 @@ export default function SettingsApp() {
         onTabChange={switchToTab}
         rightPanel={isFullBleedTab() ? undefined : (
           <RightPanel
-            activeTab={activeTab}
             modes={() => settings().modes}
             activeModeId={() => settings().active_mode_id}
             onSetActiveModeId={setActiveModeId}
@@ -897,7 +807,6 @@ export default function SettingsApp() {
             setSettings={setSettings}
             saving={saving}
             onTest={testConnection}
-            onSave={saveSettings}
             onSaveQuiet={saveSettingsQuiet}
             onTestAndSave={testAndSaveProvider}
           />
@@ -908,9 +817,7 @@ export default function SettingsApp() {
             currentPage={historyPage}
             pageSize={HISTORY_PAGE_SIZE}
             totalCount={historyTotal}
-            todayCount={historyTodayCount}
-            todayAudioSecs={historyTodayAudioSecs}
-            totalAudioSecs={historyTotalAudioSecs}
+            stats={historyStats}
             searchQuery={historySearchQuery}
             onSearchQueryChange={(value) => setHistorySearchQuery(value)}
             onPageChange={(page) => void loadHistory(page)}
@@ -942,8 +849,6 @@ export default function SettingsApp() {
             modes={() => settings().modes}
             activeModeId={() => settings().active_mode_id}
             modelsList={modelsList}
-            modelsLoading={modelsLoading}
-            modelsError={modelsError}
             onUpdateMode={updateMode}
             onSetActiveModeId={setActiveModeId}
             onAddMode={addMode}

@@ -10,6 +10,7 @@ import {
   VolumeX,
 } from 'lucide-solid';
 import type { Utterance } from '../../types';
+import { formatPlaybackTime, formatSpeakerLabel } from '../../lib/meetingFormat';
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const SPEED_KEY = 'meetings.playbackRate';
@@ -29,16 +30,6 @@ function readStoredNumber(key: string, fallback: number, min: number, max: numbe
   }
 }
 
-function formatTime(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
-  const whole = Math.floor(totalSeconds);
-  const hours = Math.floor(whole / 3600);
-  const minutes = Math.floor((whole % 3600) / 60);
-  const seconds = whole % 60;
-  const mmss = `${minutes}:${String(seconds).padStart(2, '0')}`;
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : mmss;
-}
-
 type VideoPlayerProps = {
   src: string;
   utterances?: Utterance[];
@@ -47,14 +38,6 @@ type VideoPlayerProps = {
   fallbackDurationSecs?: number;
   ref?: (el: HTMLVideoElement) => void;
 };
-
-function formatSpeaker(speaker: string, names?: Record<string, string>): string {
-  const renamed = names?.[speaker]?.trim();
-  if (renamed) return renamed;
-  if (speaker === 'You' || speaker === 'System') return speaker;
-  if (speaker.startsWith('Sys-') || /^Ch\d+-/.test(speaker)) return speaker;
-  return `Speaker ${speaker}`;
-}
 
 export default function VideoPlayer(props: VideoPlayerProps) {
   let containerRef: HTMLDivElement | undefined;
@@ -167,11 +150,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
       videoEl.playbackRate = value;
       videoEl.defaultPlaybackRate = value;
     }
-    try {
-      localStorage.setItem(SPEED_KEY, String(value));
-    } catch {
-      // Best-effort persistence.
-    }
+    localStorage.setItem(SPEED_KEY, String(value));
     setSpeedMenuOpen(false);
   };
 
@@ -302,18 +281,13 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           startRaf();
           scheduleHide();
         }}
+        // Also fires when playback reaches the end.
         onPause={() => {
           setPlaying(false);
           stopRaf();
           setControlsVisible(true);
         }}
-        onEnded={() => {
-          setPlaying(false);
-          stopRaf();
-          setControlsVisible(true);
-        }}
         onTimeUpdate={() => videoEl && setCurrentTime(videoEl.currentTime)}
-        onLoadedMetadata={() => videoEl && setDuration(videoEl.duration)}
         onDurationChange={() => videoEl && setDuration(videoEl.duration)}
         onProgress={() => {
           if (!videoEl) return;
@@ -324,12 +298,8 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           if (!videoEl) return;
           setVolume(videoEl.volume);
           setMuted(videoEl.muted);
-          try {
-            localStorage.setItem(VOLUME_KEY, String(videoEl.volume));
-            localStorage.setItem(MUTED_KEY, videoEl.muted ? '1' : '0');
-          } catch {
-            // Best-effort persistence.
-          }
+          localStorage.setItem(VOLUME_KEY, String(videoEl.volume));
+          localStorage.setItem(MUTED_KEY, videoEl.muted ? '1' : '0');
         }}
       />
 
@@ -403,11 +373,11 @@ export default function VideoPlayer(props: VideoPlayerProps) {
               class="pointer-events-none absolute bottom-full mb-1.5 -translate-x-1/2 whitespace-nowrap border border-white/10 bg-black/90 px-2 py-1 font-mono text-[10px] text-zinc-200"
               style={{ left: `${clamp((hoverRatio() ?? 0) * 100, 6, 94)}%` }}
             >
-              {formatTime(hoverSecs())}
+              {formatPlaybackTime(hoverSecs())}
               <Show when={speakerAt(hoverSecs())}>
                 {(speaker) => (
                   <span class="ml-1.5 text-zinc-400">
-                    · {formatSpeaker(speaker(), props.speakerNames)}
+                    · {formatSpeakerLabel(speaker(), props.speakerNames)}
                   </span>
                 )}
               </Show>
@@ -445,8 +415,8 @@ export default function VideoPlayer(props: VideoPlayerProps) {
           </button>
 
           <span class="ml-1.5 font-mono text-[11px] tabular-nums text-zinc-300">
-            {formatTime(currentTime())}
-            <span class="text-zinc-500"> / {formatTime(totalSecs())}</span>
+            {formatPlaybackTime(currentTime())}
+            <span class="text-zinc-500"> / {formatPlaybackTime(totalSecs())}</span>
           </span>
 
           <div class="flex-1" />

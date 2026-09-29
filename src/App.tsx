@@ -1,5 +1,6 @@
 import { createSignal, createEffect, onCleanup, onMount } from 'solid-js';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
+import type { ShortcutHandler } from '@tauri-apps/plugin-global-shortcut';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -7,6 +8,31 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { DictationUpdate, MeetingMeta, MeetingUpdate, Settings, Status } from './types';
 import { DEFAULT_SETTINGS } from './constants';
 import { Pill, Tooltip } from './components';
+
+/** Keeps one global shortcut registered, swapping it when the accelerator changes. */
+function createHotkeyBinding(name: string, handler: ShortcutHandler) {
+  let registered: string | null = null;
+  return {
+    async bind(hotkey: string): Promise<boolean> {
+      const previous = registered;
+      if (previous === hotkey) return true;
+      try {
+        await register(hotkey, handler);
+        if (previous) {
+          await unregister(previous).catch(() => {});
+        }
+        registered = hotkey;
+        return true;
+      } catch (err) {
+        console.error(`Failed to register ${name}:`, err);
+        return false;
+      }
+    },
+    release() {
+      if (registered) void unregister(registered);
+    },
+  };
+}
 
 export default function App() {
   const [status, setStatus] = createSignal<Status>('idle');
@@ -29,117 +55,80 @@ export default function App() {
   const isActive = () => isDictating() || meetingActive();
 
   let isHolding = false;
-  let registeredHotkey: string | null = null;
-  let registeredMeetingHotkey: string | null = null;
   let lastStoppedMeetingId: string | null = null;
   const hotkeyRegistrationMessage = 'Could not register hotkey - it may be in use by another app. Change it in Settings.';
 
-  const registerHotkey = async (hotkey: string): Promise<boolean> => {
-    const previousHotkey = registeredHotkey;
-    if (previousHotkey === hotkey) return true;
+  const dictationHotkey = createHotkeyBinding('global hotkey', (event) => {
+    if (event.state === 'Pressed') {
+      void handlePressed();
+    } else if (event.state === 'Released') {
+      void handleReleased();
+    }
+  });
 
+  const meetingHotkey = createHotkeyBinding('meeting hotkey', (event) => {
+    if (event.state === 'Pressed') {
+      void toggleMeetingRecording();
+    }
+  });
+
+  const fail = (err: unknown) => {
+    setStatus('error');
+    setError(String(err));
+  };
+
+  // Show the checkmark, then fall back to idle unless something else took over.
+  const finish = () => {
+    setStatus('done');
+    setTimeout(() => {
+      if (status() === 'done') setStatus('idle');
+    }, 1500);
+  };
+
+  const startRecording = async (): Promise<boolean> => {
+    setError('');
+    setStatus('recording');
     try {
-      await register(hotkey, (event) => {
-        if (event.state === 'Pressed') {
-          void handlePressed();
-        } else if (event.state === 'Released') {
-          void handleReleased();
-        }
-      });
-      if (previousHotkey) {
-        await unregister(previousHotkey).catch(() => {});
-      }
-      registeredHotkey = hotkey;
+      await invoke('start_recording');
       return true;
     } catch (err) {
-      console.error('Failed to register global hotkey:', err);
+      fail(err);
       return false;
     }
   };
 
-  const registerMeetingHotkey = async (hotkey: string): Promise<boolean> => {
-    const previousHotkey = registeredMeetingHotkey;
-    if (previousHotkey === hotkey) return true;
-
+  const stopAndTranscribe = async () => {
+    setStatus('transcribing');
     try {
-      await register(hotkey, (event) => {
-        if (event.state === 'Pressed') {
-          void toggleMeetingRecording();
-        }
-      });
-      if (previousHotkey) {
-        await unregister(previousHotkey).catch(() => {});
-      }
-      registeredMeetingHotkey = hotkey;
-      return true;
+      await invoke('stop_and_transcribe');
+      if (status() !== 'error') finish();
     } catch (err) {
-      console.error('Failed to register meeting hotkey:', err);
-      return false;
+      fail(err);
     }
+  };
+
+  const endMeeting = () => {
+    setMeetingActive(false);
+    setMeetingId(null);
+    setMeetingElapsed(0);
   };
 
   const handlePressed = async () => {
     if (settings().hotkey_mode === 'hold') {
       if (isHolding || status() === 'recording') return;
       isHolding = true;
-      setError('');
-      setStatus('recording');
-      try {
-        await invoke('start_recording');
-      } catch (err) {
-        isHolding = false;
-        setStatus('error');
-        setError(String(err));
-      }
-      return;
-    }
-
-    if (status() === 'recording') {
-      setStatus('transcribing');
-      try {
-        await invoke('stop_and_transcribe');
-        if (status() !== 'error') {
-          setStatus('done');
-          setTimeout(() => {
-            if (status() === 'done') setStatus('idle');
-          }, 1500);
-        }
-      } catch (err) {
-        setStatus('error');
-        setError(String(err));
-      }
-      return;
-    }
-
-    if (status() === 'idle' || status() === 'done' || status() === 'error') {
-      setError('');
-      setStatus('recording');
-      try {
-        await invoke('start_recording');
-      } catch (err) {
-        setStatus('error');
-        setError(String(err));
-      }
+      if (!(await startRecording())) isHolding = false;
+    } else if (status() === 'recording') {
+      await stopAndTranscribe();
+    } else if (status() === 'idle' || status() === 'done' || status() === 'error') {
+      await startRecording();
     }
   };
 
   const handleReleased = async () => {
     if (settings().hotkey_mode !== 'hold' || !isHolding) return;
-
     isHolding = false;
-    setStatus('transcribing');
-    try {
-      await invoke('stop_and_transcribe');
-      if (status() !== 'error') {
-        setStatus('done');
-        setTimeout(() => {
-          if (status() === 'done') setStatus('idle');
-        }, 1500);
-      }
-    } catch (err) {
-      setStatus('error');
-      setError(String(err));
-    }
+    await stopAndTranscribe();
   };
 
   const toggleMeetingRecording = async () => {
@@ -147,13 +136,9 @@ export default function App() {
       try {
         const meta = await invoke<MeetingMeta>('stop_meeting');
         lastStoppedMeetingId = meta.id;
-        setMeetingActive(false);
-        setMeetingId(null);
-        setMeetingElapsed(0);
+        endMeeting();
       } catch (err) {
-        setMeetingActive(false);
-        setMeetingId(null);
-        setMeetingElapsed(0);
+        endMeeting();
         if (!isDictating()) setStatus('error');
         setError(String(err));
       }
@@ -188,8 +173,7 @@ export default function App() {
       setMeetingId(meta.id);
       setMeetingElapsed(0);
     } catch (err) {
-      setStatus('error');
-      setError(String(err));
+      fail(err);
     }
   };
 
@@ -198,8 +182,8 @@ export default function App() {
       const result = await invoke<Settings>('get_settings');
       const merged = { ...DEFAULT_SETTINGS, ...result };
       setSettings(merged);
-      const registered = await registerHotkey(merged.hotkey);
-      const registeredMeeting = await registerMeetingHotkey(merged.meeting_hotkey);
+      const registered = await dictationHotkey.bind(merged.hotkey);
+      const registeredMeeting = await meetingHotkey.bind(merged.meeting_hotkey);
       if (!registered) {
         setError(hotkeyRegistrationMessage);
       } else if (!registeredMeeting) {
@@ -209,8 +193,8 @@ export default function App() {
       }
     } catch (err) {
       const settingsError = String(err);
-      const registered = await registerHotkey(DEFAULT_SETTINGS.hotkey);
-      const registeredMeeting = await registerMeetingHotkey(DEFAULT_SETTINGS.meeting_hotkey);
+      const registered = await dictationHotkey.bind(DEFAULT_SETTINGS.hotkey);
+      const registeredMeeting = await meetingHotkey.bind(DEFAULT_SETTINGS.meeting_hotkey);
       if (!registered || !registeredMeeting) {
         setError(`${settingsError}\n${hotkeyRegistrationMessage}`);
         return;
@@ -240,52 +224,30 @@ export default function App() {
   };
 
   onMount(async () => {
-    document.body.classList.add('window-main');
     await loadSettings();
 
     const unlistenDictation = await listen<DictationUpdate>('dictation:update', (event) => {
       const payload = event.payload;
       switch (payload.state) {
-        case 'recording': {
+        case 'recording':
+        case 'transcribing':
+        case 'formatting':
+        case 'pasting':
           setError('');
-          setStatus('recording');
+          setStatus(payload.state);
           break;
-        }
-        case 'transcribing': {
-          setError('');
-          setStatus('transcribing');
-          break;
-        }
-        case 'formatting': {
-          setError('');
-          setStatus('formatting');
-          break;
-        }
-        case 'pasting': {
-          setError('');
-          setStatus('pasting');
-          break;
-        }
-        case 'done': {
+        case 'done':
           isHolding = false;
-          setStatus('done');
-          setTimeout(() => {
-            if (status() === 'done') setStatus('idle');
-          }, 1500);
+          finish();
           break;
-        }
-        case 'error': {
+        case 'error':
           isHolding = false;
           setStatus('error');
           setError(payload.message ?? 'Error');
           break;
-        }
-        case 'idle':
-        default: {
+        default:
           isHolding = false;
           setStatus('idle');
-          break;
-        }
       }
     });
 
@@ -312,27 +274,16 @@ export default function App() {
         setMeetingElapsed(payload.elapsed_secs ?? meetingElapsed());
       } else if (payload.state === 'stopped' || payload.state === 'processing') {
         lastStoppedMeetingId = payload.meeting_id ?? meetingId();
-        setMeetingActive(false);
-        setMeetingId(null);
-        setMeetingElapsed(0);
+        endMeeting();
       } else if (payload.state === 'error') {
         lastStoppedMeetingId = payload.meeting_id ?? meetingId();
-        setMeetingActive(false);
-        setMeetingId(null);
-        setMeetingElapsed(0);
+        endMeeting();
         if (!isDictating()) setStatus('error');
         setError(payload.message ?? 'Meeting recording failed.');
-      } else if (
-        payload.state === 'transcribing' ||
-        payload.state === 'transcribed' ||
-        payload.state === 'transcription_error'
-      ) {
-        return;
       }
     });
 
     onCleanup(() => {
-      document.body.classList.remove('window-main');
       void unlistenDictation();
       void unlistenSettingsOpened();
       void unlistenSettingsClosed();
@@ -383,8 +334,8 @@ export default function App() {
   });
 
   onCleanup(() => {
-    if (registeredHotkey) void unregister(registeredHotkey);
-    if (registeredMeetingHotkey) void unregister(registeredMeetingHotkey);
+    dictationHotkey.release();
+    meetingHotkey.release();
   });
 
   return (

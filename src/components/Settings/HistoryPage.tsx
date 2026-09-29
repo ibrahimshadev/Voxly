@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import type { Accessor } from 'solid-js';
-import type { TranscriptionHistoryItem } from '../../types';
+import type { TranscriptionHistoryItem, TranscriptionHistoryStats } from '../../types';
 import {
   formatDurationHuman,
   formatTotalAudio,
@@ -20,34 +21,22 @@ import {
   BookOpen,
   CalendarDays,
   AudioLines,
-  Search,
   ChevronLeft,
   ChevronRight,
-  Mail,
-  Code,
   Pencil,
   Check,
   X,
 } from 'lucide-solid';
-import type { Component } from 'solid-js';
 
-import { MODE_NAME_COLORS } from '../../defaultModes';
-
-const MODE_NAME_LUCIDE: Record<string, Component<{ size: number }>> = {
-  'Clean Draft': Sparkles,
-  'Email Composer': Mail,
-  'Developer Mode': Code,
-  'Developer Log': Code,
-};
+import { builtinModeByName } from '../../defaultModes';
+import PageHeader, { StatChip } from './PageHeader';
 
 export type HistoryPageProps = {
   history: Accessor<TranscriptionHistoryItem[]>;
   currentPage: Accessor<number>;
   pageSize: number;
   totalCount: Accessor<number>;
-  todayCount: Accessor<number>;
-  todayAudioSecs: Accessor<number>;
-  totalAudioSecs: Accessor<number>;
+  stats: Accessor<TranscriptionHistoryStats>;
   searchQuery: Accessor<string>;
   onSearchQueryChange: (value: string) => void;
   onPageChange: (page: number) => void;
@@ -66,6 +55,8 @@ function HistoryItem(props: {
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal('');
   const [saving, setSaving] = createSignal(false);
+
+  const builtin = () => builtinModeByName(props.item.mode_name ?? '');
 
   const hasOriginalText = () =>
     props.item.original_text != null && props.item.original_text !== props.item.text;
@@ -212,13 +203,10 @@ function HistoryItem(props: {
           </div>
         </Show>
 
-        <div class={`flex items-center gap-1 ${MODE_NAME_COLORS[props.item.mode_name ?? ''] ?? ''}`}>
-          {(() => {
-            const name = props.item.mode_name;
-            if (!name) return <Mic size={12} />;
-            const Icon = MODE_NAME_LUCIDE[name];
-            return Icon ? <Icon size={12} /> : <Sparkles size={12} />;
-          })()}
+        <div class={`flex items-center gap-1 ${builtin()?.color.text ?? ''}`}>
+          <Show when={props.item.mode_name} fallback={<Mic size={12} />}>
+            <Dynamic component={builtin()?.icon ?? Sparkles} size={12} />
+          </Show>
           <span>{props.item.mode_name ?? 'Dictation'}</span>
         </div>
 
@@ -357,11 +345,7 @@ export default function HistoryPage(props: HistoryPageProps) {
 
   const dateGroups = createMemo(() => groupByDate(props.history()));
 
-  const entryCountLabel = createMemo(() => {
-    const total = props.totalCount();
-    if (hasSearch()) return total.toLocaleString();
-    return total.toLocaleString();
-  });
+  const entryCountLabel = () => props.totalCount().toLocaleString();
 
   const handleClearAll = () => {
     if (props.totalCount() === 0) return;
@@ -378,63 +362,47 @@ export default function HistoryPage(props: HistoryPageProps) {
 
   return (
     <div class="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div class="flex-none px-6 sm:px-10 py-5 border-b border-white/5">
-        <div class="max-w-4xl mx-auto w-full flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div class="flex items-baseline gap-4 min-w-0">
-            <h1 class="text-white text-3xl font-bold tracking-tight shrink-0">History</h1>
-            <div class="flex items-center gap-4 text-sm text-gray-400 border-l border-white/10 pl-4 overflow-hidden">
-              <div class="flex items-center gap-1.5 shrink-0" title="Total Entries">
-                <BookOpen size={14} class="text-primary" />
-                <span class="font-semibold text-white">{entryCountLabel()}</span>
-                <span class="hidden sm:inline">Entries</span>
-              </div>
-              <div class="flex items-center gap-1.5 shrink-0" title="Today's Entries">
-                <CalendarDays size={14} class="text-primary" />
-                <span class="font-semibold text-white">{props.todayCount()}</span>
-                <span class="hidden sm:inline">Today</span>
-              </div>
-              <Show when={props.todayAudioSecs() > 0}>
-                <div class="flex items-center gap-1.5 shrink-0" title="Today's Audio Duration">
-                  <Timer size={14} class="text-primary" />
-                  <span class="font-semibold text-white">{formatTotalAudio(props.todayAudioSecs())}</span>
-                  <span class="hidden lg:inline">Today Audio</span>
-                </div>
-              </Show>
-              <Show when={props.totalAudioSecs() > 0}>
-                <div class="flex items-center gap-1.5 shrink-0" title="Total Audio Duration">
-                  <AudioLines size={14} class="text-primary" />
-                  <span class="font-semibold text-white">{formatTotalAudio(props.totalAudioSecs())}</span>
-                </div>
-              </Show>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2 shrink-0">
-            <div class="relative w-full md:w-72 group">
-              <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 group-focus-within:text-primary transition-colors">
-                <Search size={16} />
-              </div>
-              <input
-                type="text"
-                value={props.searchQuery()}
-                onInput={(e) => props.onSearchQueryChange((e.target as HTMLInputElement).value)}
-                placeholder="Search transcriptions..."
-                class="block w-full p-2.5 pl-10 text-sm text-white bg-surface-dark border border-white/10 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary placeholder-gray-600 transition-all outline-none"
+      <PageHeader
+        title="History"
+        stats={
+          <>
+            <StatChip icon={BookOpen} value={entryCountLabel()} label="Entries" title="Total Entries" />
+            <StatChip icon={CalendarDays} value={props.stats().today_count} label="Today" title="Today's Entries" />
+            <Show when={props.stats().today_audio_secs > 0}>
+              <StatChip
+                icon={Timer}
+                value={formatTotalAudio(props.stats().today_audio_secs)}
+                label="Today Audio"
+                labelClass="hidden lg:inline"
+                title="Today's Audio Duration"
               />
-            </div>
-            <button
-              type="button"
-              disabled={props.totalCount() === 0}
-              onClick={handleClearAll}
-              class="p-2.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Clear all history"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
+            </Show>
+            <Show when={props.stats().total_audio_secs > 0}>
+              <StatChip
+                icon={AudioLines}
+                value={formatTotalAudio(props.stats().total_audio_secs)}
+                title="Total Audio Duration"
+              />
+            </Show>
+          </>
+        }
+        search={{
+          value: props.searchQuery(),
+          onInput: props.onSearchQueryChange,
+          placeholder: 'Search transcriptions...',
+          class: 'md:w-72',
+        }}
+      >
+        <button
+          type="button"
+          disabled={props.totalCount() === 0}
+          onClick={handleClearAll}
+          class="p-2.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Clear all history"
+        >
+          <Trash2 size={16} />
+        </button>
+      </PageHeader>
 
       {/* Content */}
       <Show

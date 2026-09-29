@@ -15,10 +15,6 @@ html, body {
   overflow: hidden;
 }
 
-body.window-main {
-  background: transparent;
-}
-
 /* Main container - draggable area */
 .app-container {
   display: flex;
@@ -271,18 +267,4 @@ body.window-main {
   color: #f87171;
   font-size: 16px;
   font-weight: bold;
-}
-
-/* Meetings: indeterminate saving bar (compositor-safe: transform only) */
-.meeting-progress-indeterminate {
-  animation: meeting-progress-slide 1.4s ease-in-out infinite;
-}
-
-@keyframes meeting-progress-slide {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(350%);
-  }
 }
