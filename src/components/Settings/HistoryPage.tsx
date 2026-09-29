@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import type { Accessor } from 'solid-js';
-import type { TranscriptionHistoryItem } from '../../types';
+import type { TranscriptionHistoryItem, TranscriptionHistoryStats } from '../../types';
 import {
   formatDurationHuman,
   formatTotalAudio,
@@ -45,9 +45,7 @@ export type HistoryPageProps = {
   currentPage: Accessor<number>;
   pageSize: number;
   totalCount: Accessor<number>;
-  todayCount: Accessor<number>;
-  todayAudioSecs: Accessor<number>;
-  totalAudioSecs: Accessor<number>;
+  stats: Accessor<TranscriptionHistoryStats>;
   searchQuery: Accessor<string>;
   onSearchQueryChange: (value: string) => void;
   onPageChange: (page: number) => void;
@@ -387,20 +385,20 @@ export default function HistoryPage(props: HistoryPageProps) {
               </div>
               <div class="flex items-center gap-1.5 shrink-0" title="Today's Entries">
                 <CalendarDays size={14} class="text-primary" />
-                <span class="font-semibold text-white">{props.todayCount()}</span>
+                <span class="font-semibold text-white">{props.stats().today_count}</span>
                 <span class="hidden sm:inline">Today</span>
               </div>
-              <Show when={props.todayAudioSecs() > 0}>
+              <Show when={props.stats().today_audio_secs > 0}>
                 <div class="flex items-center gap-1.5 shrink-0" title="Today's Audio Duration">
                   <Timer size={14} class="text-primary" />
-                  <span class="font-semibold text-white">{formatTotalAudio(props.todayAudioSecs())}</span>
+                  <span class="font-semibold text-white">{formatTotalAudio(props.stats().today_audio_secs)}</span>
                   <span class="hidden lg:inline">Today Audio</span>
                 </div>
               </Show>
-              <Show when={props.totalAudioSecs() > 0}>
+              <Show when={props.stats().total_audio_secs > 0}>
                 <div class="flex items-center gap-1.5 shrink-0" title="Total Audio Duration">
                   <AudioLines size={14} class="text-primary" />
-                  <span class="font-semibold text-white">{formatTotalAudio(props.totalAudioSecs())}</span>
+                  <span class="font-semibold text-white">{formatTotalAudio(props.stats().total_audio_secs)}</span>
                 </div>
               </Show>
             </div>

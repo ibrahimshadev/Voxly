@@ -9,8 +9,6 @@ export type ModesPageProps = {
   modes: Accessor<Mode[]>;
   activeModeId: Accessor<string | null>;
   modelsList: Accessor<string[]>;
-  modelsLoading: Accessor<boolean>;
-  modelsError: Accessor<string>;
   onUpdateMode: (id: string, field: keyof Mode, value: string) => void;
   onSetActiveModeId: (id: string | null) => void;
   onAddMode: () => void;
@@ -23,7 +21,6 @@ export type ModesPageProps = {
 function CollapsedModeCard(props: {
   mode: Mode;
   isActive: boolean;
-  isEditing: boolean;
   onEdit: () => void;
   onActivate: () => void;
   onDeactivate: () => void;
@@ -383,7 +380,6 @@ export default function ModesPage(props: ModesPageProps) {
                     <CollapsedModeCard
                       mode={mode()}
                       isActive={props.activeModeId() === mode().id}
-                      isEditing={false}
                       onEdit={() => setEditingModeId(mode().id)}
                       onActivate={() => props.onSetActiveModeId(mode().id)}
                       onDeactivate={() => props.onSetActiveModeId(null)}

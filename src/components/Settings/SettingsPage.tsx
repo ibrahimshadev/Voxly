@@ -14,7 +14,6 @@ type SettingsPageProps = {
   setSettings: Setter<Settings>;
   saving: Accessor<boolean>;
   onTest: () => void;
-  onSave: () => void;
   onSaveQuiet: () => void;
   onTestAndSave: () => void;
 };
