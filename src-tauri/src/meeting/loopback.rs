@@ -15,7 +15,8 @@ mod platform {
     };
 
     use super::{
-        frames_within_wav_limit, silence_frames_needed, GAP_TOLERANCE_FRAMES, SAMPLE_RATE,
+        frames_within_wav_limit, idle_padding_frames, silence_frames_needed, GAP_TOLERANCE_FRAMES,
+        SAMPLE_RATE, SILENCE_CHUNK_FRAMES,
     };
 
     pub struct LoopbackRecorder {
@@ -128,6 +129,11 @@ mod platform {
         // (mic/video) keeps recording and the mix pads the shorter track.
         while recording.load(Ordering::SeqCst) && !capture.wav_full {
             capture_available_packets(&mut capture)?;
+            // Keep up with an idle output on every wake-up (<= 100 ms apart) so
+            // resuming audio never waits behind a long burst of silence.
+            let elapsed = qpc_now_100ns()?.saturating_sub(capture.anchor_100ns);
+            let idle = idle_padding_frames(elapsed, capture.frames_written);
+            write_silence(&mut capture, idle)?;
             let _ = capture.event.wait_for_event(100);
         }
 
@@ -303,24 +309,34 @@ mod platform {
             }
 
             let frames = claim_frames(capture, u64::from(frames)) as usize;
-            let bytes = frames * capture.bytes_per_frame;
-            for sample in buffer[..bytes].chunks_exact(2) {
-                capture
-                    .writer
-                    .write_sample(i16::from_le_bytes([sample[0], sample[1]]))
-                    .map_err(|error| format!("Failed to write loopback sample: {error}"))?;
+            let bytes = &buffer[..frames * capture.bytes_per_frame];
+            let mut samples = capture.writer.get_i16_writer((bytes.len() / 2) as u32);
+            for sample in bytes.chunks_exact(2) {
+                samples.write_sample(i16::from_le_bytes([sample[0], sample[1]]));
             }
+            samples
+                .flush()
+                .map_err(|error| format!("Failed to write loopback samples: {error}"))?;
         }
         Ok(())
     }
 
+    // Buffered in chunks: per-sample `WavWriter::write_sample` is slow enough
+    // that a long gap would stall the capture thread.
     fn write_silence(capture: &mut ActiveLoopbackCapture, frames: u64) -> Result<(), String> {
-        let frames = claim_frames(capture, frames);
-        for _ in 0..frames * capture.channels as u64 {
-            capture
+        let mut remaining = claim_frames(capture, frames);
+        while remaining > 0 {
+            let chunk = remaining.min(SILENCE_CHUNK_FRAMES);
+            let mut samples = capture
                 .writer
-                .write_sample(0i16)
+                .get_i16_writer((chunk * capture.channels as u64) as u32);
+            for _ in 0..chunk * capture.channels as u64 {
+                samples.write_sample(0i16);
+            }
+            samples
+                .flush()
                 .map_err(|error| format!("Failed to write loopback silence: {error}"))?;
+            remaining -= chunk;
         }
         Ok(())
     }
@@ -405,6 +421,26 @@ fn frames_within_wav_limit(frames_written: u64, frames: u64) -> u64 {
     frames.min(MAX_WAV_FRAMES.saturating_sub(frames_written))
 }
 
+// Idle padding trails "now" by this much so it never covers audio that has
+// been captured but not yet handed over (the engine delivers every ~10 ms).
+#[cfg_attr(not(windows), allow(dead_code))]
+const IDLE_PAD_MARGIN_100NS: u64 = 1_000_000;
+// 100 ms per buffered silence write.
+#[cfg_attr(not(windows), allow(dead_code))]
+const SILENCE_CHUNK_FRAMES: u64 = SAMPLE_RATE as u64 / 10;
+
+/// Silence to write on a capture-loop wake-up with no pending packets, keeping
+/// the track within `IDLE_PAD_MARGIN_100NS` of wall-clock time while the output
+/// is idle. Zero while audio is flowing (the track is then ahead of the margin).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn idle_padding_frames(elapsed_100ns: u64, frames_written: u64) -> u64 {
+    silence_frames_needed(
+        elapsed_100ns.saturating_sub(IDLE_PAD_MARGIN_100NS),
+        frames_written,
+        0,
+    )
+}
+
 /// Frames of silence to write so the next frame lands `elapsed_100ns` (100 ns
 /// units since capture start) into the track, given `frames_written` so far.
 /// Deficits within `tolerance_frames` are ignored; a surplus is never trimmed.
@@ -479,6 +515,42 @@ mod tests {
     }
 
     #[test]
+    fn idle_padding_trails_wall_clock_by_the_margin() {
+        // 1 s into an idle capture: pad to 0.9 s.
+        assert_eq!(idle_padding_frames(SECOND_100NS, 0), 43_200);
+        assert_eq!(idle_padding_frames(IDLE_PAD_MARGIN_100NS / 2, 0), 0);
+    }
+
+    #[test]
+    fn idle_padding_is_zero_while_audio_flows() {
+        // Packets have delivered up to 10 ms ago.
+        assert_eq!(idle_padding_frames(SECOND_100NS, 47_520), 0);
+    }
+
+    #[test]
+    fn idle_padding_keeps_every_write_small_across_a_long_gap() {
+        // Ten idle minutes, waking every 100 ms.
+        let wake = SECOND_100NS / 10;
+        let mut written = 0;
+        let mut elapsed = 0;
+        while elapsed < 600 * SECOND_100NS {
+            elapsed += wake;
+            let frames = idle_padding_frames(elapsed, written);
+            assert!(frames <= 4_800, "{frames} frames at {elapsed}");
+            written += frames;
+        }
+        assert_eq!(
+            written,
+            (600 * SECOND_100NS - IDLE_PAD_MARGIN_100NS) * 48_000 / SECOND_100NS
+        );
+        // The next packet then only needs the margin filled.
+        assert_eq!(
+            silence_frames_needed(elapsed, written, GAP_TOLERANCE_FRAMES),
+            4_800
+        );
+    }
+
+    #[test]
     fn wav_limit_allows_writes_below_budget() {
         assert_eq!(frames_within_wav_limit(0, 480), 480);
         assert_eq!(frames_within_wav_limit(MAX_WAV_FRAMES - 480, 480), 480);
@@ -524,7 +596,14 @@ mod tests {
 
         for device in output_devices().unwrap() {
             let recorder = LoopbackRecorder::spawn(&path, Some(&device)).unwrap();
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            // Idle or not, the track is written as it goes, not only at stop.
+            let mid_bytes = std::fs::metadata(&path).unwrap().len();
+            assert!(
+                mid_bytes > u64::from(SAMPLE_RATE) * WAV_BYTES_PER_FRAME,
+                "{device}: only {mid_bytes} bytes after 2 s"
+            );
+            std::thread::sleep(std::time::Duration::from_secs(1));
             let elapsed = recorder.started_at().elapsed().as_secs_f64();
             recorder.stop().unwrap();
 
