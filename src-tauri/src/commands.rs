@@ -92,15 +92,15 @@ pub async fn test_connection(settings: AppSettings) -> Result<String, String> {
         return Err("Missing API key".to_string());
     }
 
-    if settings.base_url.trim().is_empty() {
+    if settings.prefs.base_url.trim().is_empty() {
         return Err("Missing base URL".to_string());
     }
 
-    if settings.model.trim().is_empty() {
+    if settings.prefs.model.trim().is_empty() {
         return Err("Missing model".to_string());
     }
 
-    let trimmed = settings.base_url.trim_end_matches('/');
+    let trimmed = settings.prefs.base_url.trim_end_matches('/');
     let url = format!("{trimmed}/models");
 
     let client = reqwest::Client::builder()
@@ -243,7 +243,7 @@ pub fn transcribe_meeting(
     state: State<'_, AppState>,
 ) -> Result<MeetingMeta, String> {
     let settings = state.manager.get_settings()?;
-    if !settings.meeting_consent_acknowledged {
+    if !settings.prefs.meeting_consent_acknowledged {
         return Err("Acknowledge meeting consent in Settings first.".to_string());
     }
     let api_key = settings.deepgram_api_key.trim().to_string();
@@ -251,10 +251,10 @@ pub fn transcribe_meeting(
         return Err("Add your Deepgram API key in Meeting settings.".to_string());
     }
     let options = crate::meeting::transcribe::DeepgramTranscriptionOptions {
-        keyterms: enabled_keyterms(&settings.keyterm_glossary),
-        language: crate::settings::normalize_meeting_language(&settings.meeting_language),
-        redact_pii: settings.deepgram_redaction_enabled && settings.deepgram_redact_pii,
-        redact_pci: settings.deepgram_redaction_enabled && settings.deepgram_redact_pci,
+        keyterms: enabled_keyterms(&settings.prefs.keyterm_glossary),
+        language: crate::settings::normalize_meeting_language(&settings.prefs.meeting_language),
+        redact_pii: settings.prefs.deepgram_redaction_enabled && settings.prefs.deepgram_redact_pii,
+        redact_pci: settings.prefs.deepgram_redaction_enabled && settings.prefs.deepgram_redact_pci,
     };
 
     let meta = crate::meeting::transcribe::begin(&id)?;

@@ -69,10 +69,10 @@ impl Transcriber for OpenAiCompatibleTranscriber {
         prompt: Option<&str>,
     ) -> Result<TranscriptionResult, String> {
         transcribe::transcribe(
-            &settings.base_url,
+            &settings.prefs.base_url,
             &settings.api_key,
-            &settings.model,
-            &settings.provider,
+            &settings.prefs.model,
+            &settings.prefs.provider,
             audio_wav,
             prompt,
         )

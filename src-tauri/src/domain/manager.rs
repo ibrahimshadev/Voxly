@@ -66,7 +66,7 @@ impl DictationSessionManager {
 
     pub fn save_vocabulary(&self, vocabulary: Vec<VocabularyEntry>) -> Result<(), String> {
         let mut settings = self.get_settings()?;
-        settings.vocabulary = vocabulary;
+        settings.prefs.vocabulary = vocabulary;
         self.save_settings(settings)
     }
 
@@ -124,7 +124,7 @@ impl DictationSessionManager {
                 .map_err(|_| "Settings lock poisoned".to_string())?
                 .clone();
 
-            let prompt = build_vocabulary_prompt(&settings.vocabulary);
+            let prompt = build_vocabulary_prompt(&settings.prefs.vocabulary);
             let transcription_result = self
                 .transcriber
                 .transcribe(&settings, wav_data, prompt.as_deref())
@@ -133,23 +133,26 @@ impl DictationSessionManager {
             let duration_secs = transcription_result.duration_secs.or(local_duration);
             let language = transcription_result.language;
 
-            let text =
-                apply_vocabulary_replacements(&transcription_result.text, &settings.vocabulary);
+            let text = apply_vocabulary_replacements(
+                &transcription_result.text,
+                &settings.prefs.vocabulary,
+            );
 
             let mut mode_name: Option<String> = None;
             let mut original_text: Option<String> = None;
 
             let active_mode = settings
+                .prefs
                 .active_mode_id
                 .as_ref()
-                .and_then(|mode_id| settings.modes.iter().find(|m| &m.id == mode_id));
+                .and_then(|mode_id| settings.prefs.modes.iter().find(|m| &m.id == mode_id));
             let text = if let Some(mode) = active_mode {
                 let _ = self.set_state(DictationState::Formatting);
                 on_update(DictationUpdate::new(DictationState::Formatting));
                 match self
                     .formatter
                     .format(
-                        &settings.base_url,
+                        &settings.prefs.base_url,
                         &settings.api_key,
                         &mode.model,
                         &mode.system_prompt,
@@ -193,7 +196,7 @@ impl DictationSessionManager {
             on_update(DictationUpdate::new(DictationState::Pasting));
 
             self.paster.paste(&format!("{text} "))?;
-            if settings.copy_to_clipboard_on_success {
+            if settings.prefs.copy_to_clipboard_on_success {
                 if let Err(copy_err) = self.paster.copy(&text) {
                     eprintln!("Failed to copy transcript to clipboard: {copy_err}");
                 }

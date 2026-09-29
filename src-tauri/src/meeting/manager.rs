@@ -46,7 +46,7 @@ impl MeetingSessionManager {
         settings: &AppSettings,
         mut options: MeetingStartOptions,
     ) -> Result<MeetingMeta, String> {
-        if !settings.meeting_consent_acknowledged {
+        if !settings.prefs.meeting_consent_acknowledged {
             return Err(
                 "Acknowledge meeting recording consent in Settings before recording.".to_string(),
             );
@@ -61,13 +61,13 @@ impl MeetingSessionManager {
         }
 
         if options.video_preset.trim().is_empty() {
-            options.video_preset = settings.meeting_video_preset.clone();
+            options.video_preset = settings.prefs.meeting_video_preset.clone();
         }
         if options.mic_device.is_none() {
-            options.mic_device = settings.meeting_mic_device.clone();
+            options.mic_device = settings.prefs.meeting_mic_device.clone();
         }
         if options.system_audio_device.is_none() {
-            options.system_audio_device = settings.meeting_system_audio_device.clone();
+            options.system_audio_device = settings.prefs.meeting_system_audio_device.clone();
         }
         if options.record_system_audio
             && options

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -83,19 +82,6 @@ pub struct AppSettings {
     pub summary_api_key: String,
     #[serde(default)]
     pub summary_provider_api_keys: HashMap<String, String>,
-}
-
-impl Deref for AppSettings {
-    type Target = Preferences;
-    fn deref(&self) -> &Preferences {
-        &self.prefs
-    }
-}
-
-impl DerefMut for AppSettings {
-    fn deref_mut(&mut self) -> &mut Preferences {
-        &mut self.prefs
-    }
 }
 
 /// On-disk shape of settings.json: preferences plus encrypted API keys.
@@ -218,7 +204,8 @@ pub fn load_settings() -> AppSettings {
                 }
 
                 settings.prefs = stored.prefs;
-                settings.meeting_language = normalize_meeting_language(&settings.meeting_language);
+                settings.prefs.meeting_language =
+                    normalize_meeting_language(&settings.prefs.meeting_language);
                 for (provider, encrypted) in stored.encrypted_provider_api_keys {
                     if let Some(decrypted) = decrypt_api_key(&encrypted) {
                         settings.provider_api_keys.insert(provider, decrypted);
@@ -236,11 +223,15 @@ pub fn load_settings() -> AppSettings {
         }
     }
 
-    if let Some(provider_key) = settings.provider_api_keys.get(&settings.provider).cloned() {
+    if let Some(provider_key) = settings
+        .provider_api_keys
+        .get(&settings.prefs.provider)
+        .cloned()
+    {
         settings.api_key = provider_key;
     } else if let Some(api_key) = get_key(API_KEY) {
         if !api_key.trim().is_empty() {
-            let provider = settings.provider.clone();
+            let provider = settings.prefs.provider.clone();
             settings.provider_api_keys.insert(provider, api_key.clone());
         }
         settings.api_key = api_key;
@@ -248,7 +239,7 @@ pub fn load_settings() -> AppSettings {
 
     if let Some(summary_key) = settings
         .summary_provider_api_keys
-        .get(&settings.summary_provider)
+        .get(&settings.prefs.summary_provider)
         .cloned()
     {
         settings.summary_api_key = summary_key;
@@ -258,8 +249,8 @@ pub fn load_settings() -> AppSettings {
         settings.deepgram_api_key = api_key;
     }
 
-    if should_seed_default_modes && settings.modes.is_empty() {
-        settings.modes = default_modes(&settings.provider);
+    if should_seed_default_modes && settings.prefs.modes.is_empty() {
+        settings.prefs.modes = default_modes(&settings.prefs.provider);
     }
 
     settings
@@ -282,9 +273,9 @@ pub fn normalize_meeting_language(value: &str) -> String {
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     let mut provider_api_keys = settings.provider_api_keys.clone();
     if settings.api_key.trim().is_empty() {
-        provider_api_keys.remove(&settings.provider);
+        provider_api_keys.remove(&settings.prefs.provider);
     } else {
-        provider_api_keys.insert(settings.provider.clone(), settings.api_key.clone());
+        provider_api_keys.insert(settings.prefs.provider.clone(), settings.api_key.clone());
     }
 
     let mut encrypted_provider_api_keys = HashMap::new();
@@ -297,10 +288,10 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
 
     let mut summary_provider_api_keys = settings.summary_provider_api_keys.clone();
     if settings.summary_api_key.trim().is_empty() {
-        summary_provider_api_keys.remove(&settings.summary_provider);
+        summary_provider_api_keys.remove(&settings.prefs.summary_provider);
     } else {
         summary_provider_api_keys.insert(
-            settings.summary_provider.clone(),
+            settings.prefs.summary_provider.clone(),
             settings.summary_api_key.clone(),
         );
     }
@@ -638,7 +629,7 @@ mod tests {
             }),
         );
         let parsed: AppSettings = serde_json::from_value(from_frontend.clone()).unwrap();
-        assert_eq!(parsed.provider, "openai");
+        assert_eq!(parsed.prefs.provider, "openai");
         assert_eq!(serde_json::to_value(&parsed).unwrap(), from_frontend);
     }
 }

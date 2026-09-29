@@ -105,7 +105,8 @@ fn acquire_in_flight(id: &str) -> Result<InFlightGuard, String> {
 }
 
 pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, String> {
-    let provider = non_empty(&settings.summary_provider).unwrap_or_else(|| "groq".to_string());
+    let provider =
+        non_empty(&settings.prefs.summary_provider).unwrap_or_else(|| "groq".to_string());
 
     let api_key = non_empty(&settings.summary_api_key)
         .or_else(|| {
@@ -124,7 +125,7 @@ pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, S
                 .get("groq")
                 .and_then(|key| non_empty(key))
                 .or_else(|| {
-                    if settings.provider == "groq" {
+                    if settings.prefs.provider == "groq" {
                         non_empty(&settings.api_key)
                     } else {
                         None
@@ -141,10 +142,10 @@ pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, S
         _ => None,
     };
     let missing = || "Set a base URL and model under Meetings → AI Summary.".to_string();
-    let base_url = non_empty(&settings.summary_base_url)
+    let base_url = non_empty(&settings.prefs.summary_base_url)
         .or_else(|| defaults.map(|(base_url, _)| base_url.to_string()))
         .ok_or_else(missing)?;
-    let model = non_empty(&settings.summary_model)
+    let model = non_empty(&settings.prefs.summary_model)
         .or_else(|| defaults.map(|(_, model)| model.to_string()))
         .ok_or_else(missing)?;
 
@@ -415,7 +416,7 @@ mod tests {
 
     fn settings_with(provider: &str, api_key: &str, groq_map_key: Option<&str>) -> AppSettings {
         let mut settings = AppSettings::default();
-        settings.provider = provider.to_string();
+        settings.prefs.provider = provider.to_string();
         settings.api_key = api_key.to_string();
         settings.provider_api_keys.clear();
         if let Some(key) = groq_map_key {
@@ -454,7 +455,7 @@ mod tests {
         api_key: &str,
         map_key: Option<&str>,
     ) -> AppSettings {
-        settings.summary_provider = provider.to_string();
+        settings.prefs.summary_provider = provider.to_string();
         settings.summary_api_key = api_key.to_string();
         settings.summary_provider_api_keys.clear();
         if let Some(key) = map_key {
@@ -535,8 +536,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = "  ".to_string();
-        settings.summary_model = String::new();
+        settings.prefs.summary_base_url = "  ".to_string();
+        settings.prefs.summary_model = String::new();
         let config = resolve_summary_config(&settings).unwrap();
         assert_eq!(config.base_url, "https://api.openai.com/v1");
         assert_eq!(config.model, "gpt-5.4-mini");
@@ -550,8 +551,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = String::new();
-        settings.summary_model = "some-model".to_string();
+        settings.prefs.summary_base_url = String::new();
+        settings.prefs.summary_model = "some-model".to_string();
         assert!(resolve_summary_config(&settings)
             .unwrap_err()
             .contains("base URL"));
@@ -565,8 +566,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = String::new();
-        settings.summary_model = "  ".to_string();
+        settings.prefs.summary_base_url = String::new();
+        settings.prefs.summary_model = "  ".to_string();
         let config = resolve_summary_config(&settings).unwrap();
         assert_eq!(config.base_url, "https://api.groq.com/openai/v1");
         assert_eq!(config.model, "openai/gpt-oss-120b");
@@ -580,8 +581,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = "http://localhost:11434/v1".to_string();
-        settings.summary_model = String::new();
+        settings.prefs.summary_base_url = "http://localhost:11434/v1".to_string();
+        settings.prefs.summary_model = String::new();
         assert!(resolve_summary_config(&settings).is_err());
     }
 

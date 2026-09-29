@@ -275,8 +275,8 @@ fn create_default_manager() -> DictationSessionManager {
 #[test]
 fn test_get_settings_returns_loaded_settings() {
     let mut settings = AppSettings::default();
-    settings.model = "test-model".to_string();
-    settings.base_url = "https://test.api".to_string();
+    settings.prefs.model = "test-model".to_string();
+    settings.prefs.base_url = "https://test.api".to_string();
 
     let manager = create_manager(
         MockRecorder::new(),
@@ -286,8 +286,8 @@ fn test_get_settings_returns_loaded_settings() {
     );
 
     let result = manager.get_settings().unwrap();
-    assert_eq!(result.model, "test-model");
-    assert_eq!(result.base_url, "https://test.api");
+    assert_eq!(result.prefs.model, "test-model");
+    assert_eq!(result.prefs.base_url, "https://test.api");
 }
 
 #[test]
@@ -295,12 +295,12 @@ fn test_save_settings_updates_store_and_memory() {
     let manager = create_default_manager();
 
     let mut new_settings = AppSettings::default();
-    new_settings.model = "new-model".to_string();
+    new_settings.prefs.model = "new-model".to_string();
 
     manager.save_settings(new_settings.clone()).unwrap();
 
     let loaded = manager.get_settings().unwrap();
-    assert_eq!(loaded.model, "new-model");
+    assert_eq!(loaded.prefs.model, "new-model");
 }
 
 #[test]
@@ -317,10 +317,10 @@ fn test_save_vocabulary_updates_store_and_memory() {
     manager.save_vocabulary(vocabulary).unwrap();
 
     let loaded = manager.get_settings().unwrap();
-    assert_eq!(loaded.vocabulary.len(), 1);
-    assert_eq!(loaded.vocabulary[0].word, "Claude Code");
-    assert_eq!(loaded.vocabulary[0].replacements[0], "cloud code");
-    assert!(loaded.vocabulary[0].enabled);
+    assert_eq!(loaded.prefs.vocabulary.len(), 1);
+    assert_eq!(loaded.prefs.vocabulary[0].word, "Claude Code");
+    assert_eq!(loaded.prefs.vocabulary[0].replacements[0], "cloud code");
+    assert!(loaded.prefs.vocabulary[0].enabled);
 }
 
 // ============================================================================
@@ -486,8 +486,8 @@ async fn test_stop_and_process_handles_recorder_stop_failure() {
 #[tokio::test]
 async fn test_stop_and_process_emits_formatting_when_mode_active() {
     let mut settings = AppSettings::default();
-    settings.active_mode_id = Some("mode-1".to_string());
-    settings.modes = vec![Mode {
+    settings.prefs.active_mode_id = Some("mode-1".to_string());
+    settings.prefs.modes = vec![Mode {
         id: "mode-1".to_string(),
         name: "Formatter".to_string(),
         system_prompt: "Format this".to_string(),
@@ -521,8 +521,8 @@ async fn test_stop_and_process_emits_formatting_when_mode_active() {
 #[tokio::test]
 async fn test_stop_and_process_falls_back_when_formatting_fails() {
     let mut settings = AppSettings::default();
-    settings.active_mode_id = Some("mode-1".to_string());
-    settings.modes = vec![Mode {
+    settings.prefs.active_mode_id = Some("mode-1".to_string());
+    settings.prefs.modes = vec![Mode {
         id: "mode-1".to_string(),
         name: "Formatter".to_string(),
         system_prompt: "Format this".to_string(),
