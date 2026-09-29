@@ -1,22 +1,11 @@
 import { For, Show, onMount, onCleanup } from 'solid-js';
 import type { Accessor } from 'solid-js';
-import type { Mode, Tab } from '../../types';
+import type { Mode } from '../../types';
 import { DEFAULT_MODES, MODE_COLORS, MODE_ICONS } from '../../defaultModes';
-
-export type HistoryStats = {
-  filteredCount: number;
-  totalCount: number;
-  todayCount: number;
-  weekCount: number;
-  latestAt: number | null;
-  totalAudioSecs: number;
-  averageAudioSecs: number;
-};
 
 type AudioLevel = { rms_db: number; peak_db: number };
 
 type RightPanelProps = {
-  activeTab: Accessor<Tab>;
   modes: Accessor<Mode[]>;
   activeModeId: Accessor<string | null>;
   onSetActiveModeId: (id: string | null) => void;
@@ -136,7 +125,7 @@ function MicVisualizer(props: { audioLevel: Accessor<AudioLevel | null> }) {
 }
 
 // ── Settings right panel ─────────────────────────────────────────────
-function SettingsPanel(props: RightPanelProps) {
+export default function RightPanel(props: RightPanelProps) {
   const panelModes = () =>
     PANEL_MODE_IDS.map((id) =>
       props.modes().find((mode) => mode.id === id) ?? DEFAULT_MODES.find((mode) => mode.id === id)!
@@ -197,38 +186,8 @@ function SettingsPanel(props: RightPanelProps) {
         </For>
       </div>
 
-      {/* Enhancements (disabled) */}
-      {false && (
-        <div class="mb-auto">
-          <h3 class="text-xs font-semibold text-gray-500 mb-4 px-1">ENHANCEMENTS</h3>
-          <div class="bg-surface-dark rounded-xl border border-white/5 p-4 space-y-4">
-            {/* Auto-Punctuation */}
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-gray-300">Auto-Punctuation</span>
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input checked type="checkbox" class="sr-only peer" />
-                <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
-              </label>
-            </div>
-
-            {/* Vocabulary Boost */}
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-gray-300">Vocabulary Boost</span>
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" class="sr-only peer" />
-                <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Mic Visualizer */}
       <MicVisualizer audioLevel={props.audioLevel} />
     </div>
   );
-}
-
-export default function RightPanel(props: RightPanelProps) {
-  return <SettingsPanel {...props} />;
 }

@@ -879,7 +879,6 @@ export default function SettingsApp() {
         onTabChange={switchToTab}
         rightPanel={isFullBleedTab() ? undefined : (
           <RightPanel
-            activeTab={activeTab}
             modes={() => settings().modes}
             activeModeId={() => settings().active_mode_id}
             onSetActiveModeId={setActiveModeId}

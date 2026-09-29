@@ -80,9 +80,8 @@ export type TranscriptionHistoryStats = {
 };
 
 export type DictationUpdate = {
-  state: 'idle' | 'recording' | 'transcribing' | 'formatting' | 'pasting' | 'done' | 'error';
+  state: Status;
   message?: string;
-  text?: string;
 };
 
 export type MeetingStatus = 'recording' | 'processing' | 'recorded' | 'error';
@@ -101,8 +100,6 @@ export type MeetingMeta = {
   status: MeetingStatus;
   transcript_status?: TranscriptStatus;
   transcript_error?: string;
-  assemblyai_transcript_id?: string;
-  transcript_started_at_ms?: number;
 };
 
 export type Utterance = {
@@ -110,14 +107,11 @@ export type Utterance = {
   text: string;
   start_ms: number;
   end_ms: number;
-  confidence?: number;
 };
 
 export type MeetingTranscript = {
   utterances: Utterance[];
   text: string;
-  audio_duration_secs?: number;
-  language_code?: string;
   provider: string;
   created_at_ms: number;
   speaker_names?: Record<string, string>;
@@ -128,7 +122,6 @@ export type MeetingSummary = {
   model: string;
   provider: string;
   created_at_ms: number;
-  transcript_created_at_ms?: number;
 };
 
 export type MeetingDetail = {
@@ -141,9 +134,7 @@ export type MeetingDetail = {
 export type MeetingDevices = {
   audio_devices: string[];
   system_audio_devices: string[];
-  video_devices: string[];
   has_system_audio: boolean;
-  ffmpeg_available: boolean;
   message?: string;
 };
 

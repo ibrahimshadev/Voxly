@@ -357,11 +357,7 @@ export default function HistoryPage(props: HistoryPageProps) {
 
   const dateGroups = createMemo(() => groupByDate(props.history()));
 
-  const entryCountLabel = createMemo(() => {
-    const total = props.totalCount();
-    if (hasSearch()) return total.toLocaleString();
-    return total.toLocaleString();
-  });
+  const entryCountLabel = () => props.totalCount().toLocaleString();
 
   const handleClearAll = () => {
     if (props.totalCount() === 0) return;

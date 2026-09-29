@@ -9,7 +9,6 @@
   --color-surface-dark: #111111;
   --color-surface-hover: #1a1e23;
   --color-border-dark: #333333;
-  --color-accent-dark: #1c1c1c;
   --color-sidebar: #0d0e12;
   --color-input-bg: #0a0a0a;
 
@@ -32,11 +31,6 @@
 /* Material Symbols — match Google Fonts CDN defaults */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-}
-
-/* Filled icon variant for inline metadata */
-.icon-meta {
-  font-variation-settings: 'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 20;
 }
 
 /* Scrollbar hide utility */
@@ -161,7 +155,6 @@ input[type="range"]::-webkit-slider-runnable-track {
   --color-sidebar: #f8f9fb;
   --color-input-bg: #f8f8f8;
   --color-border-dark: #e0e0e0;
-  --color-accent-dark: #f0f0f0;
 
   /* Flip white → near-black (affects text-white, bg-white/*, border-white/*) */
   --color-white: #1a1a1a;
