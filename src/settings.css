@@ -44,6 +44,30 @@ select {
   scrollbar-width: none;
 }
 
+/* Bottom fade on a scroll container while more content lies below. The mask
+   exists only inside a scroll-driven animation, so it is absent (not merely
+   opaque) when there is nothing to scroll; over the last stretch of scrolling
+   the fade shrinks to nothing. Paint-only: no layout changes. */
+@property --scroll-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes scroll-fade-bottom {
+  0%, 90% {
+    --scroll-fade: 32px;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent);
+  }
+  100% {
+    --scroll-fade: 0px;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent);
+  }
+}
+.scroll-fade-bottom {
+  animation: scroll-fade-bottom linear both;
+  animation-timeline: scroll(self);
+}
+
 /* Grid dot pattern (extracted from inline style for theme override) */
 .grid-dots {
   background-image: radial-gradient(#ffffff 1px, transparent 1px);
