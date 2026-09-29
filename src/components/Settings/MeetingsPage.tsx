@@ -468,7 +468,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
           title="Drag to resize"
         />
         <section class="min-h-0 flex flex-col border-r border-white/5 bg-background-dark overflow-hidden">
-          <div class="@container min-h-0 overflow-y-auto scrollbar-hide border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
+          <div class="min-h-0 flex flex-col border-b border-white/5 bg-surface-dark/70">
+          <div class="@container min-h-0 overflow-y-auto scrollbar-hide scroll-fade-bottom p-4 lg:p-5">
             <div class="space-y-3">
               <Show
                 when={!props.settings().meeting_consent_acknowledged}
@@ -839,6 +840,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                 </div>
               </Show>
             </div>
+          </div>
           </div>
 
           <div class="shrink-0 border-b border-border-dark bg-surface-dark px-4 py-3 flex items-center justify-between">
