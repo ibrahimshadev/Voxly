@@ -14,6 +14,8 @@ use crate::meeting::types::{MeetingStartOptions, MeetingUpdate};
 const MEETING_AUDIO_GAIN_FILTER: &str = "volume=2.0";
 const MEETING_MIC_GAIN_FILTER: &str = "volume=3.0";
 const MEETING_AUDIO_LIMITER_FILTER: &str = "alimiter=limit=0.95";
+/// Trailing silence appended to transcript-audio.m4a.
+pub const TRANSCRIPT_AUDIO_TAIL_PAD_SECS: u32 = 3;
 // Last-resort ceiling for the recording FFmpeg after `q`. Killing it mid-
 // finalization corrupts the file, so this must comfortably cover faststart
 // rewrites of multi-GB captures; finalization runs off the main thread.
@@ -429,7 +431,7 @@ fn combined_post_filter(system_audio_offset_ms: i64) -> String {
 [mic_mix][sys_mix]amix=inputs=2:duration=longest:normalize=0,{MEETING_AUDIO_LIMITER_FILTER}[aout];\
 [mic_tr]pan=stereo|c0=c0[mt];\
 [sys_tr]pan=stereo|c1=0.5*c0+0.5*c1[st];\
-[mt][st]amix=inputs=2:duration=longest:normalize=0,apad=pad_dur=3[tout]"
+[mt][st]amix=inputs=2:duration=longest:normalize=0,apad=pad_dur={TRANSCRIPT_AUDIO_TAIL_PAD_SECS}[tout]"
     )
 }
 

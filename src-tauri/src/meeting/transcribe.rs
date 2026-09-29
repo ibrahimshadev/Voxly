@@ -229,8 +229,11 @@ async fn transcript_audio_is_truncated(
     Ok(truncated)
 }
 
+// The track always ends in the recorder's tail pad (before and after the
+// truncation fix), which is not recorded audio.
 fn is_truncated(transcript_secs: f64, recording_secs: f64) -> bool {
-    recording_secs - transcript_secs > TRUNCATED_TRANSCRIPT_AUDIO_SECS
+    let recorded_secs = transcript_secs - f64::from(recorder::TRANSCRIPT_AUDIO_TAIL_PAD_SECS);
+    recording_secs - recorded_secs > TRUNCATED_TRANSCRIPT_AUDIO_SECS
 }
 
 // Only the ffmpeg binary is bundled (no ffprobe); `ffmpeg -i` with no output
@@ -1113,9 +1116,18 @@ Metadata:\n    major_brand     : isom\n  Duration: 00:07:29.53, start: 0.000000,
     fn transcript_audio_is_truncated_only_beyond_threshold() {
         // A fixed recording's track is the mix length + 3 s pad.
         assert!(!is_truncated(18.0, 15.0));
-        assert!(!is_truncated(46.0, 50.2));
+        // Container rounding / video running slightly past the audio.
+        assert!(!is_truncated(52.5, 50.23));
         // The measured pre-fix cases: 43.8 s of a 49.7 s meeting, 3.4 s of 15 s.
-        assert!(is_truncated(43.8, 50.2));
+        assert!(is_truncated(43.83, 50.23));
         assert!(is_truncated(3.37, 15.0));
+    }
+
+    #[test]
+    fn transcript_audio_tail_pad_does_not_count_as_recorded_audio() {
+        // 6 s of recorded audio missing, hidden by the 3 s pad: 47 s + 3 s vs 53 s.
+        assert!(is_truncated(50.0, 53.0));
+        // Just inside the 5 s threshold once the pad is removed.
+        assert!(!is_truncated(51.5, 53.0));
     }
 }
