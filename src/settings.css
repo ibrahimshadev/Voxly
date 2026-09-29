@@ -50,6 +50,20 @@ select {
   background-size: 24px 24px;
 }
 
+/* Meetings: indeterminate saving bar (transform only) */
+.meeting-progress-indeterminate {
+  animation: meeting-progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes meeting-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
 /* Custom range slider styling */
 input[type="range"] {
   -webkit-appearance: none;
