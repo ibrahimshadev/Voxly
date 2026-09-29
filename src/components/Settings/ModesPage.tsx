@@ -5,6 +5,7 @@ import type { Mode } from '../../types';
 import { builtinMode } from '../../defaultModes';
 import { Plus, Pencil, Trash2, Save, Layers, RotateCcw, SlidersHorizontal } from 'lucide-solid';
 import { Select } from './controls';
+import PageHeader, { StatChip } from './PageHeader';
 
 export type ModesPageProps = {
   modes: Accessor<Mode[]>;
@@ -287,46 +288,34 @@ export default function ModesPage(props: ModesPageProps) {
 
   return (
     <div class="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div class="flex-none px-6 sm:px-10 py-5 border-b border-white/5">
-        <div class="max-w-4xl mx-auto w-full flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div class="flex flex-col gap-2">
-            <div class="flex items-baseline gap-4">
-              <h1 class="text-white text-3xl font-bold tracking-tight">Modes</h1>
-              <div class="flex items-center gap-1.5 text-sm text-gray-400 border-l border-white/10 pl-4">
-                <Layers size={14} class="text-primary" />
-                <span class="font-semibold text-white">{props.modes().length}</span>
-                <span class="hidden sm:inline">configured</span>
-              </div>
-            </div>
-            <p class="text-zinc-500 text-sm">AI-powered transcription formatting configurations.</p>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm('Reset all modes to defaults? This will replace your current modes.')) {
-                  setEditingModeId(null);
-                  props.onResetModes();
-                }
-              }}
-              class="px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1.5"
-              title="Reset to default modes"
-            >
-              <RotateCcw size={14} />
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={handleNewMode}
-              class="px-4 py-2.5 rounded-lg text-sm font-semibold text-black bg-primary hover:bg-primary-dark transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <Plus size={16} />
-              New Mode
-            </button>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Modes"
+        stats={<StatChip icon={Layers} value={props.modes().length} label="configured" />}
+        subtitle="AI-powered transcription formatting configurations."
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm('Reset all modes to defaults? This will replace your current modes.')) {
+              setEditingModeId(null);
+              props.onResetModes();
+            }
+          }}
+          class="px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1.5"
+          title="Reset to default modes"
+        >
+          <RotateCcw size={14} />
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={handleNewMode}
+          class="px-4 py-2.5 rounded-lg text-sm font-semibold text-black bg-primary hover:bg-primary-dark transition-colors cursor-pointer flex items-center gap-1.5"
+        >
+          <Plus size={16} />
+          New Mode
+        </button>
+      </PageHeader>
 
       {/* Content */}
       <Show

@@ -3,7 +3,6 @@ import type { Accessor, Setter } from 'solid-js';
 import type { VocabularyEntry } from '../../types';
 import { MAX_VOCABULARY_ENTRIES, MAX_REPLACEMENTS_PER_ENTRY } from '../../constants';
 import {
-  Search,
   BookOpen,
   Plus,
   Pencil,
@@ -12,6 +11,7 @@ import {
   X,
 } from 'lucide-solid';
 import { SwitchKnob } from './controls';
+import PageHeader, { StatChip } from './PageHeader';
 
 export type DictionaryPageProps = {
   entries: Accessor<VocabularyEntry[]>;
@@ -193,51 +193,32 @@ export default function DictionaryPage(props: DictionaryPageProps) {
 
   return (
     <div class="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div class="flex-none px-6 sm:px-10 py-5 border-b border-white/5">
-        <div class="max-w-4xl mx-auto w-full flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div class="flex items-baseline gap-4 min-w-0">
-            <h1 class="text-white text-3xl font-bold tracking-tight shrink-0">Dictionary</h1>
-            <div class="flex items-center gap-4 text-sm text-gray-400 border-l border-white/10 pl-4 overflow-hidden">
-              <div class="flex items-center gap-1.5 shrink-0" title="Total Words">
-                <BookOpen size={14} class="text-primary" />
-                <span class="font-semibold text-white">{props.entries().length}</span>
-                <span class="hidden sm:inline">words</span>
-              </div>
-              <div class="flex items-center gap-1.5 shrink-0" title="Active Entries">
-                <Check size={14} class="text-primary" />
-                <span class="font-semibold text-white">{activeCount()}</span>
-                <span class="hidden sm:inline">active</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2 shrink-0">
-            <div class="relative w-full md:w-64 group">
-              <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500 group-focus-within:text-primary transition-colors">
-                <Search size={16} />
-              </div>
-              <input
-                type="text"
-                value={searchQuery()}
-                onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
-                placeholder="Search words..."
-                class="block w-full p-2.5 pl-10 text-sm text-white bg-surface-dark border border-white/10 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary placeholder-gray-600 transition-all outline-none"
-              />
-            </div>
-            <button
-              type="button"
-              disabled={atMax()}
-              onClick={props.onOpenCreate}
-              class="px-4 py-2.5 rounded-lg text-sm font-semibold text-black bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
-              title={atMax() ? `Maximum ${MAX_VOCABULARY_ENTRIES} entries reached` : 'Add a new word'}
-            >
-              <Plus size={16} />
-              Add Word
-            </button>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Dictionary"
+        stats={
+          <>
+            <StatChip icon={BookOpen} value={props.entries().length} label="words" title="Total Words" />
+            <StatChip icon={Check} value={activeCount()} label="active" title="Active Entries" />
+          </>
+        }
+        search={{
+          value: searchQuery(),
+          onInput: setSearchQuery,
+          placeholder: 'Search words...',
+          class: 'md:w-64',
+        }}
+      >
+        <button
+          type="button"
+          disabled={atMax()}
+          onClick={props.onOpenCreate}
+          class="px-4 py-2.5 rounded-lg text-sm font-semibold text-black bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+          title={atMax() ? `Maximum ${MAX_VOCABULARY_ENTRIES} entries reached` : 'Add a new word'}
+        >
+          <Plus size={16} />
+          Add Word
+        </button>
+      </PageHeader>
 
       {/* Content */}
       <Show
