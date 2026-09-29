@@ -13,7 +13,6 @@ use crate::meeting::types::{
 
 const SOURCE_FILE: &str = "recording.mp4";
 const TRANSCRIPT_AUDIO_FILE: &str = "transcript-audio.m4a";
-const STALE_PENDING_TRANSCRIPT_MS: i64 = 6 * 60 * 60 * 1000;
 static STORAGE_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock() -> Result<MutexGuard<'static, ()>, String> {
@@ -89,12 +88,7 @@ pub fn load_index_reconciled(
     let mut changed = reconcile_orphaned_recordings(&mut items, live_ids, ended_at_ms, |id| {
         Ok(file_size(&source_path(id)?))
     })?;
-    changed |= reconcile_stale_pending_transcripts(
-        &mut items,
-        ended_at_ms,
-        &transcribing,
-        transcript_exists,
-    )?;
+    changed |= reconcile_stale_pending_transcripts(&mut items, &transcribing, transcript_exists)?;
 
     if changed {
         save_index(&items)?;
@@ -348,7 +342,6 @@ pub fn file_size(path: &Path) -> Option<u64> {
 
 fn reconcile_stale_pending_transcripts<F>(
     items: &mut [MeetingMeta],
-    now_ms: i64,
     transcribing_ids: &HashSet<String>,
     mut transcript_exists: F,
 ) -> Result<bool, String>
@@ -382,22 +375,13 @@ where
             continue;
         }
 
-        // No transcript was ever saved: fall back to interrupted/timeout handling.
-        let Some(started_at_ms) = item.transcript_started_at_ms else {
-            item.transcript_status = Some(TranscriptStatus::Error);
-            item.transcript_error =
-                Some("Transcription was interrupted. Retry to start again.".to_string());
-            changed = true;
-            continue;
-        };
-        if now_ms.saturating_sub(started_at_ms) > STALE_PENDING_TRANSCRIPT_MS {
-            item.transcript_status = Some(TranscriptStatus::Error);
-            item.transcript_error = Some(
-                "Transcription did not complete before the app stopped. Retry to start again."
-                    .to_string(),
-            );
-            changed = true;
-        }
+        // No transcript was ever saved. The run is provably dead (it registers before
+        // `begin` writes `pending`, and this check runs under the same storage lock),
+        // so make it retryable now rather than after a timeout.
+        item.transcript_status = Some(TranscriptStatus::Error);
+        item.transcript_error =
+            Some("Transcription was interrupted. Retry to start again.".to_string());
+        changed = true;
     }
 
     Ok(changed)
@@ -533,20 +517,16 @@ mod tests {
     }
 
     #[test]
-    fn stale_pending_transcript_without_saved_transcript_is_marked_error() {
+    fn dead_pending_transcript_without_saved_transcript_is_marked_error_immediately() {
+        // Crashed mid-upload a moment ago: no timeout, the user can retry right away.
         let mut items = vec![MeetingMeta {
             transcript_status: Some(TranscriptStatus::Pending),
             transcript_started_at_ms: Some(1_000),
             ..meta("pending", MeetingStatus::Recorded)
         }];
 
-        let changed = reconcile_stale_pending_transcripts(
-            &mut items,
-            1_000 + STALE_PENDING_TRANSCRIPT_MS + 1,
-            &live(&[]),
-            |_| Ok(false),
-        )
-        .unwrap();
+        let changed =
+            reconcile_stale_pending_transcripts(&mut items, &live(&[]), |_| Ok(false)).unwrap();
 
         assert!(changed);
         assert!(matches!(
@@ -573,8 +553,7 @@ mod tests {
         }];
 
         let changed =
-            reconcile_stale_pending_transcripts(&mut items, 6_000, &live(&[]), |_| Ok(true))
-                .unwrap();
+            reconcile_stale_pending_transcripts(&mut items, &live(&[]), |_| Ok(true)).unwrap();
 
         assert!(changed);
         assert!(matches!(
@@ -595,8 +574,7 @@ mod tests {
         }];
 
         let changed =
-            reconcile_stale_pending_transcripts(&mut items, 2_000, &live(&[]), |_| Ok(true))
-                .unwrap();
+            reconcile_stale_pending_transcripts(&mut items, &live(&[]), |_| Ok(true)).unwrap();
 
         assert!(changed);
         assert!(matches!(
@@ -616,10 +594,28 @@ mod tests {
         }];
 
         let changed =
-            reconcile_stale_pending_transcripts(&mut items, 6_000, &live(&["pending"]), |_| {
-                Ok(true)
-            })
-            .unwrap();
+            reconcile_stale_pending_transcripts(&mut items, &live(&["pending"]), |_| Ok(true))
+                .unwrap();
+
+        assert!(!changed);
+        assert!(matches!(
+            items[0].transcript_status,
+            Some(TranscriptStatus::Pending)
+        ));
+    }
+
+    #[test]
+    fn in_flight_pending_without_transcript_is_left_untouched() {
+        // A first transcription still uploading: no transcript yet, but registered.
+        let mut items = vec![MeetingMeta {
+            transcript_status: Some(TranscriptStatus::Pending),
+            transcript_started_at_ms: Some(5_000),
+            ..meta("pending", MeetingStatus::Recorded)
+        }];
+
+        let changed =
+            reconcile_stale_pending_transcripts(&mut items, &live(&["pending"]), |_| Ok(false))
+                .unwrap();
 
         assert!(!changed);
         assert!(matches!(
