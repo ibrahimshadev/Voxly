@@ -81,7 +81,11 @@ impl MeetingSessionManager {
             options.system_audio_device = None;
         }
 
-        if options.record_system_audio && !crate::meeting::loopback::system_audio_available() {
+        if options.record_system_audio
+            && crate::meeting::loopback::output_devices()
+                .unwrap_or_default()
+                .is_empty()
+        {
             return Err(
                 "No Windows playback output is available for system-audio capture.".to_string(),
             );

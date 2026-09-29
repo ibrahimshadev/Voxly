@@ -1,6 +1,6 @@
 #[cfg(windows)]
 mod platform {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc,
@@ -44,21 +44,19 @@ mod platform {
                 result
             });
 
-            match rx.recv_timeout(Duration::from_secs(3)) {
-                Ok(Ok(started_at)) => Ok(Self {
+            let started = rx
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap_or_else(|_| Err("Timed out starting WASAPI loopback capture".to_string()));
+            match started {
+                Ok(started_at) => Ok(Self {
                     recording,
                     handle: Some(handle),
                     started_at,
                 }),
-                Ok(Err(error)) => {
+                Err(error) => {
                     recording.store(false, Ordering::SeqCst);
                     let _ = handle.join();
                     Err(error)
-                }
-                Err(_) => {
-                    recording.store(false, Ordering::SeqCst);
-                    let _ = handle.join();
-                    Err("Timed out starting WASAPI loopback capture".to_string())
                 }
             }
         }
@@ -256,19 +254,11 @@ mod platform {
             .or_else(|_| initialize_sta().ok())
             .map_err(|error| format!("Failed to initialize Windows audio: {error}"))
     }
-
-    pub fn system_audio_available() -> bool {
-        !output_devices().unwrap_or_default().is_empty()
-    }
-
-    pub fn temp_system_audio_path(base: &Path) -> PathBuf {
-        base.join("system-audio.wav")
-    }
 }
 
 #[cfg(not(windows))]
 mod platform {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::Instant;
 
     pub struct LoopbackRecorder;
@@ -295,14 +285,12 @@ mod platform {
     pub fn output_devices() -> Result<Vec<String>, String> {
         Ok(Vec::new())
     }
-
-    pub fn system_audio_available() -> bool {
-        false
-    }
-
-    pub fn temp_system_audio_path(base: &Path) -> PathBuf {
-        base.join("system-audio.wav")
-    }
 }
 
+use std::path::{Path, PathBuf};
+
 pub use platform::*;
+
+pub fn temp_system_audio_path(base: &Path) -> PathBuf {
+    base.join("system-audio.wav")
+}

@@ -7,31 +7,27 @@ use crate::meeting::recorder::{ffmpeg_available, ffmpeg_program, hidden_command}
 use crate::meeting::types::MeetingDevices;
 
 pub fn list_devices(app: &AppHandle) -> MeetingDevices {
-    let cpal_audio_devices = cpal_input_devices();
+    let audio_devices = cpal_input_devices();
     let system_audio_devices = crate::meeting::loopback::output_devices().unwrap_or_default();
-    let available = ffmpeg_available(app);
-    if !available {
-        return MeetingDevices {
-            audio_devices: cpal_audio_devices,
-            system_audio_devices: system_audio_devices.clone(),
-            has_system_audio: !system_audio_devices.is_empty(),
-            ffmpeg_available: false,
-            message: Some(
-                "FFmpeg was not found. Audio devices were loaded from Windows, but screen/mic recording still needs FFmpeg on PATH or VOXLY_FFMPEG."
-                    .to_string(),
-            ),
-            ..Default::default()
-        };
+    let mut devices = MeetingDevices {
+        audio_devices,
+        has_system_audio: !system_audio_devices.is_empty(),
+        system_audio_devices,
+        ffmpeg_available: ffmpeg_available(app),
+        ..Default::default()
+    };
+    if !devices.ffmpeg_available {
+        devices.message = Some(
+            "FFmpeg was not found. Audio devices were loaded from Windows, but screen/mic recording still needs FFmpeg on PATH or VOXLY_FFMPEG."
+                .to_string(),
+        );
+        return devices;
     }
 
     if !cfg!(windows) {
-        return MeetingDevices {
-            audio_devices: cpal_audio_devices,
-            system_audio_devices,
-            ffmpeg_available: true,
-            message: Some("Meeting recording is currently wired for Windows only.".to_string()),
-            ..Default::default()
-        };
+        devices.message =
+            Some("Meeting recording is currently wired for Windows only.".to_string());
+        return devices;
     }
 
     let output = hidden_command(ffmpeg_program(app))
@@ -49,35 +45,21 @@ pub fn list_devices(app: &AppHandle) -> MeetingDevices {
         .output();
 
     let Ok(output) = output else {
-        return MeetingDevices {
-            audio_devices: cpal_audio_devices,
-            system_audio_devices: system_audio_devices.clone(),
-            has_system_audio: !system_audio_devices.is_empty(),
-            ffmpeg_available: true,
-            message: Some("Could not list DirectShow devices.".to_string()),
-            ..Default::default()
-        };
+        devices.message = Some("Could not list DirectShow devices.".to_string());
+        return devices;
     };
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let (mut audio_devices, video_devices) = parse_dshow_devices(&stderr);
-    for device in cpal_audio_devices {
+    for device in std::mem::take(&mut devices.audio_devices) {
         push_unique(&mut audio_devices, device);
     }
-    let has_system_audio = !system_audio_devices.is_empty();
-
-    MeetingDevices {
-        audio_devices,
-        system_audio_devices,
-        video_devices,
-        has_system_audio,
-        ffmpeg_available: true,
-        message: if stderr.trim().is_empty() {
-            Some("FFmpeg returned no DirectShow device output.".to_string())
-        } else {
-            None
-        },
+    devices.audio_devices = audio_devices;
+    devices.video_devices = video_devices;
+    if stderr.trim().is_empty() {
+        devices.message = Some("FFmpeg returned no DirectShow device output.".to_string());
     }
+    devices
 }
 
 fn cpal_input_devices() -> Vec<String> {
