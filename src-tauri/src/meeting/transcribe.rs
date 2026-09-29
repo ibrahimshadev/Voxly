@@ -20,6 +20,9 @@ const DEEPGRAM_UTT_SPLIT_SECS: &str = "1.5";
 const TURN_MERGE_MAX_GAP_MS: i64 = 1_500;
 const TURN_MERGE_MAX_DURATION_MS: i64 = 30_000;
 const TURN_MERGE_MAX_CHARS: usize = 650;
+// Recordings made before the transcript-track fix lost up to minutes of audio
+// in transcript-audio.m4a; beyond this shortfall the full mix is uploaded instead.
+const TRUNCATED_TRANSCRIPT_AUDIO_SECS: f64 = 5.0;
 
 #[derive(Debug, Clone, Default)]
 pub struct DeepgramTranscriptionOptions {
@@ -182,7 +185,9 @@ struct AudioUpload {
 
 async fn prepare_audio_upload(app: &AppHandle, id: &str) -> Result<AudioUpload, String> {
     let transcript_audio = storage::transcript_audio_path(id)?;
-    if transcript_audio.exists() {
+    if transcript_audio.exists()
+        && !transcript_audio_is_truncated(app, id, &transcript_audio).await?
+    {
         return Ok(AudioUpload {
             path: transcript_audio,
             multichannel: true,
@@ -193,6 +198,61 @@ async fn prepare_audio_upload(app: &AppHandle, id: &str) -> Result<AudioUpload, 
         path: extract_audio(app, id).await?,
         multichannel: false,
     })
+}
+
+/// Whether the dual-channel track is materially shorter than the recording's
+/// mix (older recordings cut it to the system-audio length). The mono mix is
+/// then the only complete source; it loses the mic/system channel split but
+/// Deepgram still diarizes it. Unknown durations keep the dual-channel track.
+async fn transcript_audio_is_truncated(
+    app: &AppHandle,
+    id: &str,
+    transcript_audio: &Path,
+) -> Result<bool, String> {
+    let recording = storage::source_path(id)?;
+    let (Some(transcript_secs), Some(recording_secs)) = (
+        media_duration_secs(app, transcript_audio).await,
+        media_duration_secs(app, &recording).await,
+    ) else {
+        eprintln!(
+            "Meeting {id}: could not read media durations; uploading the dual-channel transcript audio"
+        );
+        return Ok(false);
+    };
+    let truncated = is_truncated(transcript_secs, recording_secs);
+    if truncated {
+        eprintln!(
+            "Meeting {id}: transcript audio is {transcript_secs:.1}s but the recording is \
+{recording_secs:.1}s; transcribing the recording's full audio mix instead"
+        );
+    }
+    Ok(truncated)
+}
+
+fn is_truncated(transcript_secs: f64, recording_secs: f64) -> bool {
+    recording_secs - transcript_secs > TRUNCATED_TRANSCRIPT_AUDIO_SECS
+}
+
+// Only the ffmpeg binary is bundled (no ffprobe); `ffmpeg -i` with no output
+// prints the container duration and exits non-zero, which is expected here.
+async fn media_duration_secs(app: &AppHandle, path: &Path) -> Option<f64> {
+    let ffmpeg = recorder::ffmpeg_program(app);
+    let output = tokio::process::Command::from(recorder::hidden_command(&ffmpeg))
+        .args(["-hide_banner", "-i"])
+        .arg(path)
+        .output()
+        .await
+        .ok()?;
+    parse_ffmpeg_duration(&String::from_utf8_lossy(&output.stderr))
+}
+
+fn parse_ffmpeg_duration(stderr: &str) -> Option<f64> {
+    let value = stderr.split("Duration:").nth(1)?.split(',').next()?.trim();
+    let mut parts = value.split(':');
+    let hours: f64 = parts.next()?.parse().ok()?;
+    let minutes: f64 = parts.next()?.parse().ok()?;
+    let seconds: f64 = parts.next()?.parse().ok()?;
+    Some(hours * 3_600.0 + minutes * 60.0 + seconds)
 }
 
 async fn extract_audio(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
@@ -759,9 +819,10 @@ impl std::fmt::Display for ApiError {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_deepgram_query_params, letter_for_index, merge_adjacent_utterances, parse_deepgram,
-        should_retry, DeepgramAlternative, DeepgramChannel, DeepgramMetadata, DeepgramResponse,
-        DeepgramResults, DeepgramTranscriptionOptions, DeepgramUtterance,
+        build_deepgram_query_params, is_truncated, letter_for_index, merge_adjacent_utterances,
+        parse_deepgram, parse_ffmpeg_duration, should_retry, DeepgramAlternative, DeepgramChannel,
+        DeepgramMetadata, DeepgramResponse, DeepgramResults, DeepgramTranscriptionOptions,
+        DeepgramUtterance,
     };
     use crate::meeting::types::Utterance;
 
@@ -1029,5 +1090,32 @@ mod tests {
             None,
         );
         assert!(should_retry(&error));
+    }
+
+    #[test]
+    fn parse_ffmpeg_duration_reads_container_duration() {
+        let stderr = "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'recording.mp4':\n  \
+Metadata:\n    major_brand     : isom\n  Duration: 00:07:29.53, start: 0.000000, bitrate: 312 kb/s\n";
+        assert_eq!(parse_ffmpeg_duration(stderr), Some(449.53));
+        assert_eq!(
+            parse_ffmpeg_duration("  Duration: 01:00:00.00, start: 0"),
+            Some(3_600.0)
+        );
+    }
+
+    #[test]
+    fn parse_ffmpeg_duration_rejects_missing_or_unknown_duration() {
+        assert_eq!(parse_ffmpeg_duration("No such file or directory"), None);
+        assert_eq!(parse_ffmpeg_duration("  Duration: N/A, bitrate: N/A"), None);
+    }
+
+    #[test]
+    fn transcript_audio_is_truncated_only_beyond_threshold() {
+        // A fixed recording's track is the mix length + 3 s pad.
+        assert!(!is_truncated(18.0, 15.0));
+        assert!(!is_truncated(46.0, 50.2));
+        // The measured pre-fix cases: 43.8 s of a 49.7 s meeting, 3.4 s of 15 s.
+        assert!(is_truncated(43.8, 50.2));
+        assert!(is_truncated(3.37, 15.0));
     }
 }
