@@ -59,7 +59,7 @@ fn main() {
                     "reset_position" => {
                         if let Some(window) = app.get_webview_window("main") {
                             commands::ensure_main_visible(&window);
-                            let _ = commands::position_window_bottom_internal(&window);
+                            let _ = commands::position_window_bottom(&window);
                         }
                     }
                     _ => {}
@@ -86,7 +86,7 @@ fn main() {
             // Position window at bottom center, enable per-pixel hit testing
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_icon(icon);
-                let _ = commands::position_window_bottom_internal(&window);
+                let _ = commands::position_window_bottom(&window);
                 click_through::setup(&window);
             }
             crate::audio_preprocess::init(app.handle());
@@ -111,7 +111,6 @@ fn main() {
             commands::save_settings,
             commands::save_vocabulary,
             commands::test_connection,
-            commands::position_window_bottom,
             commands::show_settings_window,
             commands::hide_settings_window,
             commands::update_hit_region,

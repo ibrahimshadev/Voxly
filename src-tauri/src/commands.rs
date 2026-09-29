@@ -363,11 +363,6 @@ pub fn list_meeting_devices(
 }
 
 #[tauri::command]
-pub fn position_window_bottom(window: WebviewWindow) -> Result<(), String> {
-    position_window_bottom_internal(&window)
-}
-
-#[tauri::command]
 pub fn show_settings_window(app: AppHandle) -> Result<(), String> {
     show_settings_window_internal(&app)
 }
@@ -424,95 +419,27 @@ pub fn hide_settings_window_internal(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn position_window_bottom_internal(window: &WebviewWindow) -> Result<(), String> {
+pub fn position_window_bottom(window: &WebviewWindow) -> Result<(), String> {
     let window_size = window.outer_size().map_err(|e| e.to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or("No monitor found")?;
 
-    // Prefer platform work-area APIs (Windows taskbar-aware). Fallback to monitor bounds.
-    let (left, top, right, bottom) = work_area_bounds(window)?;
-    let work_width = (right - left) as f64;
-    let work_height = (bottom - top) as f64;
-    let window_width = window_size.width as f64;
-    let window_height = window_size.height as f64;
+    // Windows: the taskbar-aware work area. Elsewhere: the full monitor bounds.
+    #[cfg(target_os = "windows")]
+    let (position, size) = (monitor.work_area().position, monitor.work_area().size);
+    #[cfg(not(target_os = "windows"))]
+    let (position, size) = (*monitor.position(), *monitor.size());
 
-    let x = left as f64 + (work_width - window_width) / 2.0;
-    let y = top as f64 + work_height - window_height - 10.0;
+    let x = position.x as f64 + (size.width as f64 - window_size.width as f64) / 2.0;
+    let y = position.y as f64 + size.height as f64 - window_size.height as f64 - 10.0;
 
     window
         .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
         .map_err(|e| e.to_string())?;
 
     Ok(())
-}
-
-fn work_area_bounds(window: &WebviewWindow) -> Result<(i32, i32, i32, i32), String> {
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or("No monitor found")?;
-
-    let monitor_size = monitor.size();
-    let monitor_pos = monitor.position();
-
-    let monitor_bounds = (
-        monitor_pos.x,
-        monitor_pos.y,
-        monitor_pos.x + monitor_size.width as i32,
-        monitor_pos.y + monitor_size.height as i32,
-    );
-
-    #[cfg(target_os = "windows")]
-    if let Some((left, top, right, bottom)) = windows_work_area() {
-        if rect_inside_rect(
-            left,
-            top,
-            right,
-            bottom,
-            monitor_bounds.0,
-            monitor_bounds.1,
-            monitor_bounds.2,
-            monitor_bounds.3,
-        ) {
-            return Ok((left, top, right, bottom));
-        }
-    }
-
-    Ok(monitor_bounds)
-}
-
-#[cfg(target_os = "windows")]
-fn rect_inside_rect(
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
-    outer_left: i32,
-    outer_top: i32,
-    outer_right: i32,
-    outer_bottom: i32,
-) -> bool {
-    left >= outer_left && top >= outer_top && right <= outer_right && bottom <= outer_bottom
-}
-
-#[cfg(target_os = "windows")]
-fn windows_work_area() -> Option<(i32, i32, i32, i32)> {
-    use windows::Win32::Foundation::RECT;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    };
-
-    let mut rect = RECT::default();
-    let result = unsafe {
-        SystemParametersInfoW(
-            SPI_GETWORKAREA,
-            0,
-            Some(&mut rect as *mut _ as _),
-            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-        )
-    };
-    if result.is_err() {
-        return None;
-    }
-    Some((rect.left, rect.top, rect.right, rect.bottom))
 }
 
 const MAX_EXPORT_FILE_NAME_CHARS: usize = 100;

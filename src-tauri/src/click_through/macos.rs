@@ -7,9 +7,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Whether the subclass has been applied (only do it once).
 static SUBCLASS_APPLIED: AtomicBool = AtomicBool::new(false);
 
-/// Window height in CSS points, used for Y-flip (NSView is Y-up, CSS is Y-down).
-static WINDOW_HEIGHT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 /// Override `hitTest:` on the content view to enable per-pixel click-through.
 /// Returns nil (transparent) for points outside interactive rects, original result otherwise.
 extern "C" fn hit_test_override(
@@ -26,7 +23,7 @@ extern "C" fn hit_test_override(
         let css_x = point.x;
         let css_y = view_height - point.y;
 
-        if super::point_in_hit_region_css(css_x, css_y) {
+        if super::point_in_hit_region(css_x, css_y, 1.0) {
             // Interactive area — call superclass hitTest:
             let superclass: *const AnyClass = msg_send![this, superclass];
             let result: *mut AnyObject = msg_send![super(this, &*superclass), hitTest: point];
@@ -41,14 +38,6 @@ extern "C" fn hit_test_override(
 pub fn setup(window: &tauri::WebviewWindow) {
     if SUBCLASS_APPLIED.swap(true, Ordering::SeqCst) {
         return; // Already applied
-    }
-
-    // Store window height for Y-flip calculations
-    if let Ok(size) = window.inner_size() {
-        if let Ok(scale) = window.scale_factor() {
-            let height_points = size.height as f64 / scale;
-            WINDOW_HEIGHT.store(height_points.to_bits(), Ordering::Relaxed);
-        }
     }
 
     unsafe {

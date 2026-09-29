@@ -21,13 +21,7 @@ pub fn rebuild_input_shape(window: &tauri::WebviewWindow) {
     let rects = super::HIT_RECTS.lock().unwrap();
     let scale = *super::SCALE_FACTOR.lock().unwrap();
 
-    if rects.is_empty() {
-        // No interactive regions — entire window is transparent to input
-        let empty_region = cairo::Region::create();
-        gdk_window.input_shape_combine_region(&empty_region, 0, 0);
-        return;
-    }
-
+    // No rects leaves the region empty: the entire window is transparent to input.
     let region = cairo::Region::create();
     for rect in rects.iter() {
         let r = cairo::RectangleInt::new(
