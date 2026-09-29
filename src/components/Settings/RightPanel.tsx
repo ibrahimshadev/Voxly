@@ -1,6 +1,7 @@
 import { For, Show, onMount, onCleanup } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import type { Mode } from '../../types';
+import { Mic, MicOff } from 'lucide-solid';
 import { BUILTIN_MODES } from '../../defaultModes';
 
 type AudioLevel = { rms_db: number; peak_db: number };
@@ -98,9 +99,9 @@ function MicVisualizer(props: { audioLevel: Accessor<AudioLevel | null> }) {
             Live Input
           </span>
         </Show>
-        <span class={`material-symbols-outlined text-[16px] ${isActive() ? 'text-primary' : 'text-gray-600'}`}>
-          {isActive() ? 'mic' : 'mic_off'}
-        </span>
+        <Show when={isActive()} fallback={<MicOff size={24} class="text-gray-600" />}>
+          <Mic size={24} class="text-primary" />
+        </Show>
       </div>
       <div class="h-16 w-full bg-input-bg rounded-lg border border-white/10 flex items-center justify-center gap-[2px] overflow-hidden px-4">
         {BAR_WEIGHTS.map((_, i) => (
@@ -167,7 +168,9 @@ export default function RightPanel(props: RightPanelProps) {
                   <span class={`font-semibold transition-colors text-left ${modeActive() ? 'text-white group-hover:text-primary' : 'text-gray-300 group-hover:text-white'}`}>
                     {mode().name}
                   </span>
-                  <Icon size={24} class={`${builtin.color.bg} ${builtin.color.text} rounded-md px-1.5 py-0.5`} />
+                  <span class={`${builtin.color.bg} ${builtin.color.text} rounded-md px-1.5 py-0.5`}>
+                    <Icon size={24} />
+                  </span>
                 </div>
                 <p class={`text-xs leading-relaxed text-left ${modeActive() ? 'text-gray-400' : 'text-gray-500'}`}>
                   {promptPreview(mode().system_prompt)}

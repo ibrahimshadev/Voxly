@@ -2,7 +2,7 @@ import { Show, For, createSignal } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
 import type { Settings, Provider } from '../../types';
 import { PROVIDER_IDS, PROVIDERS } from '../../constants';
-import { CircleCheck } from 'lucide-solid';
+import { Box, ChevronDown, CircleCheck, Eye, EyeOff, Key, Link2 } from 'lucide-solid';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import Select from './Select';
 import ProviderIcon from './ProviderIcon';
@@ -139,9 +139,7 @@ export default function SettingsPage(props: SettingsPageProps) {
               <div class="space-y-1.5">
                 <label class="text-xs text-gray-500 font-medium ml-1">BASE URL</label>
                 <div class="relative">
-                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 material-symbols-outlined text-[18px]">
-                    link
-                  </span>
+                  <Link2 size={24} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
                   <input
                     class="w-full bg-input-bg border border-white/15 rounded-lg py-2 pl-10 pr-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
                     type="text"
@@ -156,9 +154,7 @@ export default function SettingsPage(props: SettingsPageProps) {
               <div class="space-y-1.5">
                 <label class="text-xs text-gray-500 font-medium ml-1">MODEL ID</label>
                 <div class="relative">
-                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 material-symbols-outlined text-[18px] z-10 pointer-events-none">
-                    view_in_ar
-                  </span>
+                  <Box size={24} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 z-10 pointer-events-none" />
                   <Show
                     when={props.settings().provider !== 'custom'}
                     fallback={
@@ -177,9 +173,7 @@ export default function SettingsPage(props: SettingsPageProps) {
                       onChange={(value) => props.setSettings((current) => ({ ...current, model: value }))}
                       class="pl-10 pr-8 font-mono"
                     />
-                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 material-symbols-outlined text-[18px] pointer-events-none z-10">
-                      arrow_drop_down
-                    </span>
+                    <ChevronDown size={24} class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none z-10" />
                   </Show>
                 </div>
               </div>
@@ -200,9 +194,7 @@ export default function SettingsPage(props: SettingsPageProps) {
                 </Show>
               </div>
               <div class="relative">
-                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 material-symbols-outlined text-[18px]">
-                  key
-                </span>
+                <Key size={24} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
                 <input
                   class="w-full bg-input-bg border border-white/15 rounded-lg py-2 pl-10 pr-10 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
                   type={showApiKey() ? 'text' : 'password'}
@@ -215,9 +207,9 @@ export default function SettingsPage(props: SettingsPageProps) {
                   onClick={() => setShowApiKey((v) => !v)}
                   class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-300 rounded hover:bg-white/5 transition-colors"
                 >
-                  <span class="material-symbols-outlined text-[18px] leading-none">
-                    {showApiKey() ? 'visibility' : 'visibility_off'}
-                  </span>
+                  <Show when={showApiKey()} fallback={<EyeOff size={24} />}>
+                    <Eye size={24} />
+                  </Show>
                 </button>
               </div>
               <Show

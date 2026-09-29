@@ -1,3 +1,4 @@
+import { Server } from 'lucide-solid';
 import type { Provider } from '../../types';
 
 const GroqIcon = (props: { class?: string }) => (
@@ -16,7 +17,7 @@ const OpenAIIcon = (props: { class?: string }) => (
 export default function ProviderIcon(props: { provider: Provider; active: boolean; class: string }) {
   const color = () => (props.active ? 'text-primary' : 'text-gray-400');
   if (props.provider === 'custom') {
-    return <span class={`material-symbols-outlined text-2xl ${color()}`}>dns</span>;
+    return <Server size={24} class={color()} />;
   }
   const Mark = props.provider === 'groq' ? GroqIcon : OpenAIIcon;
   return <Mark class={`${props.class} ${color()}`} />;

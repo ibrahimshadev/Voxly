@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
-@import "material-symbols/outlined.css";
 
 @theme {
   --color-primary: #10b77f;
@@ -26,11 +25,6 @@
   --font-display: "Inter Variable", "Inter", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
-}
-
-/* Material Symbols — match Google Fonts CDN defaults */
-.material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
 /* Scrollbar hide utility */
