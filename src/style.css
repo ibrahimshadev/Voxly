@@ -15,10 +15,6 @@ html, body {
   overflow: hidden;
 }
 
-body.window-main {
-  background: transparent;
-}
-
 /* Main container - draggable area */
 .app-container {
   display: flex;
