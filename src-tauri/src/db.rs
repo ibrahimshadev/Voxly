@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
-#[cfg(test)]
-use rusqlite::OptionalExtension;
 use rusqlite::{params, Connection};
 
 use crate::meeting::types::{MeetingMeta, MeetingStatus, MeetingTranscript, TranscriptStatus};
@@ -20,15 +18,14 @@ static DB: Lazy<Result<Mutex<Connection>, String>> = Lazy::new(|| {
 });
 
 pub fn app_data_dir() -> Result<PathBuf, String> {
-    #[cfg(test)]
-    {
-        if let Ok(dir) = std::env::var("DIKT_TEST_APP_DATA_DIR") {
-            return Ok(PathBuf::from(dir));
-        }
-        return Ok(std::env::temp_dir().join(format!("dikt-test-{}", std::process::id())));
+    if cfg!(test) {
+        return Ok(std::env::var("DIKT_TEST_APP_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::env::temp_dir().join(format!("dikt-test-{}", std::process::id()))
+            }));
     }
 
-    #[cfg(not(test))]
     let base_dir = if let Ok(appdata) = std::env::var("APPDATA") {
         PathBuf::from(appdata)
     } else if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
@@ -39,7 +36,6 @@ pub fn app_data_dir() -> Result<PathBuf, String> {
         std::env::temp_dir()
     };
 
-    #[cfg(not(test))]
     Ok(base_dir.join("dikt"))
 }
 
@@ -157,25 +153,9 @@ fn ensure_history_columns(conn: &Connection) -> Result<(), String> {
 }
 
 fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
-    let mut stmt = conn
-        .prepare(&format!("PRAGMA table_info({table})"))
-        .map_err(|error| format!("Failed to inspect {table} columns: {error}"))?;
-    let mut rows = stmt
-        .query([])
-        .map_err(|error| format!("Failed to inspect {table} columns: {error}"))?;
-    while let Some(row) = rows
-        .next()
-        .map_err(|error| format!("Failed to read {table} columns: {error}"))?
-    {
-        // PRAGMA table_info columns: cid(0), name(1), type(2), notnull(3), dflt_value(4), pk(5)
-        let name: String = row
-            .get(1)
-            .map_err(|error| format!("Failed to read {table} column name: {error}"))?;
-        if name == column {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    conn.prepare("SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2")
+        .and_then(|mut stmt| stmt.exists(params![table, column]))
+        .map_err(|error| format!("Failed to inspect {table} columns: {error}"))
 }
 
 fn migrate_json_if_needed(conn: &mut Connection, app_dir: &Path) -> Result<(), String> {
@@ -359,9 +339,9 @@ pub fn upsert_meeting_meta(conn: &Connection, meta: &MeetingMeta) -> Result<(), 
             meta.started_at_ms,
             meta.ended_at_ms,
             meta.duration_secs,
-            bool_to_i64(meta.has_video),
-            bool_to_i64(meta.has_mic),
-            bool_to_i64(meta.has_system_audio),
+            meta.has_video,
+            meta.has_mic,
+            meta.has_system_audio,
             meta.file_size_bytes.map(|value| value as i64),
             meeting_status_to_str(&meta.status),
             meta.transcript_status
@@ -386,9 +366,9 @@ pub fn meeting_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MeetingMeta
         started_at_ms: row.get("started_at_ms")?,
         ended_at_ms: row.get("ended_at_ms")?,
         duration_secs: row.get("duration_secs")?,
-        has_video: row.get::<_, i64>("has_video")? != 0,
-        has_mic: row.get::<_, i64>("has_mic")? != 0,
-        has_system_audio: row.get::<_, i64>("has_system_audio")? != 0,
+        has_video: row.get("has_video")?,
+        has_mic: row.get("has_mic")?,
+        has_system_audio: row.get("has_system_audio")?,
         file_size_bytes: file_size_bytes.map(|value| value as u64),
         status: meeting_status_from_str(&status).unwrap_or(MeetingStatus::Error),
         transcript_status: transcript_status
@@ -398,14 +378,6 @@ pub fn meeting_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MeetingMeta
         assemblyai_transcript_id: row.get("assemblyai_transcript_id")?,
         transcript_started_at_ms: row.get("transcript_started_at_ms")?,
     })
-}
-
-fn bool_to_i64(value: bool) -> i64 {
-    if value {
-        1
-    } else {
-        0
-    }
 }
 
 fn meeting_status_to_str(status: &MeetingStatus) -> &'static str {
@@ -445,47 +417,9 @@ fn transcript_status_from_str(value: &str) -> Option<TranscriptStatus> {
 }
 
 #[cfg(test)]
-pub fn open_test_database(db_path: &Path, app_dir: &Path) -> Result<Connection, String> {
-    open_database(db_path, app_dir)
-}
-
-#[cfg(test)]
-pub fn user_version(conn: &Connection) -> Result<i64, String> {
-    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|error| format!("Failed to read user_version: {error}"))
-}
-
-#[cfg(test)]
-pub fn history_count(conn: &Connection) -> Result<i64, String> {
-    conn.query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
-        row.get(0)
-    })
-    .map_err(|error| format!("Failed to count history rows: {error}"))
-}
-
-#[cfg(test)]
-pub fn meeting_count(conn: &Connection) -> Result<i64, String> {
-    conn.query_row("SELECT COUNT(*) FROM meetings", [], |row| row.get(0))
-        .map_err(|error| format!("Failed to count meeting rows: {error}"))
-}
-
-#[cfg(test)]
-pub fn migrated_transcript_json(
-    conn: &Connection,
-    meeting_id: &str,
-) -> Result<Option<String>, String> {
-    conn.query_row(
-        "SELECT json FROM meeting_transcripts WHERE meeting_id = ?1",
-        params![meeting_id],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|error| format!("Failed to load migrated transcript JSON: {error}"))
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::OptionalExtension;
     use serde_json::json;
     use uuid::Uuid;
 
@@ -493,6 +427,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("dikt-sqlite-migration-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    fn count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
     }
 
     fn write_json(path: &Path, value: serde_json::Value) {
@@ -565,19 +506,29 @@ mod tests {
             }),
         );
 
-        let conn = open_test_database(&db_path, &app_dir).unwrap();
-        assert_eq!(user_version(&conn).unwrap(), SCHEMA_VERSION);
-        assert_eq!(history_count(&conn).unwrap(), 1);
-        assert_eq!(meeting_count(&conn).unwrap(), 1);
-        assert!(migrated_transcript_json(&conn, "meeting-1")
-            .unwrap()
+        let conn = open_database(&db_path, &app_dir).unwrap();
+        let user_version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(user_version, SCHEMA_VERSION);
+        assert_eq!(count(&conn, "transcription_history"), 1);
+        assert_eq!(count(&conn, "meetings"), 1);
+        let transcript_json: Option<String> = conn
+            .query_row(
+                "SELECT json FROM meeting_transcripts WHERE meeting_id = ?1",
+                params!["meeting-1"],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(transcript_json
             .unwrap()
             .contains("\"provider\": \"assemblyai\""));
         drop(conn);
 
-        let conn = open_test_database(&db_path, &app_dir).unwrap();
-        assert_eq!(history_count(&conn).unwrap(), 1);
-        assert_eq!(meeting_count(&conn).unwrap(), 1);
+        let conn = open_database(&db_path, &app_dir).unwrap();
+        assert_eq!(count(&conn, "transcription_history"), 1);
+        assert_eq!(count(&conn, "meetings"), 1);
         assert!(history_path.exists());
         assert!(transcript_path.exists());
         drop(conn);
