@@ -257,12 +257,11 @@ pub fn transcribe_meeting(
         redact_pci: settings.prefs.deepgram_redaction_enabled && settings.prefs.deepgram_redact_pci,
     };
 
-    let meta = crate::meeting::transcribe::begin(&id)?;
-    // Track this run as live so reconciliation won't complete/error it mid-flight.
-    // Acquired after `begin` (which rejects duplicate requests) and held for the
-    // whole task, so it is released when transcription finishes, fails, or the app
-    // exits with the task.
+    // Track this run as in flight so reconciliation won't complete/error it. Taken
+    // before `begin` writes `pending` and held for the whole task; if `begin`
+    // rejects the request the guard drops here and nothing stays registered.
     let guard = state.meeting_manager.mark_transcribing(id.clone())?;
+    let meta = crate::meeting::transcribe::begin(&id)?;
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         let _guard = guard;

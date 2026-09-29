@@ -227,11 +227,11 @@ impl MeetingSessionManager {
     }
 
     pub fn list(&self) -> Result<Vec<MeetingMeta>, String> {
-        storage::load_index_reconciled(&self.live_ids()?)
+        storage::load_index_reconciled(&self.live_ids()?, || self.transcribing_ids())
     }
 
     pub fn get(&self, id: &str) -> Result<MeetingDetail, String> {
-        storage::get_detail_reconciled(id, &self.live_ids()?)
+        storage::get_detail_reconciled(id, &self.live_ids()?, || self.transcribing_ids())
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
@@ -265,15 +265,21 @@ impl MeetingSessionManager {
     }
 
     /// Registers a meeting as actively transcribing. The returned guard removes it
-    /// from the live set when dropped (i.e. when the transcription task ends), so
-    /// reconciliation only recovers a stuck `pending` meeting once nothing is working
-    /// on it. Acquire this *after* `transcribe::begin` so a duplicate request is
-    /// rejected by `begin` before it can disturb the in-flight registration.
+    /// when dropped (i.e. when the transcription task ends), so reconciliation only
+    /// recovers a stuck `pending` meeting once nothing is working on it. Acquire this
+    /// *before* `transcribe::begin` writes `pending`: reconciliation reads the set
+    /// under the storage lock, so it can never see that `pending` without the
+    /// registration. A second registration is rejected, so a duplicate request can't
+    /// drop the running task's entry.
     pub fn mark_transcribing(&self, id: String) -> Result<TranscribingGuard, String> {
-        self.transcribing
+        let inserted = self
+            .transcribing
             .lock()
             .map_err(|_| "Meeting transcribing lock poisoned".to_string())?
             .insert(id.clone());
+        if !inserted {
+            return Err("This meeting is already being transcribed.".to_string());
+        }
         Ok(TranscribingGuard {
             set: Arc::clone(&self.transcribing),
             id,
@@ -297,14 +303,15 @@ impl MeetingSessionManager {
                 .iter()
                 .cloned(),
         );
-        ids.extend(
-            self.transcribing
-                .lock()
-                .map_err(|_| "Meeting transcribing lock poisoned".to_string())?
-                .iter()
-                .cloned(),
-        );
         Ok(ids)
+    }
+
+    fn transcribing_ids(&self) -> Result<HashSet<String>, String> {
+        Ok(self
+            .transcribing
+            .lock()
+            .map_err(|_| "Meeting transcribing lock poisoned".to_string())?
+            .clone())
     }
 }
 
@@ -426,14 +433,26 @@ mod tests {
     }
 
     #[test]
-    fn mark_transcribing_registers_in_live_ids_and_clears_on_drop() {
+    fn mark_transcribing_registers_and_clears_on_drop() {
         let manager = MeetingSessionManager::default();
 
         let guard = manager.mark_transcribing("m1".to_string()).unwrap();
-        assert!(manager.live_ids().unwrap().contains("m1"));
+        assert!(manager.transcribing_ids().unwrap().contains("m1"));
 
         drop(guard);
-        assert!(!manager.live_ids().unwrap().contains("m1"));
+        assert!(!manager.transcribing_ids().unwrap().contains("m1"));
+    }
+
+    #[test]
+    fn duplicate_mark_transcribing_keeps_the_running_registration() {
+        let manager = MeetingSessionManager::default();
+
+        let running = manager.mark_transcribing("m1".to_string()).unwrap();
+        assert!(manager.mark_transcribing("m1".to_string()).is_err());
+        assert!(manager.transcribing_ids().unwrap().contains("m1"));
+
+        drop(running);
+        assert!(manager.transcribing_ids().unwrap().is_empty());
     }
 
     #[test]

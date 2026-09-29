@@ -74,15 +74,27 @@ pub fn load_index() -> Result<Vec<MeetingMeta>, String> {
     })
 }
 
-pub fn load_index_reconciled(live_ids: &HashSet<String>) -> Result<Vec<MeetingMeta>, String> {
+/// `live_ids` are meetings still recording or finalizing. `transcribing_ids` is
+/// read under the storage lock: `transcribe::begin` writes `pending` under the
+/// same lock after registering the run, so a `pending` row seen here always has
+/// its registration visible if the run is in flight.
+pub fn load_index_reconciled(
+    live_ids: &HashSet<String>,
+    transcribing_ids: impl FnOnce() -> Result<HashSet<String>, String>,
+) -> Result<Vec<MeetingMeta>, String> {
     let _guard = lock()?;
+    let transcribing = transcribing_ids()?;
     let mut items = load_index()?;
     let ended_at_ms = now_ms()?;
     let mut changed = reconcile_orphaned_recordings(&mut items, live_ids, ended_at_ms, |id| {
         Ok(file_size(&source_path(id)?))
     })?;
-    changed |=
-        reconcile_stale_pending_transcripts(&mut items, ended_at_ms, live_ids, transcript_exists)?;
+    changed |= reconcile_stale_pending_transcripts(
+        &mut items,
+        ended_at_ms,
+        &transcribing,
+        transcript_exists,
+    )?;
 
     if changed {
         save_index(&items)?;
@@ -168,8 +180,9 @@ pub fn upsert_meta(meta: MeetingMeta) -> Result<(), String> {
 pub fn get_detail_reconciled(
     id: &str,
     live_ids: &HashSet<String>,
+    transcribing_ids: impl FnOnce() -> Result<HashSet<String>, String>,
 ) -> Result<MeetingDetail, String> {
-    let meta = load_index_reconciled(live_ids)?
+    let meta = load_index_reconciled(live_ids, transcribing_ids)?
         .into_iter()
         .find(|item| item.id == id)
         .ok_or_else(|| "Meeting not found".to_string())?;
@@ -336,7 +349,7 @@ pub fn file_size(path: &Path) -> Option<u64> {
 fn reconcile_stale_pending_transcripts<F>(
     items: &mut [MeetingMeta],
     now_ms: i64,
-    live_ids: &HashSet<String>,
+    transcribing_ids: &HashSet<String>,
     mut transcript_exists: F,
 ) -> Result<bool, String>
 where
@@ -352,7 +365,7 @@ where
         // A transcription started in this session is still running; never reconcile a
         // transcript out from under the live task (it may be a re-transcription that
         // will overwrite an older transcript on completion).
-        if live_ids.contains(&item.id) {
+        if transcribing_ids.contains(&item.id) {
             continue;
         }
 
