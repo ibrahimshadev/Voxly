@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import type { Accessor } from 'solid-js';
 import type { TranscriptionHistoryItem, TranscriptionHistoryStats } from '../../types';
 import {
@@ -23,22 +24,12 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  Mail,
-  Code,
   Pencil,
   Check,
   X,
 } from 'lucide-solid';
-import type { Component } from 'solid-js';
 
-import { MODE_NAME_COLORS } from '../../defaultModes';
-
-const MODE_NAME_LUCIDE: Record<string, Component<{ size: number }>> = {
-  'Clean Draft': Sparkles,
-  'Email Composer': Mail,
-  'Developer Mode': Code,
-  'Developer Log': Code,
-};
+import { builtinModeByName } from '../../defaultModes';
 
 export type HistoryPageProps = {
   history: Accessor<TranscriptionHistoryItem[]>;
@@ -64,6 +55,8 @@ function HistoryItem(props: {
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal('');
   const [saving, setSaving] = createSignal(false);
+
+  const builtin = () => builtinModeByName(props.item.mode_name ?? '');
 
   const hasOriginalText = () =>
     props.item.original_text != null && props.item.original_text !== props.item.text;
@@ -210,13 +203,10 @@ function HistoryItem(props: {
           </div>
         </Show>
 
-        <div class={`flex items-center gap-1 ${MODE_NAME_COLORS[props.item.mode_name ?? ''] ?? ''}`}>
-          {(() => {
-            const name = props.item.mode_name;
-            if (!name) return <Mic size={12} />;
-            const Icon = MODE_NAME_LUCIDE[name];
-            return Icon ? <Icon size={12} /> : <Sparkles size={12} />;
-          })()}
+        <div class={`flex items-center gap-1 ${builtin()?.color.text ?? ''}`}>
+          <Show when={props.item.mode_name} fallback={<Mic size={12} />}>
+            <Dynamic component={builtin()?.icon ?? Sparkles} size={12} />
+          </Show>
           <span>{props.item.mode_name ?? 'Dictation'}</span>
         </div>
 

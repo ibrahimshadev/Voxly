@@ -1,8 +1,9 @@
 import { Index, Show, createSignal, createMemo } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import type { Accessor } from 'solid-js';
 import type { Mode } from '../../types';
-import { MODE_ICONS, MODE_COLORS, MODE_DESCRIPTIONS, DEFAULT_MODE_IDS } from '../../defaultModes';
-import { Plus, Pencil, Trash2, Save, Layers, RotateCcw } from 'lucide-solid';
+import { builtinMode } from '../../defaultModes';
+import { Plus, Pencil, Trash2, Save, Layers, RotateCcw, SlidersHorizontal } from 'lucide-solid';
 import Select from './Select';
 
 export type ModesPageProps = {
@@ -18,6 +19,20 @@ export type ModesPageProps = {
   saving: Accessor<boolean>;
 };
 
+/** Mode icon tile; built-in modes bring their own colors, custom modes use `fallback`. */
+function ModeIcon(props: { modeId: string; fallback: string; class?: string }) {
+  const builtin = () => builtinMode(props.modeId);
+  return (
+    <div
+      class={`w-10 h-10 rounded flex items-center justify-center flex-shrink-0 ${props.class ?? ''} ${
+        builtin() ? `${builtin()!.color.bg} ${builtin()!.color.text}` : props.fallback
+      }`}
+    >
+      <Dynamic component={builtin()?.icon ?? SlidersHorizontal} size={24} />
+    </div>
+  );
+}
+
 function CollapsedModeCard(props: {
   mode: Mode;
   isActive: boolean;
@@ -26,10 +41,8 @@ function CollapsedModeCard(props: {
   onDeactivate: () => void;
   onDelete: () => void;
 }) {
-  const icon = () => MODE_ICONS[props.mode.id] ?? 'tune';
-  const colors = () => MODE_COLORS[props.mode.id];
   const description = () =>
-    MODE_DESCRIPTIONS[props.mode.id] ?? (props.mode.system_prompt.length > 50
+    builtinMode(props.mode.id)?.description ?? (props.mode.system_prompt.length > 50
       ? props.mode.system_prompt.slice(0, 50) + '...'
       : props.mode.system_prompt);
 
@@ -47,18 +60,11 @@ function CollapsedModeCard(props: {
       </Show>
 
       <div class="flex items-center p-4 gap-4">
-        {/* Icon */}
-        <div
-          class={`w-10 h-10 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
-            colors()
-              ? `${colors()!.bg} ${colors()!.text}`
-              : props.isActive
-                ? 'bg-[#1c2e27] text-primary'
-                : 'bg-zinc-800 text-zinc-400 group-hover:text-white'
-          }`}
-        >
-          <span class="material-symbols-outlined">{icon()}</span>
-        </div>
+        <ModeIcon
+          modeId={props.mode.id}
+          class="transition-colors"
+          fallback={props.isActive ? 'bg-[#1c2e27] text-primary' : 'bg-zinc-800 text-zinc-400 group-hover:text-white'}
+        />
 
         {/* Info */}
         <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 flex-1 min-w-0">
@@ -119,7 +125,7 @@ function CollapsedModeCard(props: {
           >
             <Pencil size={16} />
           </button>
-          <Show when={!DEFAULT_MODE_IDS.has(props.mode.id)}>
+          <Show when={!builtinMode(props.mode.id)}>
             <button
               type="button"
               onClick={props.onDelete}
@@ -144,20 +150,11 @@ function ExpandedModeCard(props: {
   onDelete: () => void;
   saving: boolean;
 }) {
-  const icon = () => MODE_ICONS[props.mode.id] ?? 'tune';
-  const colors = () => MODE_COLORS[props.mode.id];
-
   return (
     <div class="bg-surface-dark border border-zinc-700 rounded overflow-hidden shadow-2xl relative">
       {/* Header */}
       <div class="flex items-center p-4 gap-4 border-b border-white/5 bg-[#161616]">
-        <div
-          class={`w-10 h-10 rounded flex items-center justify-center flex-shrink-0 ${
-            colors() ? `${colors()!.bg} ${colors()!.text}` : 'bg-zinc-800 text-white'
-          }`}
-        >
-          <span class="material-symbols-outlined">{icon()}</span>
-        </div>
+        <ModeIcon modeId={props.mode.id} fallback="bg-zinc-800 text-white" />
         <div class="flex-1">
           <h3 class="text-base font-semibold text-white">{props.mode.name}</h3>
           <p class="text-xs text-zinc-500 mt-0.5">Editing configuration...</p>
@@ -215,7 +212,7 @@ function ExpandedModeCard(props: {
         {/* Footer Actions */}
         <div class="flex items-center justify-between pt-4 mt-2 border-t border-white/5">
           <Show
-            when={!DEFAULT_MODE_IDS.has(props.mode.id)}
+            when={!builtinMode(props.mode.id)}
             fallback={<div />}
           >
             <button

@@ -1,7 +1,7 @@
 import { For, Show, onMount, onCleanup } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import type { Mode } from '../../types';
-import { DEFAULT_MODES, MODE_COLORS, MODE_ICONS } from '../../defaultModes';
+import { BUILTIN_MODES } from '../../defaultModes';
 
 type AudioLevel = { rms_db: number; peak_db: number };
 
@@ -11,8 +11,6 @@ type RightPanelProps = {
   onSetActiveModeId: (id: string | null) => void;
   audioLevel: Accessor<AudioLevel | null>;
 };
-
-const PANEL_MODE_IDS = ['clean-draft', 'email-composer', 'developer-log'] as const;
 
 // ── Visualizer constants ─────────────────────────────────────────────
 const BAR_COUNT = 17;
@@ -126,11 +124,6 @@ function MicVisualizer(props: { audioLevel: Accessor<AudioLevel | null> }) {
 
 // ── Settings right panel ─────────────────────────────────────────────
 export default function RightPanel(props: RightPanelProps) {
-  const panelModes = () =>
-    PANEL_MODE_IDS.map((id) =>
-      props.modes().find((mode) => mode.id === id) ?? DEFAULT_MODES.find((mode) => mode.id === id)!
-    );
-
   return (
     <div class="p-6 flex-1 flex flex-col h-full">
       {/* AI Configuration Heading */}
@@ -154,15 +147,16 @@ export default function RightPanel(props: RightPanelProps) {
 
       {/* Transcription Modes */}
       <div class="space-y-3 mb-auto">
-        <For each={panelModes()}>
-          {(mode) => {
-            const modeActive = () => props.activeModeId() === mode.id;
-            const modeColor = MODE_COLORS[mode.id] ?? { bg: 'bg-primary/10', text: 'text-primary' };
-            const icon = MODE_ICONS[mode.id] ?? 'tune';
+        <For each={BUILTIN_MODES}>
+          {(builtin) => {
+            // The panel always offers the built-in modes, with the user's edits applied.
+            const mode = () => props.modes().find((m) => m.id === builtin.id) ?? builtin;
+            const modeActive = () => props.activeModeId() === builtin.id;
+            const Icon = builtin.icon;
             return (
               <button
                 type="button"
-                onClick={() => props.onSetActiveModeId(modeActive() ? null : mode.id)}
+                onClick={() => props.onSetActiveModeId(modeActive() ? null : builtin.id)}
                 class={`relative p-4 rounded-xl border cursor-pointer group transition-colors ${
                   modeActive()
                     ? 'border-primary bg-primary/5 shadow-[0_0_20px_rgba(16,183,127,0.05)]'
@@ -171,14 +165,12 @@ export default function RightPanel(props: RightPanelProps) {
               >
                 <div class="flex justify-between items-start mb-1">
                   <span class={`font-semibold transition-colors text-left ${modeActive() ? 'text-white group-hover:text-primary' : 'text-gray-300 group-hover:text-white'}`}>
-                    {mode.name}
+                    {mode().name}
                   </span>
-                  <span class={`material-symbols-outlined text-[18px] ${modeColor.bg} ${modeColor.text} rounded-md px-1.5 py-0.5`}>
-                    {icon}
-                  </span>
+                  <Icon size={24} class={`${builtin.color.bg} ${builtin.color.text} rounded-md px-1.5 py-0.5`} />
                 </div>
                 <p class={`text-xs leading-relaxed text-left ${modeActive() ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {promptPreview(mode.system_prompt)}
+                  {promptPreview(mode().system_prompt)}
                 </p>
               </button>
             );
