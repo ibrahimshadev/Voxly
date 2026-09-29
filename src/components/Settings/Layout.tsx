@@ -25,24 +25,24 @@ export default function Layout(props: LayoutProps) {
       />
 
       {/* Center Main Content */}
-      <Show
-        when={props.fullBleed}
-        fallback={
-          <main class="flex-1 overflow-y-auto scrollbar-hide bg-background-dark relative">
-            <div class="absolute inset-0 z-0 opacity-[0.03] grid-dots" />
-            <div class="max-w-3xl mx-auto py-10 px-8 relative z-10">
-              {props.children}
-            </div>
-          </main>
-        }
+      <main
+        class="flex-1 bg-background-dark relative"
+        classList={{
+          'overflow-y-auto scrollbar-hide': !props.fullBleed,
+          'flex flex-col overflow-hidden': props.fullBleed,
+        }}
       >
-        <main class="flex-1 flex flex-col overflow-hidden bg-background-dark relative">
-          <div class="absolute inset-0 z-0 opacity-[0.03] grid-dots" />
-          <div class="relative z-10 flex-1 flex flex-col overflow-hidden">
-            {props.children}
-          </div>
-        </main>
-      </Show>
+        <div class="absolute inset-0 z-0 opacity-[0.03] grid-dots" />
+        <div
+          class="relative z-10"
+          classList={{
+            'max-w-3xl mx-auto py-10 px-8': !props.fullBleed,
+            'flex-1 flex flex-col overflow-hidden': props.fullBleed,
+          }}
+        >
+          {props.children}
+        </div>
+      </main>
 
       {/* Right Panel */}
       <Show when={props.rightPanel}>
