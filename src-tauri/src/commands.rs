@@ -257,7 +257,7 @@ pub fn transcribe_meeting(
     }
     let options = crate::meeting::transcribe::DeepgramTranscriptionOptions {
         keyterms: enabled_keyterms(&settings.keyterm_glossary),
-        language: normalized_meeting_language(&settings.meeting_language),
+        language: crate::settings::normalize_meeting_language(&settings.meeting_language),
         redact_pii: settings.deepgram_redaction_enabled && settings.deepgram_redact_pii,
         redact_pci: settings.deepgram_redaction_enabled && settings.deepgram_redact_pci,
     };
@@ -292,13 +292,6 @@ fn enabled_keyterms(entries: &[crate::domain::types::KeytermEntry]) -> Vec<Strin
         }
     }
     terms
-}
-
-fn normalized_meeting_language(value: &str) -> String {
-    match value.trim() {
-        "multi" => "multi".to_string(),
-        _ => "en".to_string(),
-    }
 }
 
 #[tauri::command]
