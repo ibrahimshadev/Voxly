@@ -1,9 +1,7 @@
 import { Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import type { Status } from '../../types';
-import IdleDots from './IdleDots';
 import SineWaves from './SineWaves';
-import LoadingDots from './LoadingDots';
 import GearButton from './GearButton';
 
 type PillProps = {
@@ -14,15 +12,6 @@ type PillProps = {
   onMouseDown: (e: MouseEvent) => void;
   onSettingsClick: () => void;
 };
-
-export function formatHotkey(hotkey: string): string {
-  return hotkey
-    .replace('Control+Super', 'Ctrl + Win')
-    .replace('CommandOrControl', 'Ctrl')
-    .replace('Control', 'Ctrl')
-    .replace('Super', 'Win')
-    .replace(/\+/g, ' + ');
-}
 
 export default function Pill(props: PillProps) {
   const meetingTime = () => {
@@ -45,7 +34,13 @@ export default function Pill(props: PillProps) {
       onMouseDown={props.onMouseDown}
     >
       <Show when={props.status() === 'idle' && !props.meetingActive()}>
-        <IdleDots />
+        <div class="idle-dots">
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
       </Show>
 
       <Show when={props.meetingActive()}>
@@ -65,7 +60,11 @@ export default function Pill(props: PillProps) {
           </Show>
 
           <Show when={props.status() === 'transcribing' || props.status() === 'formatting' || props.status() === 'pasting'}>
-            <LoadingDots />
+            <div class="loading-dots">
+              <span />
+              <span />
+              <span />
+            </div>
           </Show>
 
           <Show when={props.status() === 'done'}>

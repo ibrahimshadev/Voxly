@@ -32,6 +32,7 @@ import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } f
 import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDERS, SUMMARY_MODELS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
+import { formatHotkey } from '../../lib/hotkey';
 import { createPanelResize } from '../../lib/panelResize';
 import Select from './Select';
 import VideoPlayer from './VideoPlayer';
@@ -124,14 +125,6 @@ function formatBytes(bytes?: number) {
     unit += 1;
   }
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
-}
-
-function formatHotkeyForDisplay(hotkey: string) {
-  return hotkey
-    .replace('CommandOrControl', 'Ctrl')
-    .replace('Control', 'Ctrl')
-    .replace('Shift', 'Shift')
-    .replace(/\+/g, ' + ');
 }
 
 const SPEAKER_BADGE_CLASSES = [
@@ -785,7 +778,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 hover:border-primary/50 transition-colors"
                   />
                   <p class="mt-1 text-[11px] text-gray-600">
-                    Windows: {formatHotkeyForDisplay(props.settings().meeting_hotkey)}
+                    Windows: {formatHotkey(props.settings().meeting_hotkey)}
                   </p>
                 </div>
 
