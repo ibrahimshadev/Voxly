@@ -6,7 +6,7 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::SampleFormat;
+use cpal::{SampleFormat, SizedSample};
 use hound::{SampleFormat as WavSampleFormat, WavSpec, WavWriter};
 
 // Lock-free audio level metering: written by CPAL callback, read by emitter thread.
@@ -37,7 +37,7 @@ pub struct AudioRecorder {
     samples: Arc<Mutex<Vec<i16>>>,
     recording: Arc<AtomicBool>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
-    sample_rate: Mutex<u32>,
+    sample_rate: Arc<AtomicU32>,
 }
 
 impl Default for AudioRecorder {
@@ -46,7 +46,7 @@ impl Default for AudioRecorder {
             samples: Arc::new(Mutex::new(Vec::new())),
             recording: Arc::new(AtomicBool::new(false)),
             thread_handle: Mutex::new(None),
-            sample_rate: Mutex::new(16000),
+            sample_rate: Arc::new(AtomicU32::new(16000)),
         }
     }
 }
@@ -64,11 +64,11 @@ impl AudioRecorder {
 
         let samples = Arc::clone(&self.samples);
         let recording = Arc::clone(&self.recording);
-        let sample_rate_holder = Arc::new(Mutex::new(16000u32));
-        let sample_rate_for_thread = Arc::clone(&sample_rate_holder);
+        let sample_rate = Arc::clone(&self.sample_rate);
+        sample_rate.store(16000, Ordering::SeqCst);
 
         let handle = thread::spawn(move || {
-            if let Err(e) = run_audio_capture(samples, recording, sample_rate_for_thread) {
+            if let Err(e) = run_audio_capture(samples, recording, sample_rate) {
                 eprintln!("Audio capture error: {e}");
             }
         });
@@ -77,10 +77,6 @@ impl AudioRecorder {
 
         // Give the thread a moment to start and set the sample rate
         thread::sleep(std::time::Duration::from_millis(100));
-
-        if let Ok(rate) = sample_rate_holder.lock() {
-            *self.sample_rate.lock().unwrap() = *rate;
-        }
 
         Ok(())
     }
@@ -100,7 +96,7 @@ impl AudioRecorder {
             return Err("No audio captured".to_string());
         }
 
-        let sample_rate = *self.sample_rate.lock().unwrap();
+        let sample_rate = self.sample_rate.load(Ordering::SeqCst);
 
         let spec = WavSpec {
             channels: 1,
@@ -126,7 +122,7 @@ impl AudioRecorder {
 fn run_audio_capture(
     samples: Arc<Mutex<Vec<i16>>>,
     recording: Arc<AtomicBool>,
-    sample_rate_holder: Arc<Mutex<u32>>,
+    sample_rate: Arc<AtomicU32>,
 ) -> Result<(), String> {
     let host = cpal::default_host();
     let device = host
@@ -140,64 +136,17 @@ fn run_audio_capture(
     let sample_format = supported_config.sample_format();
     let config: cpal::StreamConfig = supported_config.into();
 
-    *sample_rate_holder.lock().unwrap() = config.sample_rate.0;
-    let channels = config.channels as usize;
-
-    let samples_clone = Arc::clone(&samples);
-    let recording_clone = Arc::clone(&recording);
-
-    let err_fn = |err| eprintln!("Audio stream error: {err}");
+    sample_rate.store(config.sample_rate.0, Ordering::SeqCst);
 
     let stream = match sample_format {
-        SampleFormat::I16 => device
-            .build_input_stream(
-                &config,
-                move |data: &[i16], _| {
-                    if recording_clone.load(Ordering::SeqCst) {
-                        push_mono_i16(&samples_clone, data, channels, |v| v);
-                    }
-                },
-                err_fn,
-                None,
-            )
-            .map_err(|e| format!("Failed to build input stream: {e}"))?,
-        SampleFormat::U16 => {
-            let samples_clone = Arc::clone(&samples);
-            let recording_clone = Arc::clone(&recording);
-            device
-                .build_input_stream(
-                    &config,
-                    move |data: &[u16], _| {
-                        if recording_clone.load(Ordering::SeqCst) {
-                            push_mono_i16(&samples_clone, data, channels, |v| {
-                                (v as i32 - 32768) as i16
-                            });
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-                .map_err(|e| format!("Failed to build input stream: {e}"))?
-        }
-        SampleFormat::F32 => {
-            let samples_clone = Arc::clone(&samples);
-            let recording_clone = Arc::clone(&recording);
-            device
-                .build_input_stream(
-                    &config,
-                    move |data: &[f32], _| {
-                        if recording_clone.load(Ordering::SeqCst) {
-                            push_mono_i16(&samples_clone, data, channels, |v| {
-                                let clamped = v.clamp(-1.0, 1.0);
-                                (clamped * i16::MAX as f32) as i16
-                            });
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-                .map_err(|e| format!("Failed to build input stream: {e}"))?
-        }
+        SampleFormat::I16 => build_stream::<i16>(&device, &config, &samples, &recording, |v| v)?,
+        SampleFormat::U16 => build_stream::<u16>(&device, &config, &samples, &recording, |v| {
+            (v as i32 - 32768) as i16
+        })?,
+        SampleFormat::F32 => build_stream::<f32>(&device, &config, &samples, &recording, |v| {
+            let clamped = v.clamp(-1.0, 1.0);
+            (clamped * i16::MAX as f32) as i16
+        })?,
         _ => return Err("Unsupported sample format".to_string()),
     };
 
@@ -211,6 +160,30 @@ fn run_audio_capture(
     }
 
     Ok(())
+}
+
+fn build_stream<T: SizedSample + Send + 'static>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    samples: &Arc<Mutex<Vec<i16>>>,
+    recording: &Arc<AtomicBool>,
+    convert: fn(T) -> i16,
+) -> Result<cpal::Stream, String> {
+    let samples = Arc::clone(samples);
+    let recording = Arc::clone(recording);
+    let channels = config.channels as usize;
+    device
+        .build_input_stream(
+            config,
+            move |data: &[T], _| {
+                if recording.load(Ordering::SeqCst) {
+                    push_mono_i16(&samples, data, channels, convert);
+                }
+            },
+            |err| eprintln!("Audio stream error: {err}"),
+            None,
+        )
+        .map_err(|e| format!("Failed to build input stream: {e}"))
 }
 
 fn push_mono_i16<T, F>(samples: &Arc<Mutex<Vec<i16>>>, data: &[T], channels: usize, convert: F)
