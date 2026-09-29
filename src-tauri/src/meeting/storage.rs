@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use once_cell::sync::Lazy;
 use rusqlite::{params, OptionalExtension};
+use serde::de::DeserializeOwned;
 
 use crate::meeting::types::{
     MeetingDetail, MeetingMeta, MeetingStatus, MeetingSummary, MeetingTranscript, TranscriptStatus,
@@ -14,7 +14,13 @@ use crate::meeting::types::{
 const SOURCE_FILE: &str = "recording.mp4";
 const TRANSCRIPT_AUDIO_FILE: &str = "transcript-audio.m4a";
 const STALE_PENDING_TRANSCRIPT_MS: i64 = 6 * 60 * 60 * 1000;
-static STORAGE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static STORAGE_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> Result<MutexGuard<'static, ()>, String> {
+    STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Meeting storage lock poisoned".to_string())
+}
 
 pub fn now_ms() -> Result<i64, String> {
     Ok(SystemTime::now()
@@ -69,9 +75,7 @@ pub fn load_index() -> Result<Vec<MeetingMeta>, String> {
 }
 
 pub fn load_index_reconciled(live_ids: &HashSet<String>) -> Result<Vec<MeetingMeta>, String> {
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    let _guard = lock()?;
     let mut items = load_index()?;
     let ended_at_ms = now_ms()?;
     let mut changed = reconcile_orphaned_recordings(&mut items, live_ids, ended_at_ms, |id| {
@@ -81,7 +85,6 @@ pub fn load_index_reconciled(live_ids: &HashSet<String>) -> Result<Vec<MeetingMe
 
     if changed {
         save_index(&items)?;
-        items.sort_by(|a, b| b.started_at_ms.cmp(&a.started_at_ms));
     }
 
     Ok(items)
@@ -120,37 +123,14 @@ where
     Ok(changed)
 }
 
-pub fn save_index(items: &[MeetingMeta]) -> Result<(), String> {
+fn save_index(items: &[MeetingMeta]) -> Result<(), String> {
     crate::db::with_connection(|conn| {
         let tx = conn
             .transaction()
             .map_err(|error| format!("Failed to start meeting index transaction: {error}"))?;
-
-        let ids = items
-            .iter()
-            .map(|item| item.id.as_str())
-            .collect::<HashSet<_>>();
-        let existing = {
-            let mut stmt = tx
-                .prepare("SELECT id FROM meetings")
-                .map_err(|error| format!("Failed to query existing meeting ids: {error}"))?;
-            let rows = stmt
-                .query_map([], |row| row.get::<_, String>(0))
-                .map_err(|error| format!("Failed to query existing meeting ids: {error}"))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| format!("Failed to read existing meeting id: {error}"))?;
-            rows
-        };
-        for id in existing {
-            if !ids.contains(id.as_str()) {
-                tx.execute("DELETE FROM meetings WHERE id = ?1", params![id])
-                    .map_err(|error| format!("Failed to delete stale meeting metadata: {error}"))?;
-            }
-        }
         for item in items {
             crate::db::upsert_meeting_meta(&tx, item)?;
         }
-
         tx.commit()
             .map_err(|error| format!("Failed to save meeting index: {error}"))
     })
@@ -160,25 +140,27 @@ pub fn update_meta_by_id<F>(id: &str, patch: F) -> Result<Option<MeetingMeta>, S
 where
     F: FnOnce(&mut MeetingMeta) -> Result<(), String>,
 {
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
-    let mut items = load_index()?;
-    let Some(item) = items.iter_mut().find(|item| item.id == id) else {
+    let _guard = lock()?;
+    let meta = crate::db::with_connection(|conn| {
+        conn.query_row(
+            "SELECT * FROM meetings WHERE id = ?1",
+            params![id],
+            crate::db::meeting_from_row,
+        )
+        .optional()
+        .map_err(|error| format!("Failed to load meeting metadata: {error}"))
+    })?;
+    let Some(mut meta) = meta else {
         return Ok(None);
     };
 
-    patch(item)?;
-    let updated = item.clone();
-    items.sort_by(|a, b| b.started_at_ms.cmp(&a.started_at_ms));
-    save_index(&items)?;
-    Ok(Some(updated))
+    patch(&mut meta)?;
+    crate::db::with_connection(|conn| crate::db::upsert_meeting_meta(conn, &meta))?;
+    Ok(Some(meta))
 }
 
 pub fn upsert_meta(meta: MeetingMeta) -> Result<(), String> {
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    let _guard = lock()?;
     crate::db::with_connection(|conn| crate::db::upsert_meeting_meta(conn, &meta))
 }
 
@@ -200,9 +182,7 @@ pub fn get_detail_reconciled(
 }
 
 pub fn save_transcript(id: &str, transcript: &MeetingTranscript) -> Result<(), String> {
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    let _guard = lock()?;
     if !meeting_exists(id)? {
         return Err("Meeting no longer exists.".to_string());
     }
@@ -210,6 +190,11 @@ pub fn save_transcript(id: &str, transcript: &MeetingTranscript) -> Result<(), S
     if !dir.exists() {
         return Err("Meeting folder no longer exists.".to_string());
     }
+    write_transcript(id, transcript)
+}
+
+/// Caller must hold the storage lock.
+fn write_transcript(id: &str, transcript: &MeetingTranscript) -> Result<(), String> {
     let contents = serde_json::to_string_pretty(transcript).map_err(|e| e.to_string())?;
     crate::db::with_connection(|conn| {
         conn.execute(
@@ -225,20 +210,26 @@ pub fn save_transcript(id: &str, transcript: &MeetingTranscript) -> Result<(), S
 }
 
 pub fn load_transcript(id: &str) -> Result<Option<MeetingTranscript>, String> {
+    load_json("meeting_transcripts", "meeting transcript", id)
+}
+
+/// Loads and parses the `json` column of a per-meeting table row.
+fn load_json<T: DeserializeOwned>(table: &str, what: &str, id: &str) -> Result<Option<T>, String> {
     let contents = crate::db::with_connection(|conn| {
         conn.query_row(
-            "SELECT json FROM meeting_transcripts WHERE meeting_id = ?1",
+            &format!("SELECT json FROM {table} WHERE meeting_id = ?1"),
             params![id],
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|error| format!("Failed to load meeting transcript: {error}"))
+        .map_err(|error| format!("Failed to load {what}: {error}"))
     })?;
-    contents.map_or(Ok(None), |contents| {
-        serde_json::from_str(&contents)
-            .map(Some)
-            .map_err(|error| format!("Failed to parse meeting transcript: {error}"))
-    })
+    contents
+        .map(|contents| {
+            serde_json::from_str(&contents)
+                .map_err(|error| format!("Failed to parse {what}: {error}"))
+        })
+        .transpose()
 }
 
 pub fn update_transcript_speaker_name(
@@ -254,26 +245,13 @@ pub fn update_transcript_speaker_name(
     let name = name.trim();
     let normalized_name = name.chars().take(80).collect::<String>();
 
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    let _guard = lock()?;
     if !meeting_exists(id)? {
         return Err("Meeting no longer exists.".to_string());
     }
 
-    let contents = crate::db::with_connection(|conn| {
-        conn.query_row(
-            "SELECT json FROM meeting_transcripts WHERE meeting_id = ?1",
-            params![id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| format!("Failed to load meeting transcript: {error}"))
-    })?
-    .ok_or_else(|| "Meeting transcript not found.".to_string())?;
-
-    let mut transcript: MeetingTranscript = serde_json::from_str(&contents)
-        .map_err(|error| format!("Failed to parse meeting transcript: {error}"))?;
+    let mut transcript =
+        load_transcript(id)?.ok_or_else(|| "Meeting transcript not found.".to_string())?;
 
     if normalized_name.is_empty() {
         transcript.speaker_names.remove(speaker);
@@ -283,26 +261,12 @@ pub fn update_transcript_speaker_name(
             .insert(speaker.to_string(), normalized_name);
     }
 
-    let contents = serde_json::to_string_pretty(&transcript).map_err(|e| e.to_string())?;
-    crate::db::with_connection(|conn| {
-        conn.execute(
-            r#"
-            INSERT OR REPLACE INTO meeting_transcripts (meeting_id, json)
-            VALUES (?1, ?2)
-            "#,
-            params![id, contents],
-        )
-        .map(|_| ())
-        .map_err(|error| format!("Failed to save meeting transcript: {error}"))
-    })?;
-
+    write_transcript(id, &transcript)?;
     Ok(transcript)
 }
 
 pub fn save_summary(id: &str, summary: &MeetingSummary) -> Result<(), String> {
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    let _guard = lock()?;
     if !meeting_exists(id)? {
         return Err("Meeting no longer exists.".to_string());
     }
@@ -321,20 +285,7 @@ pub fn save_summary(id: &str, summary: &MeetingSummary) -> Result<(), String> {
 }
 
 pub fn load_summary(id: &str) -> Result<Option<MeetingSummary>, String> {
-    let contents = crate::db::with_connection(|conn| {
-        conn.query_row(
-            "SELECT json FROM meeting_summaries WHERE meeting_id = ?1",
-            params![id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| format!("Failed to load meeting summary: {error}"))
-    })?;
-    contents.map_or(Ok(None), |contents| {
-        serde_json::from_str(&contents)
-            .map(Some)
-            .map_err(|error| format!("Failed to parse meeting summary: {error}"))
-    })
+    load_json("meeting_summaries", "meeting summary", id)
 }
 
 pub fn meeting_exists(id: &str) -> Result<bool, String> {
@@ -350,9 +301,7 @@ pub fn meeting_exists(id: &str) -> Result<bool, String> {
 }
 
 pub fn delete_meeting(id: &str) -> Result<(), String> {
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Meeting storage lock poisoned".to_string())?;
+    let _guard = lock()?;
     crate::db::with_connection(|conn| {
         conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])
             .map(|_| ())
@@ -494,28 +443,24 @@ mod tests {
     }
 
     #[test]
-    fn reconciliation_is_noop_when_active_recording_is_current() {
-        let mut items = vec![meta("active", MeetingStatus::Recording)];
+    fn reconciliation_keeps_live_recording_and_processing_meetings() {
+        for status in [MeetingStatus::Recording, MeetingStatus::Processing] {
+            let mut items = vec![meta("live", status.clone())];
 
-        let changed =
-            reconcile_orphaned_recordings(&mut items, &live(&["active"]), 6_000, |_| Ok(Some(42)))
+            let changed =
+                reconcile_orphaned_recordings(&mut items, &live(&["live"]), 6_000, |_| {
+                    Ok(Some(42))
+                })
                 .unwrap();
 
-        assert!(!changed);
-        assert!(matches!(items[0].status, MeetingStatus::Recording));
-        assert_eq!(items[0].file_size_bytes, None);
-    }
-
-    #[test]
-    fn reconciliation_keeps_live_processing_meetings() {
-        let mut items = vec![meta("saving", MeetingStatus::Processing)];
-
-        let changed =
-            reconcile_orphaned_recordings(&mut items, &live(&["saving"]), 6_000, |_| Ok(Some(42)))
-                .unwrap();
-
-        assert!(!changed);
-        assert!(matches!(items[0].status, MeetingStatus::Processing));
+            assert!(!changed);
+            assert_eq!(
+                std::mem::discriminant(&items[0].status),
+                std::mem::discriminant(&status)
+            );
+            assert!(items[0].ended_at_ms.is_none());
+            assert_eq!(items[0].file_size_bytes, None);
+        }
     }
 
     #[test]
