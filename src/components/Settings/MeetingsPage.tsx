@@ -29,10 +29,9 @@ import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } f
 import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDER_IDS, PROVIDERS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
-import { formatHotkey } from '../../lib/hotkey';
 import { formatDuration, formatSpeakerLabel } from '../../lib/meetingFormat';
 import { createPanelResize } from '../../lib/panelResize';
-import { SecretInput, Select, SwitchKnob, settingsFieldSetter } from './controls';
+import { HotkeyInput, SecretInput, Select, SwitchKnob, settingsFieldSetter } from './controls';
 import VideoPlayer from './VideoPlayer';
 import ProviderIcon from './ProviderIcon';
 
@@ -667,16 +666,14 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   <label class="text-xs text-gray-500 font-medium ml-1">
                     Meeting hotkey
                   </label>
-                  <input
-                    type="text"
+                  <HotkeyInput
                     value={props.settings().meeting_hotkey}
-                    onInput={onField('meeting_hotkey')}
+                    onChange={(raw) =>
+                      props.setSettings((current) => ({ ...current, meeting_hotkey: raw }))
+                    }
                     onBlur={save}
-                    class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 hover:border-primary/50 transition-colors"
+                    class="mt-1.5 w-full rounded-lg px-3"
                   />
-                  <p class="mt-1 text-[11px] text-gray-600">
-                    Windows: {formatHotkey(props.settings().meeting_hotkey)}
-                  </p>
                 </div>
 
                 <div>

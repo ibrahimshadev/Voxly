@@ -12,6 +12,33 @@ export const settingsFieldSetter = (setSettings: Setter<Settings>) => (key: Text
   setSettings((current) => ({ ...current, [key]: value }));
 };
 
+// Editing codec for hotkey fields: `parseHotkey` must stay the exact inverse of `displayHotkey`.
+const displayHotkey = (raw: string): string =>
+  raw.replace('CommandOrControl', 'Ctrl').replace(/\+/g, ' + ');
+const parseHotkey = (shown: string): string =>
+  shown.replace(/\s*\+\s*/g, '+').replace('Ctrl', 'CommandOrControl');
+
+/**
+ * Text field for a Tauri accelerator: shows and edits "Ctrl + Alt + M" while the
+ * setting keeps "CommandOrControl+Alt+M". `class` sets width, alignment and rounding.
+ */
+export function HotkeyInput(props: {
+  value: string;
+  onChange: (raw: string) => void;
+  onBlur: () => void;
+  class: string;
+}) {
+  return (
+    <input
+      type="text"
+      value={displayHotkey(props.value)}
+      onInput={(event) => props.onChange(parseHotkey(event.currentTarget.value))}
+      onBlur={() => props.onBlur()}
+      class={`bg-input-bg border border-white/15 py-1.5 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 cursor-pointer hover:border-primary/50 transition-colors ${props.class}`}
+    />
+  );
+}
+
 type Option<T> = { value: T; label: string };
 
 /** Native select styled like the text inputs. A value missing from `options` is still shown. */
