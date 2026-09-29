@@ -5,12 +5,12 @@ import { Toaster } from 'solid-sonner';
 
 import type { Settings, Tab, VocabularyEntry, KeytermEntry, TranscriptionHistoryItem, TranscriptionHistoryPage, TranscriptionHistoryStats, Mode, MeetingMeta, MeetingDetail, MeetingDevices, MeetingSummary, MeetingUpdate, MeetingTranscript } from './types';
 import {
-  CHAT_MODELS,
   DEFAULT_SETTINGS,
   MAX_KEYTERM_LEN,
   MAX_KEYTERMS,
   MAX_REPLACEMENTS_PER_ENTRY,
-  MAX_VOCABULARY_ENTRIES
+  MAX_VOCABULARY_ENTRIES,
+  PROVIDERS
 } from './constants';
 import { DEFAULT_MODES } from './defaultModes';
 import { Layout, SettingsPage, RightPanel, HistoryPage, DictionaryPage, ModesPage, MeetingsPage } from './components/Settings';
@@ -539,7 +539,7 @@ export default function SettingsApp() {
 
   const fetchModels = async (reconcileModes: boolean) => {
     const provider = settings().provider;
-    const fallback = CHAT_MODELS[provider] ?? [];
+    const fallback = PROVIDERS[provider].chatModels;
     let available = fallback;
     try {
       const result = await invoke<string[]>('fetch_provider_models', {
@@ -565,7 +565,7 @@ export default function SettingsApp() {
 
   const addMode = () => {
     const id = crypto.randomUUID();
-    const preferred = CHAT_MODELS[settings().provider]?.[0] ?? '';
+    const preferred = PROVIDERS[settings().provider].chatModels[0] ?? '';
     const available = modelsList();
     const defaultModel = available.includes(preferred) ? preferred
       : available.length > 0 ? available[0]

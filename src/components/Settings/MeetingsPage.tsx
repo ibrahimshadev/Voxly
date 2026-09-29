@@ -27,16 +27,15 @@ import {
   Video,
   Volume2,
 } from 'lucide-solid';
-import type { JSX } from 'solid-js';
 import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } from '../../types';
-import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDERS, SUMMARY_MODELS } from '../../constants';
+import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDER_IDS, PROVIDERS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
 import { formatHotkey } from '../../lib/hotkey';
 import { createPanelResize } from '../../lib/panelResize';
 import Select from './Select';
 import VideoPlayer from './VideoPlayer';
-import { GroqIcon, OpenAIIcon } from './SettingsPage';
+import ProviderIcon from './ProviderIcon';
 
 type MeetingsPageProps = {
   meetings: Accessor<MeetingMeta[]>;
@@ -76,19 +75,6 @@ const CONFIG_TABS: { value: ConfigTab; label: string }[] = [
   { value: 'capture', label: 'Capture' },
   { value: 'transcription', label: 'Transcription' },
   { value: 'summary', label: 'AI Summary' },
-];
-
-type SummaryProviderOption = {
-  value: Provider;
-  label: string;
-  icon?: string;
-  iconComponent?: (props: { class?: string }) => JSX.Element;
-};
-
-const SUMMARY_PROVIDER_OPTIONS: SummaryProviderOption[] = [
-  { value: 'groq', label: 'Groq', iconComponent: GroqIcon },
-  { value: 'openai', label: 'OpenAI', iconComponent: OpenAIIcon },
-  { value: 'custom', label: 'Custom', icon: 'dns' },
 ];
 
 // Session-scoped model stash per provider (mirrors providerModelMemory in SettingsPage).
@@ -278,7 +264,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   };
 
   const summaryModelOptions = () =>
-    SUMMARY_MODELS[props.settings().summary_provider].map((model) => ({
+    PROVIDERS[props.settings().summary_provider].summaryModels.map((model) => ({
       value: model,
       label: model,
     }));
@@ -305,7 +291,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
         ...current,
         summary_provider: provider,
         summary_base_url: PROVIDERS[provider].base_url,
-        summary_model: summaryModelMemory[provider] ?? SUMMARY_MODELS[provider][0] ?? '',
+        summary_model: summaryModelMemory[provider] ?? PROVIDERS[provider].summaryModels[0] ?? '',
         summary_api_key: restoredKey,
         summary_provider_api_keys: stashedKeys,
       };
@@ -893,30 +879,22 @@ export default function MeetingsPage(props: MeetingsPageProps) {
               <Show when={configTab() === 'summary'}>
                 <div class="space-y-3">
                   <div class="grid grid-cols-3 gap-2">
-                    <For each={SUMMARY_PROVIDER_OPTIONS}>
-                      {(option) => {
-                        const isActive = () => props.settings().summary_provider === option.value;
+                    <For each={PROVIDER_IDS}>
+                      {(provider) => {
+                        const isActive = () => props.settings().summary_provider === provider;
                         return (
                           <button
                             type="button"
-                            onClick={() => onSummaryProviderChange(option.value)}
+                            onClick={() => onSummaryProviderChange(provider)}
                             class={`cursor-pointer relative p-3 rounded-xl border transition-colors flex flex-col items-center justify-center gap-1.5 ${
                               isActive()
                                 ? 'border-primary bg-primary/5'
                                 : 'border-white/10 bg-surface-dark hover:border-white/20 hover:bg-white/[0.03]'
                             }`}
                           >
-                            {option.iconComponent
-                              ? option.iconComponent({
-                                  class: `w-5 h-5 ${isActive() ? 'text-primary' : 'text-gray-400'}`,
-                                })
-                              : (
-                                <span class={`material-symbols-outlined text-xl ${isActive() ? 'text-primary' : 'text-gray-400'}`}>
-                                  {option.icon}
-                                </span>
-                              )}
+                            <ProviderIcon provider={provider} active={isActive()} class="w-5 h-5" />
                             <span class={`font-medium text-xs ${isActive() ? 'text-white' : 'text-gray-300'}`}>
-                              {option.label}
+                              {PROVIDERS[provider].label}
                             </span>
                           </button>
                         );
