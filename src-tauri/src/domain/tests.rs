@@ -3,7 +3,7 @@ use std::sync::{
     Mutex,
 };
 
-use crate::settings::AppSettings;
+use crate::settings::{AppSettings, Preferences};
 use crate::transcribe::TranscriptionResult;
 
 use super::{
@@ -274,9 +274,14 @@ fn create_default_manager() -> DictationSessionManager {
 
 #[test]
 fn test_get_settings_returns_loaded_settings() {
-    let mut settings = AppSettings::default();
-    settings.prefs.model = "test-model".to_string();
-    settings.prefs.base_url = "https://test.api".to_string();
+    let settings = AppSettings {
+        prefs: Preferences {
+            model: "test-model".to_string(),
+            base_url: "https://test.api".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     let manager = create_manager(
         MockRecorder::new(),
@@ -294,8 +299,13 @@ fn test_get_settings_returns_loaded_settings() {
 fn test_save_settings_updates_store_and_memory() {
     let manager = create_default_manager();
 
-    let mut new_settings = AppSettings::default();
-    new_settings.prefs.model = "new-model".to_string();
+    let new_settings = AppSettings {
+        prefs: Preferences {
+            model: "new-model".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     manager.save_settings(new_settings.clone()).unwrap();
 
@@ -485,14 +495,19 @@ async fn test_stop_and_process_handles_recorder_stop_failure() {
 
 #[tokio::test]
 async fn test_stop_and_process_emits_formatting_when_mode_active() {
-    let mut settings = AppSettings::default();
-    settings.prefs.active_mode_id = Some("mode-1".to_string());
-    settings.prefs.modes = vec![Mode {
-        id: "mode-1".to_string(),
-        name: "Formatter".to_string(),
-        system_prompt: "Format this".to_string(),
-        model: "chat-model".to_string(),
-    }];
+    let settings = AppSettings {
+        prefs: Preferences {
+            active_mode_id: Some("mode-1".to_string()),
+            modes: vec![Mode {
+                id: "mode-1".to_string(),
+                name: "Formatter".to_string(),
+                system_prompt: "Format this".to_string(),
+                model: "chat-model".to_string(),
+            }],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     let manager = create_manager_with_formatter(
         MockRecorder::new(),
@@ -520,14 +535,19 @@ async fn test_stop_and_process_emits_formatting_when_mode_active() {
 
 #[tokio::test]
 async fn test_stop_and_process_falls_back_when_formatting_fails() {
-    let mut settings = AppSettings::default();
-    settings.prefs.active_mode_id = Some("mode-1".to_string());
-    settings.prefs.modes = vec![Mode {
-        id: "mode-1".to_string(),
-        name: "Formatter".to_string(),
-        system_prompt: "Format this".to_string(),
-        model: "chat-model".to_string(),
-    }];
+    let settings = AppSettings {
+        prefs: Preferences {
+            active_mode_id: Some("mode-1".to_string()),
+            modes: vec![Mode {
+                id: "mode-1".to_string(),
+                name: "Formatter".to_string(),
+                system_prompt: "Format this".to_string(),
+                model: "chat-model".to_string(),
+            }],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     let manager = create_manager_with_formatter(
         MockRecorder::new(),

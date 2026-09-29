@@ -415,16 +415,17 @@ mod tests {
     use crate::meeting::types::Utterance;
 
     fn settings_with(provider: &str, api_key: &str, groq_map_key: Option<&str>) -> AppSettings {
-        let mut settings = AppSettings::default();
-        settings.prefs.provider = provider.to_string();
-        settings.api_key = api_key.to_string();
-        settings.provider_api_keys.clear();
-        if let Some(key) = groq_map_key {
-            settings
-                .provider_api_keys
-                .insert("groq".to_string(), key.to_string());
+        AppSettings {
+            prefs: crate::settings::Preferences {
+                provider: provider.to_string(),
+                ..Default::default()
+            },
+            api_key: api_key.to_string(),
+            provider_api_keys: groq_map_key
+                .map(|key| [("groq".to_string(), key.to_string())].into())
+                .unwrap_or_default(),
+            ..Default::default()
         }
-        settings
     }
 
     fn transcript(utterances: Vec<Utterance>, text: &str) -> MeetingTranscript {
