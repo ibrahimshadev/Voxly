@@ -678,9 +678,7 @@ fn emit_update(app: &AppHandle, state: &str, id: &str, message: Option<String>) 
             state: state.to_string(),
             meeting_id: Some(id.to_string()),
             message,
-            elapsed_secs: None,
-            file_size_bytes: None,
-            progress_pct: None,
+            ..Default::default()
         },
     );
 }

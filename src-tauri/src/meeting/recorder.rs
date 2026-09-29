@@ -1,9 +1,9 @@
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::{fs, io};
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -45,8 +45,7 @@ impl RunningRecorder {
         options: &MeetingStartOptions,
     ) -> Result<Self, String> {
         let ffmpeg = ffmpeg_program(&app);
-        let preset = VideoPreset::from_setting(&options.video_preset);
-        let has_video = options.record_video && !matches!(preset, VideoPreset::AudioOnly);
+        let has_video = options.record_video && video_params(&options.video_preset).is_some();
         let has_primary_audio =
             options.record_mic && clean_device_name(options.mic_device.as_deref()).is_some();
         let has_system_audio = options.record_system_audio;
@@ -78,7 +77,7 @@ impl RunningRecorder {
 
         let mut primary_started_at = None;
         let mut child = if let Some(primary_path) = &primary_path {
-            let args = build_args(primary_path, options, false, !has_system_audio)?;
+            let args = build_args(primary_path, options, !has_system_audio)?;
             let spawned = spawn_ffmpeg(app.clone(), meeting_id.clone(), &ffmpeg, &args)?;
             primary_started_at = Some(spawned.started_at);
             Some(spawned.child)
@@ -282,9 +281,7 @@ fn spawn_ffmpeg(
                         state: "log".to_string(),
                         meeting_id: Some(meeting_id.clone()),
                         message: Some(trimmed.to_string()),
-                        elapsed_secs: None,
-                        file_size_bytes: None,
-                        progress_pct: None,
+                        ..Default::default()
                     },
                 );
             }
@@ -394,26 +391,18 @@ fn run_ffmpeg_with_progress(
 }
 
 fn signed_offset_ms(value: Instant, baseline: Instant) -> i64 {
-    if let Some(duration) = value.checked_duration_since(baseline) {
-        duration.as_millis().min(i64::MAX as u128) as i64
-    } else {
-        -(baseline
-            .duration_since(value)
-            .as_millis()
-            .min(i64::MAX as u128) as i64)
-    }
+    value.saturating_duration_since(baseline).as_millis() as i64
+        - baseline.saturating_duration_since(value).as_millis() as i64
 }
 
 fn offset_filter_steps(offset_ms: i64) -> Vec<String> {
     let mut filters = Vec::new();
-    if offset_ms > 0 {
-        filters.push("asetpts=PTS-STARTPTS".to_string());
-        filters.push(format!("adelay={offset_ms}:all=1"));
-    } else if offset_ms < 0 {
+    if offset_ms < 0 {
         filters.push(format!("atrim=start={:.3}", (-offset_ms as f64) / 1000.0));
-        filters.push("asetpts=PTS-STARTPTS".to_string());
-    } else {
-        filters.push("asetpts=PTS-STARTPTS".to_string());
+    }
+    filters.push("asetpts=PTS-STARTPTS".to_string());
+    if offset_ms > 0 {
+        filters.push(format!("adelay={offset_ms}:all=1"));
     }
     filters
 }
@@ -467,39 +456,22 @@ fn post_process_args(
 
     let combined = transcript_audio_path.is_some() && primary_path.is_some() && has_primary_audio;
 
-    match (primary_path.is_some(), has_primary_audio) {
-        (true, true) => {
-            let filter = if combined {
-                combined_post_filter(system_audio_offset_ms)
-            } else {
-                mic_system_mix_filter(system_audio_offset_ms)
-            };
-            args.extend(["-filter_complex".to_string(), filter]);
-            if has_video {
-                args.extend(["-map".to_string(), "0:v?".to_string()]);
-            }
-            args.extend(["-map".to_string(), "[aout]".to_string()]);
-            if has_video {
-                args.extend(["-c:v".to_string(), "copy".to_string()]);
-            }
-        }
-        (true, false) => {
-            let system_filter =
-                audio_offset_filter("[1:a]", "[aout]", system_audio_offset_ms, true);
-            args.extend(["-filter_complex".to_string(), system_filter]);
-            if has_video {
-                args.extend(["-map".to_string(), "0:v?".to_string()]);
-            }
-            args.extend(["-map".to_string(), "[aout]".to_string()]);
-            if has_video {
-                args.extend(["-c:v".to_string(), "copy".to_string()]);
-            }
-        }
-        (false, _) => {
-            let system_filter = audio_offset_filter("[0:a]", "[aout]", 0, true);
-            args.extend(["-filter_complex".to_string(), system_filter]);
-            args.extend(["-map".to_string(), "[aout]".to_string()]);
-        }
+    let (filter, map_video) = match (primary_path.is_some(), has_primary_audio) {
+        (true, true) if combined => (combined_post_filter(system_audio_offset_ms), has_video),
+        (true, true) => (mic_system_mix_filter(system_audio_offset_ms), has_video),
+        (true, false) => (
+            audio_offset_filter("[1:a]", "[aout]", system_audio_offset_ms, true),
+            has_video,
+        ),
+        (false, _) => (audio_offset_filter("[0:a]", "[aout]", 0, true), false),
+    };
+    args.extend(["-filter_complex".to_string(), filter]);
+    if map_video {
+        args.extend(["-map".to_string(), "0:v?".to_string()]);
+    }
+    args.extend(["-map".to_string(), "[aout]".to_string()]);
+    if map_video {
+        args.extend(["-c:v".to_string(), "copy".to_string()]);
     }
 
     args.extend([
@@ -543,46 +515,13 @@ fn transcript_audio_path_for(final_path: &Path) -> Option<PathBuf> {
 }
 
 fn promote_primary_capture(primary_path: &Path, final_path: &Path) -> Result<(), String> {
-    if primary_path == final_path {
-        return Ok(());
-    }
-    if !primary_path.exists() {
-        return Err(format!(
-            "primary capture '{}' does not exist",
-            primary_path.display()
-        ));
-    }
-
-    if final_path.exists() {
-        fs::remove_file(final_path).map_err(|error| {
-            format!(
-                "failed to replace partial output '{}': {error}",
-                final_path.display()
-            )
-        })?;
-    }
-
-    match fs::rename(primary_path, final_path) {
-        Ok(()) => Ok(()),
-        Err(rename_error) => {
-            fs::copy(primary_path, final_path).map_err(|copy_error| {
-                format!(
-                    "failed to move '{}' to '{}' (rename error: {rename_error}, copy error: {copy_error})",
-                    primary_path.display(),
-                    final_path.display()
-                )
-            })?;
-            match fs::remove_file(primary_path) {
-                Ok(()) => Ok(()),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(error) => Err(format!(
-                    "copied primary capture to '{}' but failed to remove '{}': {error}",
-                    final_path.display(),
-                    primary_path.display()
-                )),
-            }
-        }
-    }
+    fs::rename(primary_path, final_path).map_err(|error| {
+        format!(
+            "failed to move '{}' to '{}': {error}",
+            primary_path.display(),
+            final_path.display()
+        )
+    })
 }
 
 pub fn ffmpeg_available(app: &AppHandle) -> bool {
@@ -660,15 +599,13 @@ fn bundled_candidates(base: &Path) -> Vec<PathBuf> {
 fn build_args(
     output_path: &Path,
     options: &MeetingStartOptions,
-    include_system_audio: bool,
     is_final_output: bool,
 ) -> Result<Vec<String>, String> {
     if !cfg!(windows) {
         return Err("Meeting recording is currently implemented for Windows only.".to_string());
     }
 
-    let preset = VideoPreset::from_setting(&options.video_preset);
-    let record_video = options.record_video && !matches!(preset, VideoPreset::AudioOnly);
+    let video = video_params(&options.video_preset).filter(|_| options.record_video);
     let mut args = vec![
         "-hide_banner".to_string(),
         "-y".to_string(),
@@ -676,83 +613,40 @@ fn build_args(
         "1024M".to_string(),
     ];
 
-    let mut input_index = 0usize;
-    let mut video_input: Option<usize> = None;
-    let mut audio_inputs: Vec<usize> = Vec::new();
+    let mic = clean_device_name(options.mic_device.as_deref()).filter(|_| options.record_mic);
 
-    if record_video {
+    if let Some((framerate, _)) = video {
         args.extend([
             "-f".to_string(),
             "gdigrab".to_string(),
             "-framerate".to_string(),
-            preset.framerate().to_string(),
+            framerate.to_string(),
             "-i".to_string(),
             "desktop".to_string(),
         ]);
-        video_input = Some(input_index);
-        input_index += 1;
     }
 
-    if options.record_mic {
-        if let Some(device) = clean_device_name(options.mic_device.as_deref()) {
-            args.extend([
-                "-f".to_string(),
-                "dshow".to_string(),
-                "-i".to_string(),
-                format!("audio={device}"),
-            ]);
-            audio_inputs.push(input_index);
-            input_index += 1;
-        }
-    }
-
-    if include_system_audio && options.record_system_audio {
-        if let Some(device) = clean_device_name(options.system_audio_device.as_deref()) {
-            args.extend([
-                "-f".to_string(),
-                "dshow".to_string(),
-                "-i".to_string(),
-                format!("audio={device}"),
-            ]);
-            audio_inputs.push(input_index);
-        }
-    }
-
-    if video_input.is_none() && audio_inputs.is_empty() {
-        return Err(
-            "No meeting capture source is configured. Choose screen capture, a microphone device, or a system-audio loopback device."
-                .to_string(),
-        );
-    }
-
-    if audio_inputs.len() > 1 {
-        let inputs = audio_inputs
-            .iter()
-            .map(|index| format!("[{index}:a]"))
-            .collect::<String>();
+    if let Some(device) = &mic {
         args.extend([
-            "-filter_complex".to_string(),
-            format!(
-                "{inputs}amix=inputs={}:duration=longest:normalize=0[aout]",
-                audio_inputs.len()
-            ),
+            "-f".to_string(),
+            "dshow".to_string(),
+            "-i".to_string(),
+            format!("audio={device}"),
         ]);
     }
 
-    if let Some(index) = video_input {
-        args.extend(["-map".to_string(), format!("{index}:v")]);
+    if video.is_some() {
+        args.extend(["-map".to_string(), "0:v".to_string()]);
+    }
+    if mic.is_some() {
+        let index = usize::from(video.is_some());
+        args.extend(["-map".to_string(), format!("{index}:a")]);
     }
 
-    match audio_inputs.as_slice() {
-        [] => {}
-        [index] => args.extend(["-map".to_string(), format!("{index}:a")]),
-        _ => args.extend(["-map".to_string(), "[aout]".to_string()]),
-    }
-
-    if video_input.is_some() {
+    if let Some((_, height)) = video {
         args.extend([
             "-vf".to_string(),
-            format!("scale=-2:{}", preset.height()),
+            format!("scale=-2:{height}"),
             "-c:v".to_string(),
             "libx264".to_string(),
             "-preset".to_string(),
@@ -764,7 +658,7 @@ fn build_args(
         ]);
     }
 
-    if !audio_inputs.is_empty() {
+    if mic.is_some() {
         if is_final_output {
             args.extend(["-af".to_string(), MEETING_AUDIO_GAIN_FILTER.to_string()]);
         }
@@ -795,36 +689,13 @@ fn clean_device_name(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-enum VideoPreset {
-    AudioOnly,
-    Screen720p15,
-    Screen720p30,
-    Screen1080p30,
-}
-
-impl VideoPreset {
-    fn from_setting(value: &str) -> Self {
-        match value {
-            "audio_only" => Self::AudioOnly,
-            "screen_720p_15" => Self::Screen720p15,
-            "screen_1080p_30" => Self::Screen1080p30,
-            _ => Self::Screen720p30,
-        }
-    }
-
-    fn framerate(&self) -> u32 {
-        match self {
-            Self::Screen720p15 => 15,
-            Self::Screen720p30 | Self::Screen1080p30 => 30,
-            Self::AudioOnly => 0,
-        }
-    }
-
-    fn height(&self) -> u32 {
-        match self {
-            Self::Screen1080p30 => 1080,
-            Self::Screen720p15 | Self::Screen720p30 | Self::AudioOnly => 720,
-        }
+/// Screen-capture (framerate, height) for a video preset; None for "audio_only".
+pub fn video_params(preset: &str) -> Option<(u32, u32)> {
+    match preset {
+        "audio_only" => None,
+        "screen_720p_15" => Some((15, 720)),
+        "screen_1080p_30" => Some((30, 1080)),
+        _ => Some((30, 720)),
     }
 }
 
@@ -862,9 +733,7 @@ mod tests {
         let primary = dir.join("capture.mp4");
         let final_path = dir.join("recording.mp4");
 
-        let error = promote_primary_capture(&primary, &final_path).unwrap_err();
-
-        assert!(error.contains("does not exist"));
+        assert!(promote_primary_capture(&primary, &final_path).is_err());
         assert!(!final_path.exists());
         let _ = fs::remove_dir_all(dir);
     }
@@ -887,7 +756,7 @@ mod tests {
 
     #[test]
     fn build_args_keeps_faststart_and_gain_for_final_output() {
-        let args = build_args(Path::new("out.mp4"), &mic_only_options(), false, true).unwrap();
+        let args = build_args(Path::new("out.mp4"), &mic_only_options(), true).unwrap();
 
         assert!(has_pair(&args, "-movflags", "+faststart"));
         assert!(has_pair(&args, "-af", MEETING_AUDIO_GAIN_FILTER));
@@ -895,7 +764,7 @@ mod tests {
 
     #[test]
     fn build_args_omits_faststart_and_gain_for_intermediate_capture() {
-        let args = build_args(Path::new("capture.mp4"), &mic_only_options(), false, false).unwrap();
+        let args = build_args(Path::new("capture.mp4"), &mic_only_options(), false).unwrap();
 
         assert!(!args.contains(&"+faststart".to_string()));
         assert!(!args.contains(&"-af".to_string()));
@@ -1015,5 +884,274 @@ mod tests {
 
         assert!(args.iter().any(|a| a.starts_with("[0:a]")));
         assert!(!has_pair(&args, "-c:v", "copy"));
+    }
+
+    fn strings(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    #[test]
+    fn post_process_args_snapshots() {
+        let mix = mic_system_mix_filter(0);
+        let head = ["-hide_banner", "-y", "-progress", "pipe:1", "-nostats"];
+        let tail = [
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            "final.mp4",
+        ];
+        let cases: [(Option<&str>, bool, bool, Vec<&str>); 5] = [
+            (
+                Some("capture.mp4"),
+                true,
+                true,
+                vec![
+                    "-i",
+                    "capture.mp4",
+                    "-i",
+                    "system.wav",
+                    "-filter_complex",
+                    &mix,
+                    "-map",
+                    "0:v?",
+                    "-map",
+                    "[aout]",
+                    "-c:v",
+                    "copy",
+                ],
+            ),
+            (
+                Some("capture.mp4"),
+                false,
+                true,
+                vec![
+                    "-i",
+                    "capture.mp4",
+                    "-i",
+                    "system.wav",
+                    "-filter_complex",
+                    &mix,
+                    "-map",
+                    "[aout]",
+                ],
+            ),
+            (
+                Some("capture.mp4"),
+                true,
+                false,
+                vec![
+                    "-i",
+                    "capture.mp4",
+                    "-i",
+                    "system.wav",
+                    "-filter_complex",
+                    "[1:a]asetpts=PTS-STARTPTS,adelay=40:all=1,volume=2.0[aout]",
+                    "-map",
+                    "0:v?",
+                    "-map",
+                    "[aout]",
+                    "-c:v",
+                    "copy",
+                ],
+            ),
+            (
+                Some("capture.mp4"),
+                false,
+                false,
+                vec![
+                    "-i",
+                    "capture.mp4",
+                    "-i",
+                    "system.wav",
+                    "-filter_complex",
+                    "[1:a]asetpts=PTS-STARTPTS,adelay=40:all=1,volume=2.0[aout]",
+                    "-map",
+                    "[aout]",
+                ],
+            ),
+            (
+                None,
+                true,
+                true,
+                vec![
+                    "-i",
+                    "system.wav",
+                    "-filter_complex",
+                    "[0:a]asetpts=PTS-STARTPTS,volume=2.0[aout]",
+                    "-map",
+                    "[aout]",
+                ],
+            ),
+        ];
+        for (primary, has_video, has_primary_audio, middle) in cases {
+            let offset = if has_primary_audio { 0 } else { 40 };
+            let args = post_process_args(
+                primary.map(Path::new),
+                Path::new("system.wav"),
+                Path::new("final.mp4"),
+                None,
+                has_video,
+                has_primary_audio,
+                offset,
+            );
+            let expected: Vec<&str> = head.iter().chain(&middle).chain(&tail).copied().collect();
+            assert_eq!(
+                args,
+                strings(&expected),
+                "{primary:?} {has_video} {has_primary_audio}"
+            );
+        }
+
+        let combined = post_process_args(
+            Some(Path::new("capture.mp4")),
+            Path::new("system.wav"),
+            Path::new("final.mp4"),
+            Some(Path::new("t.m4a")),
+            false,
+            true,
+            -5,
+        );
+        let filter = combined_post_filter(-5);
+        let expected: Vec<&str> = head
+            .iter()
+            .copied()
+            .chain([
+                "-i",
+                "capture.mp4",
+                "-i",
+                "system.wav",
+                "-filter_complex",
+                &filter,
+                "-map",
+                "[aout]",
+            ])
+            .chain(tail)
+            .chain(["-map", "[tout]", "-c:a", "aac", "-b:a", "96k", "t.m4a"])
+            .collect();
+        assert_eq!(combined, strings(&expected));
+    }
+
+    #[test]
+    fn build_args_snapshots() {
+        let video_mic = MeetingStartOptions {
+            record_video: true,
+            video_preset: "screen_1080p_30".to_string(),
+            ..mic_only_options()
+        };
+        assert_eq!(
+            build_args(Path::new("out.mp4"), &video_mic, true).unwrap(),
+            strings(&[
+                "-hide_banner",
+                "-y",
+                "-rtbufsize",
+                "1024M",
+                "-f",
+                "gdigrab",
+                "-framerate",
+                "30",
+                "-i",
+                "desktop",
+                "-f",
+                "dshow",
+                "-i",
+                "audio=Test Mic",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-vf",
+                "scale=-2:1080",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "28",
+                "-pix_fmt",
+                "yuv420p",
+                "-af",
+                "volume=2.0",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-ar",
+                "48000",
+                "-movflags",
+                "+faststart",
+                "out.mp4",
+            ])
+        );
+
+        for (preset, framerate, height) in [
+            ("screen_720p_15", "15", "scale=-2:720"),
+            ("screen_720p_30", "30", "scale=-2:720"),
+            ("anything_else", "30", "scale=-2:720"),
+        ] {
+            let video_only = MeetingStartOptions {
+                record_video: true,
+                record_mic: false,
+                video_preset: preset.to_string(),
+                ..mic_only_options()
+            };
+            assert_eq!(
+                build_args(Path::new("capture.mp4"), &video_only, false).unwrap(),
+                strings(&[
+                    "-hide_banner",
+                    "-y",
+                    "-rtbufsize",
+                    "1024M",
+                    "-f",
+                    "gdigrab",
+                    "-framerate",
+                    framerate,
+                    "-i",
+                    "desktop",
+                    "-map",
+                    "0:v",
+                    "-vf",
+                    height,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "28",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "capture.mp4",
+                ])
+            );
+        }
+
+        let audio_only_preset = MeetingStartOptions {
+            record_video: true,
+            ..mic_only_options()
+        };
+        assert_eq!(
+            build_args(Path::new("capture.mp4"), &audio_only_preset, false).unwrap(),
+            strings(&[
+                "-hide_banner",
+                "-y",
+                "-rtbufsize",
+                "1024M",
+                "-f",
+                "dshow",
+                "-i",
+                "audio=Test Mic",
+                "-map",
+                "0:a",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-ar",
+                "48000",
+                "capture.mp4",
+            ])
+        );
     }
 }

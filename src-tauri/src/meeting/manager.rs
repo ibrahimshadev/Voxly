@@ -100,7 +100,8 @@ impl MeetingSessionManager {
         storage::create_meeting_folder(&id)?;
         let output_path = storage::source_path(&id)?;
 
-        let has_video = options.record_video && options.video_preset != "audio_only";
+        let has_video = options.record_video
+            && crate::meeting::recorder::video_params(&options.video_preset).is_some();
         let has_mic = options
             .mic_device
             .as_deref()
@@ -288,10 +289,8 @@ fn run_finalize(
             MeetingUpdate {
                 state: "processing".to_string(),
                 meeting_id: Some(progress_id.clone()),
-                message: None,
-                elapsed_secs: None,
-                file_size_bytes: None,
                 progress_pct: Some(pct),
+                ..Default::default()
             },
         );
     });
@@ -315,10 +314,9 @@ fn run_finalize(
                 MeetingUpdate {
                     state: "stopped".to_string(),
                     meeting_id: Some(id),
-                    message: None,
                     elapsed_secs: Some(duration_secs.round() as u64),
                     file_size_bytes,
-                    progress_pct: None,
+                    ..Default::default()
                 },
             );
         }
@@ -329,9 +327,8 @@ fn run_finalize(
                     state: "error".to_string(),
                     meeting_id: Some(id),
                     message: Some(error),
-                    elapsed_secs: None,
                     file_size_bytes,
-                    progress_pct: None,
+                    ..Default::default()
                 },
             );
         }
@@ -355,10 +352,9 @@ fn emit_progress(app: AppHandle, id: String, output_path: std::path::PathBuf) {
                 MeetingUpdate {
                     state: "recording".to_string(),
                     meeting_id: Some(id.clone()),
-                    message: None,
                     elapsed_secs: Some(elapsed_secs),
                     file_size_bytes,
-                    progress_pct: None,
+                    ..Default::default()
                 },
             );
             if emit_result.is_err() {
