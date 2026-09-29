@@ -51,62 +51,37 @@ pub fn load_history_page(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
+    let pattern = query.map(|query| format!("%{query}%"));
+
     crate::db::with_connection(|conn| {
-        let (items, total) = if let Some(query) = query {
-            let pattern = format!("%{query}%");
-            let total = conn
-                .query_row(
-                    r#"
-                    SELECT COUNT(*)
-                    FROM transcription_history
-                    WHERE text LIKE ?1 OR original_text LIKE ?1 OR mode_name LIKE ?1
-                    "#,
-                    params![pattern],
-                    |row| row.get(0),
-                )
-                .map_err(|error| format!("Failed to count transcription history: {error}"))?;
+        let total = conn
+            .query_row(
+                r#"
+                SELECT COUNT(*)
+                FROM transcription_history
+                WHERE ?1 IS NULL OR text LIKE ?1 OR original_text LIKE ?1 OR mode_name LIKE ?1
+                "#,
+                params![pattern],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Failed to count transcription history: {error}"))?;
 
-            let mut stmt = conn
-                .prepare(
-                    r#"
-                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text, edited_at_ms
-                    FROM transcription_history
-                    WHERE text LIKE ?1 OR original_text LIKE ?1 OR mode_name LIKE ?1
-                    ORDER BY created_at_ms DESC
-                    LIMIT ?2 OFFSET ?3
-                    "#,
-                )
-                .map_err(|error| format!("Failed to query transcription history: {error}"))?;
-            let items = stmt
-                .query_map(params![pattern, limit, offset], history_item_from_row)
-                .map_err(|error| format!("Failed to query transcription history: {error}"))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| format!("Failed to read transcription history row: {error}"))?;
-            (items, total)
-        } else {
-            let total = conn
-                .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
-                    row.get(0)
-                })
-                .map_err(|error| format!("Failed to count transcription history: {error}"))?;
-
-            let mut stmt = conn
-                .prepare(
-                    r#"
-                    SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text, edited_at_ms
-                    FROM transcription_history
-                    ORDER BY created_at_ms DESC
-                    LIMIT ?1 OFFSET ?2
-                    "#,
-                )
-                .map_err(|error| format!("Failed to query transcription history: {error}"))?;
-            let items = stmt
-                .query_map(params![limit, offset], history_item_from_row)
-                .map_err(|error| format!("Failed to query transcription history: {error}"))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| format!("Failed to read transcription history row: {error}"))?;
-            (items, total)
-        };
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT id, text, created_at_ms, duration_secs, language, mode_name, original_text, edited_at_ms
+                FROM transcription_history
+                WHERE ?1 IS NULL OR text LIKE ?1 OR original_text LIKE ?1 OR mode_name LIKE ?1
+                ORDER BY created_at_ms DESC
+                LIMIT ?2 OFFSET ?3
+                "#,
+            )
+            .map_err(|error| format!("Failed to query transcription history: {error}"))?;
+        let items = stmt
+            .query_map(params![pattern, limit, offset], history_item_from_row)
+            .map_err(|error| format!("Failed to query transcription history: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Failed to read transcription history row: {error}"))?;
 
         Ok(HistoryPage { items, total })
     })
@@ -114,39 +89,25 @@ pub fn load_history_page(
 
 pub fn history_stats(today_start_ms: i64) -> Result<HistoryStats, String> {
     crate::db::with_connection(|conn| {
-        let total_count = conn
-            .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
-                row.get(0)
-            })
-            .map_err(|error| format!("Failed to count transcription history: {error}"))?;
-        let today_count = conn
-            .query_row(
-                "SELECT COUNT(*) FROM transcription_history WHERE created_at_ms >= ?1",
-                params![today_start_ms],
-                |row| row.get(0),
-            )
-            .map_err(|error| format!("Failed to count today's transcription history: {error}"))?;
-        let total_audio_secs = conn
-            .query_row(
-                "SELECT COALESCE(SUM(duration_secs), 0.0) FROM transcription_history",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|error| format!("Failed to sum transcription audio duration: {error}"))?;
-        let today_audio_secs = conn
-            .query_row(
-                "SELECT COALESCE(SUM(duration_secs), 0.0) FROM transcription_history WHERE created_at_ms >= ?1",
-                params![today_start_ms],
-                |row| row.get(0),
-            )
-            .map_err(|error| format!("Failed to sum today's transcription audio duration: {error}"))?;
-
-        Ok(HistoryStats {
-            total_count,
-            today_count,
-            today_audio_secs,
-            total_audio_secs,
-        })
+        conn.query_row(
+            r#"
+            SELECT COUNT(*),
+                   COUNT(*) FILTER (WHERE created_at_ms >= ?1),
+                   COALESCE(SUM(duration_secs), 0.0),
+                   COALESCE(SUM(duration_secs) FILTER (WHERE created_at_ms >= ?1), 0.0)
+            FROM transcription_history
+            "#,
+            params![today_start_ms],
+            |row| {
+                Ok(HistoryStats {
+                    total_count: row.get(0)?,
+                    today_count: row.get(1)?,
+                    total_audio_secs: row.get(2)?,
+                    today_audio_secs: row.get(3)?,
+                })
+            },
+        )
+        .map_err(|error| format!("Failed to load transcription history stats: {error}"))
     })
 }
 
@@ -326,26 +287,45 @@ mod tests {
         assert_eq!(rows[1].id, "old");
     }
 
-    #[test]
-    fn delete_by_id_removes_only_matching_row() {
-        let conn = test_conn();
-        insert(&conn, "a", "one", 1);
-        insert(&conn, "b", "two", 2);
+    /// delete_item and clear_history run against the shared per-process test
+    /// database, so the destructive tests take turns.
+    static SHARED_DB: Mutex<()> = Mutex::new(());
 
-        conn.execute(
-            "DELETE FROM transcription_history WHERE id = ?1",
-            params!["a"],
-        )
+    fn insert_shared(text: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        crate::db::with_connection(|conn| {
+            insert(conn, &id, text, 1);
+            Ok(())
+        })
         .unwrap();
-        let remaining: Option<String> = conn
-            .query_row(
-                "SELECT id FROM transcription_history ORDER BY created_at_ms DESC",
-                [],
-                |row| row.get(0),
+        id
+    }
+
+    fn shared_exists(id: &str) -> bool {
+        crate::db::with_connection(|conn| {
+            conn.query_row(
+                "SELECT 1 FROM transcription_history WHERE id = ?1",
+                params![id],
+                |_| Ok(()),
             )
             .optional()
-            .unwrap();
-        assert_eq!(remaining.as_deref(), Some("b"));
+            .map(|row| row.is_some())
+            .map_err(|error| error.to_string())
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn delete_by_id_removes_only_matching_row() {
+        let _turn = SHARED_DB
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let a = insert_shared("one");
+        let b = insert_shared("two");
+
+        delete_item(&a).unwrap();
+        assert!(!shared_exists(&a));
+        assert!(shared_exists(&b));
     }
 
     #[test]
@@ -397,15 +377,12 @@ mod tests {
 
     #[test]
     fn clear_removes_all_rows() {
-        let conn = test_conn();
-        insert(&conn, "a", "one", 1);
-        conn.execute("DELETE FROM transcription_history", [])
-            .unwrap();
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(count, 0);
+        let _turn = SHARED_DB
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let ids = [insert_shared("one"), insert_shared("two")];
+
+        clear_history().unwrap();
+        assert!(ids.iter().all(|id| !shared_exists(id)));
     }
 }
