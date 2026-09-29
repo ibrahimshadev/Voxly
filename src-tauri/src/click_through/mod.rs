@@ -5,7 +5,6 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -16,8 +15,8 @@ pub struct HitRect {
     pub h: f64,
 }
 
-static HIT_RECTS: Lazy<Mutex<Vec<HitRect>>> = Lazy::new(|| Mutex::new(Vec::new()));
-static SCALE_FACTOR: Lazy<Mutex<f64>> = Lazy::new(|| Mutex::new(1.0));
+static HIT_RECTS: Mutex<Vec<HitRect>> = Mutex::new(Vec::new());
+static SCALE_FACTOR: Mutex<f64> = Mutex::new(1.0);
 
 /// Check if a point (relative to window top-left) falls within any interactive
 /// hit rect. The rects are in CSS pixels; `scale` converts them to the point's

@@ -1,8 +1,6 @@
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
-
-use once_cell::sync::Lazy;
 
 use crate::meeting::storage;
 use crate::meeting::types::{
@@ -81,7 +79,7 @@ going forward.
 const TITLE_SYSTEM_PROMPT: &str = "You are given an AI-generated meeting summary. Reply with ONLY a concise descriptive meeting title for it: 3-8 words, plain text, no quotes, no markdown, no trailing punctuation.";
 const MAX_GENERATED_TITLE_CHARS: usize = 80;
 
-static IN_FLIGHT: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static IN_FLIGHT: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 #[derive(Debug)]
 struct InFlightGuard {

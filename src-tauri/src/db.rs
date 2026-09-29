@@ -1,8 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
-use once_cell::sync::Lazy;
 use rusqlite::{params, Connection};
 
 use crate::meeting::types::{MeetingMeta, MeetingStatus, MeetingTranscript, TranscriptStatus};
@@ -11,7 +10,7 @@ use crate::transcription_history::TranscriptionHistoryItem;
 const DB_FILE: &str = "dikt.db";
 const SCHEMA_VERSION: i64 = 1;
 
-static DB: Lazy<Result<Mutex<Connection>, String>> = Lazy::new(|| {
+static DB: LazyLock<Result<Mutex<Connection>, String>> = LazyLock::new(|| {
     let app_dir = app_data_dir()?;
     let db_path = app_dir.join(DB_FILE);
     open_database(&db_path, &app_dir).map(Mutex::new)

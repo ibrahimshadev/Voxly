@@ -1,11 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use once_cell::sync::Lazy;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
-static LAST_HISTORY_ERROR: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+static LAST_HISTORY_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscriptionHistoryItem {
