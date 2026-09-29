@@ -133,7 +133,7 @@ fn default_meeting_language() -> String {
 
 fn default_modes(provider: &str) -> Vec<Mode> {
     let model = match provider {
-        "groq" => "llama-3.3-70b-versatile",
+        "groq" => "openai/gpt-oss-120b",
         "openai" => "gpt-4o-mini",
         _ => "",
     }
