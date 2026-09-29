@@ -110,7 +110,6 @@ impl MockTranscriber {
                 text: text.to_string(),
                 duration_secs: Some(1.5),
                 language: Some("english".to_string()),
-                segments: None,
             })),
         }
     }
