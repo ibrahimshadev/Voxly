@@ -14,6 +14,8 @@ mod platform {
         WaveFormat,
     };
 
+    use super::{silence_frames_needed, GAP_TOLERANCE_FRAMES, SAMPLE_RATE};
+
     pub struct LoopbackRecorder {
         recording: Arc<AtomicBool>,
         handle: Option<JoinHandle<Result<(), String>>>,
@@ -108,19 +110,16 @@ mod platform {
         recording: Arc<AtomicBool>,
         ready: mpsc::Sender<Result<Instant, String>>,
     ) -> Result<(), String> {
-        let startup = initialize_capture(output_path, device_name);
-        let Ok(mut capture) = startup else {
-            let error = startup
-                .err()
-                .unwrap_or_else(|| "WASAPI startup failed".to_string());
-            let _ = ready.send(Err(error.clone()));
-            return Err(error);
+        let mut capture = match initialize_capture(output_path, device_name).and_then(start_capture)
+        {
+            Ok(capture) => capture,
+            Err(error) => {
+                let _ = ready.send(Err(error.clone()));
+                return Err(error);
+            }
         };
-
-        capture
-            .audio_client
-            .start_stream()
-            .map_err(|error| format!("Failed to start WASAPI loopback stream: {error}"))?;
+        // Frame 0 of the WAV is this instant; `system_audio_offset_ms` aligns it
+        // against the primary capture's start.
         let _ = ready.send(Ok(Instant::now()));
 
         while recording.load(Ordering::SeqCst) {
@@ -129,6 +128,15 @@ mod platform {
         }
 
         capture_available_packets(&mut capture)?;
+        // Loopback delivers nothing while the output is idle; pad the tail so the
+        // track runs until the stop instant like the other captures.
+        let now = qpc_now_100ns()?;
+        let tail = silence_frames_needed(
+            now.saturating_sub(capture.anchor_100ns),
+            capture.frames_written,
+            0,
+        );
+        write_silence(&mut capture, tail)?;
         let _ = capture.audio_client.stop_stream();
         capture.writer.finalize().map_err(|error| {
             format!(
@@ -145,6 +153,37 @@ mod platform {
         writer: WavWriter<std::io::BufWriter<std::fs::File>>,
         bytes_per_frame: usize,
         channels: usize,
+        // Performance-counter time in 100 ns units (the unit of packet
+        // timestamps) that frame 0 of the WAV corresponds to.
+        anchor_100ns: u64,
+        frames_written: u64,
+    }
+
+    fn start_capture(mut capture: ActiveLoopbackCapture) -> Result<ActiveLoopbackCapture, String> {
+        capture
+            .audio_client
+            .start_stream()
+            .map_err(|error| format!("Failed to start WASAPI loopback stream: {error}"))?;
+        capture.anchor_100ns = qpc_now_100ns()?;
+        Ok(capture)
+    }
+
+    // The clock WASAPI stamps capture packets with. (IAudioClock::GetPosition
+    // can't anchor: it reports 0 until the stream's first period.)
+    fn qpc_now_100ns() -> Result<u64, String> {
+        use windows::Win32::System::Performance::{
+            QueryPerformanceCounter, QueryPerformanceFrequency,
+        };
+
+        let mut counter = 0i64;
+        let mut frequency = 0i64;
+        unsafe {
+            QueryPerformanceCounter(&mut counter)
+                .and_then(|()| QueryPerformanceFrequency(&mut frequency))
+                .map_err(|error| format!("Failed to read the performance counter: {error}"))?;
+        }
+        let ticks = u128::try_from(counter).unwrap_or(0) * 10_000_000;
+        Ok((ticks / u128::try_from(frequency.max(1)).unwrap_or(1)) as u64)
     }
 
     fn initialize_capture(
@@ -169,7 +208,8 @@ mod platform {
         let mut audio_client = device
             .get_iaudioclient()
             .map_err(|error| format!("Failed to create WASAPI audio client: {error}"))?;
-        let desired_format = WaveFormat::new(16, 16, &SampleType::Int, 48_000, 2, None);
+        let desired_format =
+            WaveFormat::new(16, 16, &SampleType::Int, SAMPLE_RATE as usize, 2, None);
         let (default_period, _) = audio_client
             .get_device_period()
             .map_err(|error| format!("Failed to read WASAPI device period: {error}"))?;
@@ -190,7 +230,7 @@ mod platform {
 
         let spec = WavSpec {
             channels: 2,
-            sample_rate: 48_000,
+            sample_rate: SAMPLE_RATE,
             bits_per_sample: 16,
             sample_format: WavSampleFormat::Int,
         };
@@ -208,6 +248,8 @@ mod platform {
             writer,
             bytes_per_frame: desired_format.get_blockalign() as usize,
             channels: 2,
+            anchor_100ns: 0,
+            frames_written: 0,
         })
     }
 
@@ -229,13 +271,28 @@ mod platform {
                 .map_err(|error| format!("Failed to read WASAPI loopback data: {error}"))?;
             let samples = frames as usize * capture.channels;
 
+            // Place the packet at its capture time: the output device sends no
+            // packets while idle, so without this every gap would pull later
+            // audio earlier and shorten the track.
+            if !info.flags.timestamp_error {
+                let tolerance = if info.flags.data_discontinuity {
+                    0
+                } else {
+                    GAP_TOLERANCE_FRAMES
+                };
+                // A packet can't have been captured in the future; the clamp keeps
+                // a bogus timestamp from writing a runaway gap.
+                let captured_at = info.timestamp.min(qpc_now_100ns()?);
+                let gap = silence_frames_needed(
+                    captured_at.saturating_sub(capture.anchor_100ns),
+                    capture.frames_written,
+                    tolerance,
+                );
+                write_silence(capture, gap)?;
+            }
+
             if info.flags.silent {
-                for _ in 0..samples {
-                    capture
-                        .writer
-                        .write_sample(0i16)
-                        .map_err(|error| format!("Failed to write loopback silence: {error}"))?;
-                }
+                write_silence(capture, u64::from(frames))?;
                 continue;
             }
 
@@ -245,7 +302,19 @@ mod platform {
                     .write_sample(i16::from_le_bytes([sample[0], sample[1]]))
                     .map_err(|error| format!("Failed to write loopback sample: {error}"))?;
             }
+            capture.frames_written += u64::from(frames);
         }
+    }
+
+    fn write_silence(capture: &mut ActiveLoopbackCapture, frames: u64) -> Result<(), String> {
+        for _ in 0..frames * capture.channels as u64 {
+            capture
+                .writer
+                .write_sample(0i16)
+                .map_err(|error| format!("Failed to write loopback silence: {error}"))?;
+        }
+        capture.frames_written += frames;
+        Ok(())
     }
 
     fn initialize_audio_thread() -> Result<(), String> {
@@ -291,6 +360,117 @@ use std::path::{Path, PathBuf};
 
 pub use platform::*;
 
+const SAMPLE_RATE: u32 = 48_000;
+// Deficits below this are packet/clock jitter, not a gap. It also bounds how
+// far audio-clock drift against the performance counter can accumulate before
+// a silence insert pulls the track back onto wall-clock time.
+#[cfg_attr(not(windows), allow(dead_code))]
+const GAP_TOLERANCE_FRAMES: u64 = SAMPLE_RATE as u64 * 30 / 1000;
+
+/// Frames of silence to write so the next frame lands `elapsed_100ns` (100 ns
+/// units since capture start) into the track, given `frames_written` so far.
+/// Deficits within `tolerance_frames` are ignored; a surplus is never trimmed.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn silence_frames_needed(elapsed_100ns: u64, frames_written: u64, tolerance_frames: u64) -> u64 {
+    let expected = u128::from(elapsed_100ns) * u128::from(SAMPLE_RATE) / 10_000_000;
+    let deficit = expected.saturating_sub(u128::from(frames_written));
+    if deficit > u128::from(tolerance_frames) {
+        u64::try_from(deficit).unwrap_or(u64::MAX)
+    } else {
+        0
+    }
+}
+
 pub fn temp_system_audio_path(base: &Path) -> PathBuf {
     base.join("system-audio.wav")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SECOND_100NS: u64 = 10_000_000;
+
+    #[test]
+    fn no_silence_when_track_is_on_time() {
+        assert_eq!(silence_frames_needed(SECOND_100NS, 48_000, 0), 0);
+        assert_eq!(silence_frames_needed(0, 0, GAP_TOLERANCE_FRAMES), 0);
+    }
+
+    #[test]
+    fn idle_output_gap_is_filled_to_wall_clock() {
+        // 1 s of audio written, next packet captured 5 s after start.
+        assert_eq!(
+            silence_frames_needed(5 * SECOND_100NS, 48_000, GAP_TOLERANCE_FRAMES),
+            4 * 48_000
+        );
+    }
+
+    #[test]
+    fn silent_start_is_filled_from_frame_zero() {
+        // Nothing played for the first 2.5 s of the meeting.
+        assert_eq!(
+            silence_frames_needed(25 * SECOND_100NS / 10, 0, GAP_TOLERANCE_FRAMES),
+            120_000
+        );
+    }
+
+    #[test]
+    fn jitter_within_tolerance_is_ignored() {
+        let elapsed = SECOND_100NS + 20 * 10_000; // 1.020 s
+        assert_eq!(
+            silence_frames_needed(elapsed, 48_000, GAP_TOLERANCE_FRAMES),
+            0
+        );
+        assert_eq!(silence_frames_needed(elapsed, 48_000, 0), 960);
+    }
+
+    #[test]
+    fn deficit_just_past_tolerance_is_filled_exactly() {
+        // 31 ms behind with a 30 ms tolerance.
+        let elapsed = SECOND_100NS + 310_000;
+        assert_eq!(
+            silence_frames_needed(elapsed, 48_000, GAP_TOLERANCE_FRAMES),
+            1_488
+        );
+    }
+
+    #[test]
+    fn surplus_is_never_negative() {
+        assert_eq!(silence_frames_needed(SECOND_100NS, 96_000, 0), 0);
+    }
+
+    #[test]
+    fn stop_padding_covers_long_idle_tail() {
+        // A one-hour meeting where playback stopped after 10 minutes.
+        let hour = 3_600 * SECOND_100NS;
+        assert_eq!(silence_frames_needed(hour, 600 * 48_000, 0), 3_000 * 48_000);
+    }
+
+    // Needs Windows playback devices: `cargo test -- --ignored loopback_track`.
+    // Runs on every output device so both an idle one (no packets at all) and a
+    // playing one are covered; either way the WAV must span wall-clock time.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "records from the Windows playback devices"]
+    fn loopback_track_spans_wall_clock_time() {
+        let dir = std::env::temp_dir().join(format!("dikt_loopback_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = temp_system_audio_path(&dir);
+
+        for device in output_devices().unwrap() {
+            let recorder = LoopbackRecorder::spawn(&path, Some(&device)).unwrap();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let elapsed = recorder.started_at().elapsed().as_secs_f64();
+            recorder.stop().unwrap();
+
+            let reader = hound::WavReader::open(&path).unwrap();
+            let secs = f64::from(reader.duration()) / f64::from(SAMPLE_RATE);
+            assert!(
+                (secs - elapsed).abs() < 0.25,
+                "{device}: wav {secs}s vs {elapsed}s"
+            );
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
