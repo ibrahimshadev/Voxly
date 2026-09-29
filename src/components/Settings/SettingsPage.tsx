@@ -4,7 +4,7 @@ import type { HotkeyMode, Settings, Provider } from '../../types';
 import { PROVIDER_IDS, PROVIDERS } from '../../constants';
 import { Box, ChevronDown, CircleCheck, Key, Link2 } from 'lucide-solid';
 import { notifyError, notifySuccess } from '../../lib/notify';
-import { Segmented, SecretInput, Select, settingsFieldSetter } from './controls';
+import { HotkeyInput, Segmented, SecretInput, Select, settingsFieldSetter } from './controls';
 import ProviderIcon from './ProviderIcon';
 
 /** In-memory model selection per provider. Resets on app start so defaults apply. */
@@ -18,10 +18,6 @@ type SettingsPageProps = {
   onSaveQuiet: () => void;
   onTestAndSave: () => void;
 };
-
-// Editing codec for the hotkey field: must stay the exact inverse of the onInput parse below.
-const formatHotkey = (raw: string): string =>
-  raw.replace('CommandOrControl', 'Ctrl').replace(/\+/g, ' + ');
 
 export default function SettingsPage(props: SettingsPageProps) {
   const onField = settingsFieldSetter(props.setSettings);
@@ -247,17 +243,11 @@ export default function SettingsPage(props: SettingsPageProps) {
                 <span class="text-xs text-gray-500">System-wide trigger to start recording</span>
               </div>
               <div class="relative">
-                <input
-                  class="bg-input-bg border border-white/15 text-center w-36 rounded py-1.5 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 cursor-pointer hover:border-primary/50 transition-colors"
-                  type="text"
-                  value={formatHotkey(props.settings().hotkey)}
-                  onInput={(e) => {
-                    const raw = (e.target as HTMLInputElement).value
-                      .replace(/\s*\+\s*/g, '+')
-                      .replace('Ctrl', 'CommandOrControl');
-                    props.setSettings((current) => ({ ...current, hotkey: raw }));
-                  }}
+                <HotkeyInput
+                  value={props.settings().hotkey}
+                  onChange={(raw) => props.setSettings((current) => ({ ...current, hotkey: raw }))}
                   onBlur={() => props.onSaveQuiet()}
+                  class="text-center w-36 rounded"
                 />
               </div>
             </div>

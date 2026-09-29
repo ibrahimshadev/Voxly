@@ -29,10 +29,9 @@ import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } f
 import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDER_IDS, PROVIDERS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
-import { formatHotkey } from '../../lib/hotkey';
 import { formatDuration, formatSpeakerLabel } from '../../lib/meetingFormat';
 import { createPanelResize } from '../../lib/panelResize';
-import { SecretInput, Select, SwitchKnob, settingsFieldSetter } from './controls';
+import { HotkeyInput, SecretInput, Select, SwitchKnob, settingsFieldSetter } from './controls';
 import VideoPlayer from './VideoPlayer';
 import ProviderIcon from './ProviderIcon';
 
@@ -412,7 +411,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   return (
     <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
       <header class="shrink-0 border-b border-white/5 px-6 lg:px-10 py-5">
-        <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 class="text-white text-[30px] leading-9 font-bold tracking-tight">Meetings</h1>
             <p class="mt-1 text-sm text-gray-500">
@@ -457,11 +456,11 @@ export default function MeetingsPage(props: MeetingsPageProps) {
       </header>
 
       <div
-        class="relative flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[var(--meetings-left)_minmax(0,1fr)] overflow-hidden"
+        class="relative flex-1 min-h-0 grid grid-cols-[var(--meetings-left)_minmax(0,1fr)] overflow-hidden"
         style={{ '--meetings-left': `${leftResize.percent()}%` }}
       >
         <div
-          class={`hidden xl:block absolute inset-y-0 z-20 w-[7px] -translate-x-1/2 cursor-col-resize transition-colors ${
+          class={`absolute inset-y-0 z-20 w-[7px] -translate-x-1/2 cursor-col-resize transition-colors ${
             leftResize.dragging() ? 'bg-primary/40' : 'hover:bg-primary/25'
           }`}
           style={{ left: 'var(--meetings-left)' }}
@@ -469,7 +468,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
           title="Drag to resize"
         />
         <section class="min-h-0 flex flex-col border-r border-white/5 bg-background-dark overflow-hidden">
-          <div class="shrink-0 border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
+          <div class="@container min-h-0 overflow-y-auto scrollbar-hide border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
             <div class="space-y-3">
               <Show
                 when={!props.settings().meeting_consent_acknowledged}
@@ -667,16 +666,14 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   <label class="text-xs text-gray-500 font-medium ml-1">
                     Meeting hotkey
                   </label>
-                  <input
-                    type="text"
+                  <HotkeyInput
                     value={props.settings().meeting_hotkey}
-                    onInput={onField('meeting_hotkey')}
+                    onChange={(raw) =>
+                      props.setSettings((current) => ({ ...current, meeting_hotkey: raw }))
+                    }
                     onBlur={save}
-                    class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 hover:border-primary/50 transition-colors"
+                    class="mt-1.5 w-full rounded-lg px-3"
                   />
-                  <p class="mt-1 text-[11px] text-gray-600">
-                    Windows: {formatHotkey(props.settings().meeting_hotkey)}
-                  </p>
                 </div>
 
                 <div>
@@ -724,7 +721,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div class="grid grid-cols-1 @lg:grid-cols-3 gap-2">
                 <ToggleRow
                   label="Record Screen"
                   description="MP4 video"
@@ -851,7 +848,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
             </span>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto scrollbar-hide">
+          <div class="min-h-52 flex-1 overflow-y-auto scrollbar-hide">
             <Show
               when={props.meetings().length > 0}
               fallback={

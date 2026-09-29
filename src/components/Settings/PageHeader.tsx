@@ -28,6 +28,8 @@ export default function PageHeader(props: {
   title: string;
   stats: JSX.Element;
   subtitle?: string;
+  /** Max-width class of the header column; match the page's content column. */
+  width?: string;
   search?: {
     value: string;
     onInput: (value: string) => void;
@@ -40,7 +42,7 @@ export default function PageHeader(props: {
   const titleRow = (
     <div class="flex items-baseline gap-4 min-w-0">
       <h1 class="text-white text-3xl font-bold tracking-tight shrink-0">{props.title}</h1>
-      <div class="flex items-center gap-4 text-sm text-gray-400 border-l border-white/10 pl-4 overflow-hidden">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-400 border-l border-white/10 pl-4">
         {props.stats}
       </div>
     </div>
@@ -48,7 +50,7 @@ export default function PageHeader(props: {
   return (
     <div class="flex-none px-6 sm:px-10 py-5 border-b border-white/5">
       <div
-        class={`max-w-4xl mx-auto w-full flex flex-col md:flex-row ${
+        class={`${props.width ?? 'max-w-4xl'} mx-auto w-full flex flex-col md:flex-row ${
           props.subtitle ? 'md:items-start' : 'md:items-center'
         } justify-between gap-4`}
       >
