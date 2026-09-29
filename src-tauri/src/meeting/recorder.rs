@@ -184,8 +184,12 @@ impl RunningRecorder {
             self.has_primary_audio,
             self.system_audio_offset_ms,
         );
-        let mut result =
-            run_ffmpeg_with_progress(&self.ffmpeg_path, &combined_args, duration_secs, on_progress);
+        let mut result = run_ffmpeg_with_progress(
+            &self.ffmpeg_path,
+            &combined_args,
+            duration_secs,
+            on_progress,
+        );
 
         // The transcript track must stay non-fatal (it was a separate, logged-only
         // pass before the merge): retry producing only the final mix.
@@ -461,8 +465,7 @@ fn post_process_args(
         system_audio_path.to_string_lossy().to_string(),
     ]);
 
-    let combined =
-        transcript_audio_path.is_some() && primary_path.is_some() && has_primary_audio;
+    let combined = transcript_audio_path.is_some() && primary_path.is_some() && has_primary_audio;
 
     match (primary_path.is_some(), has_primary_audio) {
         (true, true) => {

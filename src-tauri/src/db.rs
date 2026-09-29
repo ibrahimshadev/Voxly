@@ -629,7 +629,10 @@ mod tests {
 
     #[test]
     fn meeting_status_processing_round_trips() {
-        assert_eq!(meeting_status_to_str(&MeetingStatus::Processing), "processing");
+        assert_eq!(
+            meeting_status_to_str(&MeetingStatus::Processing),
+            "processing"
+        );
         assert!(matches!(
             meeting_status_from_str("processing"),
             Some(MeetingStatus::Processing)
