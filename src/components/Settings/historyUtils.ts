@@ -20,53 +20,35 @@ export function formatTotalAudio(totalSecs: number): string {
   return `${mins}m`;
 }
 
-export function formatRelativeTime(timestampMs: number, nowMs: number = Date.now()): string {
-  if (!Number.isFinite(timestampMs)) return 'Unknown time';
+const DAY_MS = 86400000;
 
-  const elapsedSeconds = Math.floor((nowMs - timestampMs) / 1000);
-  if (elapsedSeconds < 0) return 'just now';
-  if (elapsedSeconds < 60) return 'just now';
+function dayStarts(now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return { today, yesterday: today - DAY_MS, thisWeek: today - now.getDay() * DAY_MS };
+}
 
-  const minutes = Math.floor(elapsedSeconds / 60);
+// Only used for today's entries, so less than a day has passed (25h across a DST change).
+function formatRelativeTime(timestampMs: number): string {
+  const minutes = Math.floor((Date.now() - timestampMs) / 60000);
+  if (minutes < 1) return 'just now';
   if (minutes < 60) return `${minutes}m ago`;
-
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
+  return hours < 24 ? `${hours}h ago` : '1d ago';
 }
 
 export function formatItemTime(timestampMs: number): string {
   if (!Number.isFinite(timestampMs)) return 'Unknown';
 
-  const now = new Date();
+  const starts = dayStarts();
+  if (timestampMs >= starts.today) return formatRelativeTime(timestampMs);
+
   const date = new Date(timestampMs);
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfYesterday = startOfToday - 86400000;
-
-  if (timestampMs >= startOfToday) {
-    return formatRelativeTime(timestampMs);
-  }
-
   const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
-  if (timestampMs >= startOfYesterday) {
-    return `Yesterday, ${timeStr}`;
+  if (timestampMs >= starts.yesterday) return `Yesterday, ${timeStr}`;
+  if (timestampMs >= starts.thisWeek) {
+    return `${date.toLocaleDateString([], { weekday: 'long' })}, ${timeStr}`;
   }
-
-  const dayOfWeek = now.getDay();
-  const startOfThisWeek = startOfToday - (dayOfWeek * 86400000);
-  if (timestampMs >= startOfThisWeek) {
-    const dayName = date.toLocaleDateString([], { weekday: 'long' });
-    return `${dayName}, ${timeStr}`;
-  }
-
-  const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  return `${dateStr}, ${timeStr}`;
+  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${timeStr}`;
 }
 
 export function formatExactTime(timestampMs: number): string {
@@ -93,43 +75,21 @@ export type DateGroup = {
 };
 
 export function groupByDate(items: TranscriptionHistoryItem[]): DateGroup[] {
-  if (items.length === 0) return [];
-
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfYesterday = startOfToday - 86400000;
-  const dayOfWeek = now.getDay();
-  const startOfThisWeek = startOfToday - (dayOfWeek * 86400000);
-
-  const buckets: Record<string, DateGroup> = {};
-  const order: string[] = [];
-
+  const starts = dayStarts();
+  const groups = new Map<string, DateGroup>();
   for (const item of items) {
-    let key: string;
-    let label: string;
-    let isToday = false;
-
-    if (item.created_at_ms >= startOfToday) {
-      key = 'today';
-      label = 'Today';
-      isToday = true;
-    } else if (item.created_at_ms >= startOfYesterday) {
-      key = 'yesterday';
-      label = 'Yesterday';
-    } else if (item.created_at_ms >= startOfThisWeek) {
-      key = 'this-week';
-      label = 'This Week';
-    } else {
-      key = 'older';
-      label = 'Older';
+    const at = item.created_at_ms;
+    const label =
+      at >= starts.today ? 'Today'
+      : at >= starts.yesterday ? 'Yesterday'
+      : at >= starts.thisWeek ? 'This Week'
+      : 'Older';
+    let group = groups.get(label);
+    if (!group) {
+      group = { label, isToday: label === 'Today', items: [] };
+      groups.set(label, group);
     }
-
-    if (!buckets[key]) {
-      buckets[key] = { label, isToday, items: [] };
-      order.push(key);
-    }
-    buckets[key].items.push(item);
+    group.items.push(item);
   }
-
-  return order.map((key) => buckets[key]);
+  return [...groups.values()];
 }
