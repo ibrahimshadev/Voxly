@@ -14,7 +14,9 @@ mod platform {
         WaveFormat,
     };
 
-    use super::{silence_frames_needed, GAP_TOLERANCE_FRAMES, SAMPLE_RATE};
+    use super::{
+        frames_within_wav_limit, silence_frames_needed, GAP_TOLERANCE_FRAMES, SAMPLE_RATE,
+    };
 
     pub struct LoopbackRecorder {
         recording: Arc<AtomicBool>,
@@ -122,7 +124,9 @@ mod platform {
         // against the primary capture's start.
         let _ = ready.send(Ok(Instant::now()));
 
-        while recording.load(Ordering::SeqCst) {
+        // A full WAV ends the system-audio track early; the meeting itself
+        // (mic/video) keeps recording and the mix pads the shorter track.
+        while recording.load(Ordering::SeqCst) && !capture.wav_full {
             capture_available_packets(&mut capture)?;
             let _ = capture.event.wait_for_event(100);
         }
@@ -157,6 +161,8 @@ mod platform {
         // timestamps) that frame 0 of the WAV corresponds to.
         anchor_100ns: u64,
         frames_written: u64,
+        // Set once the WAV size limit is reached; nothing more is written.
+        wav_full: bool,
     }
 
     fn start_capture(mut capture: ActiveLoopbackCapture) -> Result<ActiveLoopbackCapture, String> {
@@ -250,11 +256,12 @@ mod platform {
             channels: 2,
             anchor_100ns: 0,
             frames_written: 0,
+            wav_full: false,
         })
     }
 
     fn capture_available_packets(capture: &mut ActiveLoopbackCapture) -> Result<(), String> {
-        loop {
+        while !capture.wav_full {
             let packet_frames = match capture
                 .capture_client
                 .get_next_packet_size()
@@ -269,7 +276,6 @@ mod platform {
                 .capture_client
                 .read_from_device(&mut buffer)
                 .map_err(|error| format!("Failed to read WASAPI loopback data: {error}"))?;
-            let samples = frames as usize * capture.channels;
 
             // Place the packet at its capture time: the output device sends no
             // packets while idle, so without this every gap would pull later
@@ -296,25 +302,43 @@ mod platform {
                 continue;
             }
 
-            for sample in buffer[..samples * 2].chunks_exact(2) {
+            let frames = claim_frames(capture, u64::from(frames)) as usize;
+            let bytes = frames * capture.bytes_per_frame;
+            for sample in buffer[..bytes].chunks_exact(2) {
                 capture
                     .writer
                     .write_sample(i16::from_le_bytes([sample[0], sample[1]]))
                     .map_err(|error| format!("Failed to write loopback sample: {error}"))?;
             }
-            capture.frames_written += u64::from(frames);
         }
+        Ok(())
     }
 
     fn write_silence(capture: &mut ActiveLoopbackCapture, frames: u64) -> Result<(), String> {
+        let frames = claim_frames(capture, frames);
         for _ in 0..frames * capture.channels as u64 {
             capture
                 .writer
                 .write_sample(0i16)
                 .map_err(|error| format!("Failed to write loopback silence: {error}"))?;
         }
-        capture.frames_written += frames;
         Ok(())
+    }
+
+    /// Reserves up to `frames` of the WAV's size budget and returns how many
+    /// may be written. hound panics (debug) or corrupts the header (release)
+    /// past its u32 sizes, so the track stops there instead.
+    fn claim_frames(capture: &mut ActiveLoopbackCapture, frames: u64) -> u64 {
+        let allowed = frames_within_wav_limit(capture.frames_written, frames);
+        if allowed < frames && !capture.wav_full {
+            capture.wav_full = true;
+            eprintln!(
+                "WASAPI loopback WAV reached its 4 GB size limit; system audio stops here \
+while the meeting keeps recording"
+            );
+        }
+        capture.frames_written += allowed;
+        allowed
     }
 
     fn initialize_audio_thread() -> Result<(), String> {
@@ -366,6 +390,20 @@ const SAMPLE_RATE: u32 = 48_000;
 // a silence insert pulls the track back onto wall-clock time.
 #[cfg_attr(not(windows), allow(dead_code))]
 const GAP_TOLERANCE_FRAMES: u64 = SAMPLE_RATE as u64 * 30 / 1000;
+
+// 16-bit stereo, as captured and written.
+#[cfg_attr(not(windows), allow(dead_code))]
+const WAV_BYTES_PER_FRAME: u64 = 4;
+// hound stores both the data size and the RIFF size (data + 36-byte header)
+// as u32; the margin keeps the RIFF size in range too.
+#[cfg_attr(not(windows), allow(dead_code))]
+const MAX_WAV_FRAMES: u64 = (u32::MAX as u64 - 1_024) / WAV_BYTES_PER_FRAME;
+
+/// How many of `frames` still fit in the WAV after `frames_written`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn frames_within_wav_limit(frames_written: u64, frames: u64) -> u64 {
+    frames.min(MAX_WAV_FRAMES.saturating_sub(frames_written))
+}
 
 /// Frames of silence to write so the next frame lands `elapsed_100ns` (100 ns
 /// units since capture start) into the track, given `frames_written` so far.
@@ -438,6 +476,32 @@ mod tests {
     #[test]
     fn surplus_is_never_negative() {
         assert_eq!(silence_frames_needed(SECOND_100NS, 96_000, 0), 0);
+    }
+
+    #[test]
+    fn wav_limit_allows_writes_below_budget() {
+        assert_eq!(frames_within_wav_limit(0, 480), 480);
+        assert_eq!(frames_within_wav_limit(MAX_WAV_FRAMES - 480, 480), 480);
+    }
+
+    #[test]
+    fn wav_limit_truncates_the_write_that_crosses_it() {
+        assert_eq!(frames_within_wav_limit(MAX_WAV_FRAMES - 100, 480), 100);
+    }
+
+    #[test]
+    fn wav_limit_allows_nothing_once_full() {
+        assert_eq!(frames_within_wav_limit(MAX_WAV_FRAMES, 480), 0);
+        assert_eq!(frames_within_wav_limit(MAX_WAV_FRAMES + 1, 480), 0);
+    }
+
+    #[test]
+    fn wav_limit_keeps_riff_sizes_within_u32() {
+        // hound's header: data size and data size + 36 both stored as u32.
+        let data_bytes = MAX_WAV_FRAMES * WAV_BYTES_PER_FRAME;
+        assert!(data_bytes + 36 <= u64::from(u32::MAX));
+        // ~6.2 h of 48 kHz stereo audio.
+        assert!(MAX_WAV_FRAMES / u64::from(SAMPLE_RATE) > 6 * 3_600);
     }
 
     #[test]
