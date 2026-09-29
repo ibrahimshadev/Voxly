@@ -107,14 +107,7 @@ fn acquire_in_flight(id: &str) -> Result<InFlightGuard, String> {
 }
 
 pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, String> {
-    let provider = {
-        let trimmed = settings.summary_provider.trim();
-        if trimmed.is_empty() {
-            "groq".to_string()
-        } else {
-            trimmed.to_string()
-        }
-    };
+    let provider = non_empty(&settings.summary_provider).unwrap_or_else(|| "groq".to_string());
 
     let api_key = non_empty(&settings.summary_api_key)
         .or_else(|| {
@@ -144,22 +137,18 @@ pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, S
             "Add an API key under Meetings → AI Summary to generate meeting summaries.".to_string()
         })?;
 
-    let base_url = match non_empty(&settings.summary_base_url) {
-        Some(url) => url,
-        None => match provider.as_str() {
-            "groq" => GROQ_BASE_URL.to_string(),
-            "openai" => DEFAULT_OPENAI_BASE_URL.to_string(),
-            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
-        },
+    let defaults = match provider.as_str() {
+        "groq" => Some((GROQ_BASE_URL, MODEL)),
+        "openai" => Some((DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_SUMMARY_MODEL)),
+        _ => None,
     };
-    let model = match non_empty(&settings.summary_model) {
-        Some(model) => model,
-        None => match provider.as_str() {
-            "groq" => MODEL.to_string(),
-            "openai" => DEFAULT_OPENAI_SUMMARY_MODEL.to_string(),
-            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
-        },
-    };
+    let missing = || "Set a base URL and model under Meetings → AI Summary.".to_string();
+    let base_url = non_empty(&settings.summary_base_url)
+        .or_else(|| defaults.map(|(base_url, _)| base_url.to_string()))
+        .ok_or_else(missing)?;
+    let model = non_empty(&settings.summary_model)
+        .or_else(|| defaults.map(|(_, model)| model.to_string()))
+        .ok_or_else(missing)?;
 
     Ok(SummaryConfig {
         provider,
@@ -280,12 +269,14 @@ fn sanitize_generated_title(raw: &str) -> Option<String> {
     Some(capped.trim_end().to_string())
 }
 
-async fn generate_and_store_title(
+/// Sends one chat-completions request; `what` ("Summary"/"Title") labels errors.
+async fn chat(
     client: &reqwest::Client,
     config: &SummaryConfig,
-    id: &str,
-    summary_markdown: &str,
-) -> Result<(), String> {
+    what: &str,
+    system_prompt: &str,
+    user_content: &str,
+) -> Result<(reqwest::StatusCode, String), String> {
     let response = client
         .post(format!(
             "{}/chat/completions",
@@ -295,18 +286,37 @@ async fn generate_and_store_title(
         .json(&request_body(
             &config.provider,
             &config.model,
-            TITLE_SYSTEM_PROMPT,
-            summary_markdown,
+            system_prompt,
+            user_content,
         ))
         .send()
         .await
-        .map_err(|error| format!("Title request failed: {error}"))?;
+        .map_err(|error| format!("{what} request failed: {error}"))?;
 
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| format!("Failed to read title response: {error}"))?;
+    let body = response.text().await.map_err(|error| {
+        format!(
+            "Failed to read {} response: {error}",
+            what.to_ascii_lowercase()
+        )
+    })?;
+    Ok((status, body))
+}
+
+async fn generate_and_store_title(
+    client: &reqwest::Client,
+    config: &SummaryConfig,
+    id: &str,
+    summary_markdown: &str,
+) -> Result<(), String> {
+    let (status, body) = chat(
+        client,
+        config,
+        "Title",
+        TITLE_SYSTEM_PROMPT,
+        summary_markdown,
+    )
+    .await?;
     if !status.is_success() {
         return Err(format!("Title API error ({}) {status}", config.provider));
     }
@@ -360,27 +370,14 @@ pub async fn run(
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
-    let response = client
-        .post(format!(
-            "{}/chat/completions",
-            config.base_url.trim_end_matches('/')
-        ))
-        .bearer_auth(&config.api_key)
-        .json(&request_body(
-            &config.provider,
-            &config.model,
-            SUMMARY_SYSTEM_PROMPT,
-            &transcript_text,
-        ))
-        .send()
-        .await
-        .map_err(|error| format!("Summary request failed: {error}"))?;
-
-    let status = response.status();
-    let response_body = response
-        .text()
-        .await
-        .map_err(|error| format!("Failed to read summary response: {error}"))?;
+    let (status, response_body) = chat(
+        &client,
+        &config,
+        "Summary",
+        SUMMARY_SYSTEM_PROMPT,
+        &transcript_text,
+    )
+    .await?;
     if !status.is_success() {
         return Err(with_rate_limit_hint(
             status,
