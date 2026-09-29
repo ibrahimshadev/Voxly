@@ -8,8 +8,7 @@ use tauri::{AppHandle, Emitter};
 use crate::meeting::recorder::RunningRecorder;
 use crate::meeting::storage;
 use crate::meeting::types::{
-    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingStatus,
-    MeetingTranscript, MeetingUpdate,
+    MeetingDetail, MeetingMeta, MeetingStartOptions, MeetingStatus, MeetingUpdate,
 };
 use crate::settings::AppSettings;
 
@@ -172,21 +171,23 @@ impl MeetingSessionManager {
         let source_path = storage::source_path(&id)?;
         let file_size_bytes = storage::file_size(&source_path);
 
-        let meta = storage::update_meta_by_id(&id, |item| {
+        let mark_processing = |item: &mut MeetingMeta| {
             item.ended_at_ms = Some(ended_at_ms);
             item.duration_secs = Some(duration_secs);
             item.file_size_bytes = file_size_bytes;
             item.status = MeetingStatus::Processing;
             Ok(())
-        })?
-        .unwrap_or_else(|| {
-            let mut meta = active.meta.clone();
-            meta.ended_at_ms = Some(ended_at_ms);
-            meta.duration_secs = Some(duration_secs);
-            meta.file_size_bytes = file_size_bytes;
-            meta.status = MeetingStatus::Processing;
-            meta
-        });
+        };
+        // Patch the stored row (it may carry edits made while recording, e.g. a
+        // rename); fall back to the in-memory copy if the row is gone.
+        let meta = match storage::update_meta_by_id(&id, mark_processing)? {
+            Some(meta) => meta,
+            None => {
+                let mut meta = active.meta.clone();
+                mark_processing(&mut meta)?;
+                meta
+            }
+        };
 
         self.finalizing
             .lock()
@@ -244,19 +245,6 @@ impl MeetingSessionManager {
         .ok_or_else(|| "Meeting not found".to_string())
     }
 
-    pub fn rename_speaker(
-        &self,
-        id: &str,
-        speaker: &str,
-        name: &str,
-    ) -> Result<MeetingTranscript, String> {
-        storage::update_transcript_speaker_name(id, speaker, name)
-    }
-
-    pub fn devices(&self, app: &AppHandle) -> MeetingDevices {
-        crate::meeting::devices::list_devices(app)
-    }
-
     fn live_ids(&self) -> Result<HashSet<String>, String> {
         let mut ids = HashSet::new();
         if let Some(active) = self
@@ -311,32 +299,21 @@ fn run_finalize(
         Ok(())
     });
 
-    match result {
-        Ok(()) => {
-            let _ = app.emit(
-                "meeting:update",
-                MeetingUpdate {
-                    state: "stopped".to_string(),
-                    meeting_id: Some(id),
-                    elapsed_secs: Some(duration_secs.round() as u64),
-                    file_size_bytes,
-                    ..Default::default()
-                },
-            );
-        }
-        Err(error) => {
-            let _ = app.emit(
-                "meeting:update",
-                MeetingUpdate {
-                    state: "error".to_string(),
-                    meeting_id: Some(id),
-                    message: Some(error),
-                    file_size_bytes,
-                    ..Default::default()
-                },
-            );
-        }
-    }
+    let (state, message, elapsed_secs) = match result {
+        Ok(()) => ("stopped", None, Some(duration_secs.round() as u64)),
+        Err(error) => ("error", Some(error), None),
+    };
+    let _ = app.emit(
+        "meeting:update",
+        MeetingUpdate {
+            state: state.to_string(),
+            meeting_id: Some(id),
+            message,
+            elapsed_secs,
+            file_size_bytes,
+            ..Default::default()
+        },
+    );
     let _ = app.emit("meetings-updated", ());
 }
 

@@ -321,9 +321,8 @@ pub fn rename_meeting_speaker(
     speaker: String,
     name: String,
     app: AppHandle,
-    state: State<'_, AppState>,
 ) -> Result<MeetingTranscript, String> {
-    let transcript = state.meeting_manager.rename_speaker(&id, &speaker, &name)?;
+    let transcript = crate::meeting::storage::update_transcript_speaker_name(&id, &speaker, &name)?;
     let _ = app.emit("meetings-updated", ());
     Ok(transcript)
 }
@@ -350,11 +349,8 @@ pub fn delete_meeting(
 }
 
 #[tauri::command]
-pub fn list_meeting_devices(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<MeetingDevices, String> {
-    Ok(state.meeting_manager.devices(&app))
+pub fn list_meeting_devices(app: AppHandle) -> Result<MeetingDevices, String> {
+    Ok(crate::meeting::devices::list_devices(&app))
 }
 
 #[tauri::command]
