@@ -287,7 +287,7 @@ function Pagination(props: {
   return (
     <Show when={props.totalPages() > 1}>
       <footer class="flex-none border-t border-white/5 py-3 px-6">
-        <div class="max-w-4xl mx-auto flex items-center justify-between text-sm">
+        <div class="max-w-5xl mx-auto flex items-center justify-between text-sm">
           <button
             type="button"
             disabled={props.currentPage() === 1}
@@ -364,6 +364,7 @@ export default function HistoryPage(props: HistoryPageProps) {
     <div class="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         title="History"
+        width="max-w-5xl"
         stats={
           <>
             <StatChip icon={BookOpen} value={entryCountLabel()} label="Entries" title="Total Entries" />
@@ -381,6 +382,8 @@ export default function HistoryPage(props: HistoryPageProps) {
               <StatChip
                 icon={AudioLines}
                 value={formatTotalAudio(props.stats().total_audio_secs)}
+                label="Total Audio"
+                labelClass="hidden lg:inline"
                 title="Total Audio Duration"
               />
             </Show>
@@ -390,7 +393,7 @@ export default function HistoryPage(props: HistoryPageProps) {
           value: props.searchQuery(),
           onInput: props.onSearchQueryChange,
           placeholder: 'Search transcriptions...',
-          class: 'md:w-72',
+          class: 'md:w-64',
         }}
       >
         <button
@@ -414,7 +417,7 @@ export default function HistoryPage(props: HistoryPageProps) {
         }
       >
         <main class="flex-1 overflow-y-auto px-4 sm:px-10 py-6 scrollbar-hide">
-          <div class="max-w-4xl mx-auto flex flex-col gap-8">
+          <div class="max-w-5xl mx-auto flex flex-col gap-8">
             <For each={dateGroups()}>
               {(group) => (
                 <section>
