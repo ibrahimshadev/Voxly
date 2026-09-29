@@ -11,6 +11,7 @@ import {
   Check,
   X,
 } from 'lucide-solid';
+import { SwitchKnob } from './controls';
 
 export type DictionaryPageProps = {
   entries: Accessor<VocabularyEntry[]>;
@@ -27,25 +28,6 @@ export type DictionaryPageProps = {
   onToggleEnabled: (id: string) => void;
   onDelete: (id: string) => void;
 };
-
-function ToggleSwitch(props: { enabled: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={props.onToggle}
-      class={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 cursor-pointer ${
-        props.enabled ? 'bg-primary' : 'bg-white/10'
-      }`}
-      title={props.enabled ? 'Disable entry' : 'Enable entry'}
-    >
-      <span
-        class={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-          props.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
-        }`}
-      />
-    </button>
-  );
-}
 
 function EntryEditor(props: {
   editorWord: Accessor<string>;
@@ -114,77 +96,56 @@ function EntryEditor(props: {
 
 function DictionaryItem(props: {
   entry: VocabularyEntry;
-  isEditing: boolean;
-  editorWord: Accessor<string>;
-  setEditorWord: Setter<string>;
-  editorReplacements: Accessor<string>;
-  setEditorReplacements: Setter<string>;
   onEdit: (entry: VocabularyEntry) => void;
-  onSave: () => void;
-  onCancel: () => void;
   onToggleEnabled: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   return (
-    <Show
-      when={!props.isEditing}
-      fallback={
-        <EntryEditor
-          editorWord={props.editorWord}
-          setEditorWord={props.setEditorWord}
-          editorReplacements={props.editorReplacements}
-          setEditorReplacements={props.setEditorReplacements}
-          onSave={props.onSave}
-          onCancel={props.onCancel}
-          isNew={false}
-        />
-      }
-    >
-      <div class={`group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex items-center gap-4 ${
-        !props.entry.enabled ? 'opacity-60' : ''
-      }`}>
-        <div class="flex-1 min-w-0">
-          <p class="text-white text-[15px] font-medium leading-snug">{props.entry.word}</p>
-          <Show when={props.entry.replacements.length > 0}>
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              <For each={props.entry.replacements}>
-                {(replacement) => (
-                  <span class="bg-white/5 rounded px-2 py-0.5 text-xs text-gray-400">
-                    {replacement}
-                  </span>
-                )}
-              </For>
-            </div>
-          </Show>
-        </div>
-
-        <div class="flex items-center gap-2 shrink-0">
-          <ToggleSwitch
-            enabled={props.entry.enabled}
-            onToggle={() => props.onToggleEnabled(props.entry.id)}
-          />
-
-          <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <button
-              type="button"
-              onClick={() => props.onEdit(props.entry)}
-              class="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
-              title="Edit entry"
-            >
-              <Pencil size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => props.onDelete(props.entry.id)}
-              class="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-              title="Delete entry"
-            >
-              <Trash2 size={16} />
-            </button>
+    <div class={`group relative rounded-xl p-4 hover:bg-surface-hover transition-colors duration-200 flex items-center gap-4 ${
+      !props.entry.enabled ? 'opacity-60' : ''
+    }`}>
+      <div class="flex-1 min-w-0">
+        <p class="text-white text-[15px] font-medium leading-snug">{props.entry.word}</p>
+        <Show when={props.entry.replacements.length > 0}>
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <For each={props.entry.replacements}>
+              {(replacement) => (
+                <span class="bg-white/5 rounded px-2 py-0.5 text-xs text-gray-400">
+                  {replacement}
+                </span>
+              )}
+            </For>
           </div>
+        </Show>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <SwitchKnob
+          on={props.entry.enabled}
+          onToggle={() => props.onToggleEnabled(props.entry.id)}
+          title={props.entry.enabled ? 'Disable entry' : 'Enable entry'}
+        />
+
+        <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <button
+            type="button"
+            onClick={() => props.onEdit(props.entry)}
+            class="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+            title="Edit entry"
+          >
+            <Pencil size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => props.onDelete(props.entry.id)}
+            class="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            title="Delete entry"
+          >
+            <Trash2 size={16} />
+          </button>
         </div>
       </div>
-    </Show>
+    </div>
   );
 }
 
@@ -210,6 +171,18 @@ export default function DictionaryPage(props: DictionaryPageProps) {
 
   const isCreating = createMemo(() =>
     props.isEditorOpen() && props.editingId() === null
+  );
+
+  const entryEditor = (isNew: boolean) => (
+    <EntryEditor
+      editorWord={props.editorWord}
+      setEditorWord={props.setEditorWord}
+      editorReplacements={props.editorReplacements}
+      setEditorReplacements={props.setEditorReplacements}
+      onSave={props.onSave}
+      onCancel={props.onCancel}
+      isNew={isNew}
+    />
   );
 
   const emptyMessage = createMemo(() =>
@@ -288,33 +261,23 @@ export default function DictionaryPage(props: DictionaryPageProps) {
         <main class="flex-1 overflow-y-auto px-4 sm:px-10 py-6 scrollbar-hide">
           <div class="max-w-4xl mx-auto flex flex-col gap-1">
             {/* Create editor at the top */}
-            <Show when={isCreating()}>
-              <EntryEditor
-                editorWord={props.editorWord}
-                setEditorWord={props.setEditorWord}
-                editorReplacements={props.editorReplacements}
-                setEditorReplacements={props.setEditorReplacements}
-                onSave={props.onSave}
-                onCancel={props.onCancel}
-                isNew={true}
-              />
-            </Show>
+            <Show when={isCreating()}>{entryEditor(true)}</Show>
 
             <For each={filteredEntries()}>
               {(entry) => (
-                <DictionaryItem
-                  entry={entry}
-                  isEditing={props.editingId() === entry.id}
-                  editorWord={props.editorWord}
-                  setEditorWord={props.setEditorWord}
-                  editorReplacements={props.editorReplacements}
-                  setEditorReplacements={props.setEditorReplacements}
-                  onEdit={props.onEdit}
-                  onSave={props.onSave}
-                  onCancel={props.onCancel}
-                  onToggleEnabled={props.onToggleEnabled}
-                  onDelete={props.onDelete}
-                />
+                <Show
+                  when={props.editingId() === entry.id}
+                  fallback={
+                    <DictionaryItem
+                      entry={entry}
+                      onEdit={props.onEdit}
+                      onToggleEnabled={props.onToggleEnabled}
+                      onDelete={props.onDelete}
+                    />
+                  }
+                >
+                  {entryEditor(false)}
+                </Show>
               )}
             </For>
           </div>

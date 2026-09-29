@@ -1,10 +1,10 @@
-import { Show, For, createSignal } from 'solid-js';
+import { Show, For } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
-import type { Settings, Provider } from '../../types';
+import type { HotkeyMode, Settings, Provider } from '../../types';
 import { PROVIDER_IDS, PROVIDERS } from '../../constants';
-import { Box, ChevronDown, CircleCheck, Eye, EyeOff, Key, Link2 } from 'lucide-solid';
+import { Box, ChevronDown, CircleCheck, Key, Link2 } from 'lucide-solid';
 import { notifyError, notifySuccess } from '../../lib/notify';
-import Select from './Select';
+import { Segmented, SecretInput, Select, settingsFieldSetter } from './controls';
 import ProviderIcon from './ProviderIcon';
 
 /** In-memory model selection per provider. Resets on app start so defaults apply. */
@@ -19,16 +19,12 @@ type SettingsPageProps = {
   onTestAndSave: () => void;
 };
 
+// Editing codec for the hotkey field: must stay the exact inverse of the onInput parse below.
 const formatHotkey = (raw: string): string =>
   raw.replace('CommandOrControl', 'Ctrl').replace(/\+/g, ' + ');
 
 export default function SettingsPage(props: SettingsPageProps) {
-  const [showApiKey, setShowApiKey] = createSignal(false);
-
-  const onField = (key: 'base_url' | 'model' | 'hotkey' | 'api_key') => (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    props.setSettings((current) => ({ ...current, [key]: target.value }));
-  };
+  const onField = settingsFieldSetter(props.setSettings);
 
   const onProviderChange = (provider: Provider) => {
     const config = PROVIDERS[provider];
@@ -193,25 +189,12 @@ export default function SettingsPage(props: SettingsPageProps) {
                   </button>
                 </Show>
               </div>
-              <div class="relative">
-                <Key size={24} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
-                <input
-                  class="w-full bg-input-bg border border-white/15 rounded-lg py-2 pl-10 pr-10 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
-                  type={showApiKey() ? 'text' : 'password'}
-                  value={props.settings().api_key}
-                  onInput={onField('api_key')}
-                  placeholder="sk-..."
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey((v) => !v)}
-                  class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-300 rounded hover:bg-white/5 transition-colors"
-                >
-                  <Show when={showApiKey()} fallback={<EyeOff size={24} />}>
-                    <Eye size={24} />
-                  </Show>
-                </button>
-              </div>
+              <SecretInput
+                value={props.settings().api_key}
+                onInput={onField('api_key')}
+                placeholder="sk-..."
+                icon={<Key size={24} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />}
+              />
               <Show
                 when={props.settings().api_key}
                 fallback={
@@ -285,30 +268,14 @@ export default function SettingsPage(props: SettingsPageProps) {
                 <span class="text-sm font-medium text-gray-200">Recording Trigger</span>
                 <span class="text-xs text-gray-500">How you want to control the microphone</span>
               </div>
-              <div class="flex bg-input-bg p-1 rounded-lg border border-white/15">
-                <button
-                  type="button"
-                  onClick={() => setBehavior('hotkey_mode', 'lock')}
-                  class={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                    props.settings().hotkey_mode === 'lock'
-                      ? 'bg-white/10 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  Toggle
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBehavior('hotkey_mode', 'hold')}
-                  class={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                    props.settings().hotkey_mode === 'hold'
-                      ? 'bg-white/10 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  Hold
-                </button>
-              </div>
+              <Segmented<HotkeyMode>
+                value={props.settings().hotkey_mode}
+                options={[
+                  { value: 'lock', label: 'Toggle' },
+                  { value: 'hold', label: 'Hold' },
+                ]}
+                onChange={(value) => setBehavior('hotkey_mode', value)}
+              />
             </div>
 
             {/* Output Mode */}
@@ -317,30 +284,14 @@ export default function SettingsPage(props: SettingsPageProps) {
                 <span class="text-sm font-medium text-gray-200">Output Action</span>
                 <span class="text-xs text-gray-500">What happens after transcription</span>
               </div>
-              <div class="flex bg-input-bg p-1 rounded-lg border border-white/15">
-                <button
-                  type="button"
-                  onClick={() => setBehavior('copy_to_clipboard_on_success', false)}
-                  class={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                    !props.settings().copy_to_clipboard_on_success
-                      ? 'bg-white/10 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  Paste
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBehavior('copy_to_clipboard_on_success', true)}
-                  class={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                    props.settings().copy_to_clipboard_on_success
-                      ? 'bg-white/10 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  Paste + Copy
-                </button>
-              </div>
+              <Segmented
+                value={props.settings().copy_to_clipboard_on_success}
+                options={[
+                  { value: false, label: 'Paste' },
+                  { value: true, label: 'Paste + Copy' },
+                ]}
+                onChange={(value) => setBehavior('copy_to_clipboard_on_success', value)}
+              />
             </div>
           </div>
         </section>

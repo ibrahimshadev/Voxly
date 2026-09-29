@@ -4,7 +4,7 @@ import type { Accessor } from 'solid-js';
 import type { Mode } from '../../types';
 import { builtinMode } from '../../defaultModes';
 import { Plus, Pencil, Trash2, Save, Layers, RotateCcw, SlidersHorizontal } from 'lucide-solid';
-import Select from './Select';
+import { Select } from './controls';
 
 export type ModesPageProps = {
   modes: Accessor<Mode[]>;
