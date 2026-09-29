@@ -6,11 +6,15 @@ type ProviderConfig = {
   base_url: string;
   /** Transcription models; the first entry is the default. */
   models: string[];
-  /** Chat models offered to modes; the first entry is the default. */
+  /**
+   * Curated chat models for modes, checked against Groq's and OpenAI's model
+   * docs on 2026-09-29. First entry = default; see lib/models.ts for fallback.
+   */
   chatModels: string[];
   /**
    * Curated "thinking" models for meeting summaries — verified against the live
-   * Groq/OpenAI model APIs on 2026-06-10 (see spec §11.3). First entry = default.
+   * Groq/OpenAI model APIs on 2026-06-10 (see spec §11.3); Groq's qwen3-32b
+   * was dropped after its 2026-07-17 shutdown. First entry = default.
    */
   summaryModels: string[];
   /** Where to create an API key. */
@@ -22,15 +26,15 @@ export const PROVIDERS: Record<Provider, ProviderConfig> = {
     label: 'Groq',
     base_url: 'https://api.groq.com/openai/v1',
     models: ['whisper-large-v3-turbo', 'whisper-large-v3'],
-    chatModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b'],
-    summaryModels: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3-32b'],
+    chatModels: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+    summaryModels: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
     keyUrl: 'https://console.groq.com/keys',
   },
   openai: {
     label: 'OpenAI',
     base_url: 'https://api.openai.com/v1',
     models: ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'gpt-4o-transcribe-diarize', 'whisper-1'],
-    chatModels: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano'],
+    chatModels: ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-4.1'],
     summaryModels: ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.4', 'gpt-5.5'],
     keyUrl: 'https://platform.openai.com/api-keys',
   },

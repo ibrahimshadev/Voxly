@@ -15,6 +15,7 @@ import {
 import { DEFAULT_MODES } from './defaultModes';
 import { Layout, SettingsPage, RightPanel, HistoryPage, DictionaryPage, ModesPage, MeetingsPage } from './components/Settings';
 import { notifyError, notifyInfo, notifySuccess } from './lib/notify';
+import { isChatModel, pickModeModel } from './lib/models';
 
 const HISTORY_PAGE_SIZE = 50;
 
@@ -539,21 +540,22 @@ export default function SettingsApp() {
 
   const fetchModels = async (reconcileModes: boolean) => {
     const provider = settings().provider;
-    const fallback = PROVIDERS[provider].chatModels;
-    let available = fallback;
+    let available = PROVIDERS[provider].chatModels;
     try {
-      const result = await invoke<string[]>('fetch_provider_models', {
-        baseUrl: settings().base_url,
-        apiKey: settings().api_key
-      });
+      const result = (
+        await invoke<string[]>('fetch_provider_models', {
+          baseUrl: settings().base_url,
+          apiKey: settings().api_key
+        })
+      ).filter(isChatModel);
       if (result.length > 0) available = result;
     } catch {
       // Keep the curated list when the provider can't be reached.
     }
     setModelsList(available);
-    if (reconcileModes && provider !== 'custom' && available.length > 0) {
-      const preferred = fallback[0] ?? available[0];
-      const defaultModel = available.includes(preferred) ? preferred : available[0];
+    if (reconcileModes && provider !== 'custom') {
+      const defaultModel = pickModeModel(provider, available);
+      if (!defaultModel) return;
       setSettings((current) => ({
         ...current,
         modes: current.modes.map((mode) =>
@@ -565,12 +567,12 @@ export default function SettingsApp() {
 
   const addMode = () => {
     const id = crypto.randomUUID();
-    const preferred = PROVIDERS[settings().provider].chatModels[0] ?? '';
-    const available = modelsList();
-    const defaultModel = available.includes(preferred) ? preferred
-      : available.length > 0 ? available[0]
-      : preferred;
-    const newMode: Mode = { id, name: '', system_prompt: '', model: defaultModel };
+    const newMode: Mode = {
+      id,
+      name: '',
+      system_prompt: '',
+      model: pickModeModel(settings().provider, modelsList())
+    };
     setSettings((current) => ({ ...current, modes: [...current.modes, newMode] }));
   };
 

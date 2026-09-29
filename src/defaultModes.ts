@@ -34,7 +34,7 @@ Rules:
 - If the speaker dictated punctuation verbally (e.g., "comma", "period", "new line"), convert it to the actual punctuation mark.
 
 Output only the cleaned text. No commentary, no explanations, no preamble.`,
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
   {
     id: 'email-composer',
@@ -61,7 +61,7 @@ Rules:
 - If the dictation is vague about the recipient or context, make reasonable assumptions and keep the email general enough to work.
 
 Output only the email. No commentary or meta-text outside the email itself.`,
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
   {
     id: 'developer-log',
@@ -85,7 +85,7 @@ Rules:
 - Convert verbally dictated punctuation (e.g., "comma", "new line") to actual punctuation or whitespace.
 - Output plain text only. No markdown, no headers, no bullet points unless the speaker explicitly dictated them.
 - Output only the cleaned text. No commentary, no preamble.`,
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
 ];
 
