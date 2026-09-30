@@ -1,48 +1,26 @@
+import type { Component } from 'solid-js';
+import { Code, Mail, Sparkles } from 'lucide-solid';
+import type { LucideProps } from 'lucide-solid';
 import type { Mode } from './types';
 
-// IDs of built-in default modes (not deletable)
-export const DEFAULT_MODE_IDS = new Set(['clean-draft', 'email-composer', 'developer-log']);
-
-// Icon mapping for the modes page UI (Material Symbols names)
-export const MODE_ICONS: Record<string, string> = {
-  'clean-draft': 'auto_awesome',
-  'email-composer': 'mail',
-  'developer-log': 'code',
+/** A built-in mode plus the UI metadata the modes page, right panel and history show for it. */
+export type BuiltinMode = Mode & {
+  /** Short description shown in collapsed mode cards. */
+  description: string;
+  icon: Component<LucideProps>;
+  /** Translucent background + muted foreground for the mode's icon. */
+  color: { bg: string; text: string };
+  /** Earlier names this mode was recorded under in history. */
+  historyAliases?: string[];
 };
 
-// Name-to-icon mapping for history items (keyed by mode name as stored in history)
-export const MODE_NAME_ICONS: Record<string, string> = {
-  'Clean Draft': 'auto_awesome',
-  'Email Composer': 'mail',
-  'Developer Mode': 'code',
-};
-
-// Per-mode colors (translucent backgrounds + muted foreground text)
-export const MODE_COLORS: Record<string, { bg: string; text: string }> = {
-  'clean-draft':    { bg: 'bg-violet-500/8', text: 'text-violet-400/60' },
-  'email-composer': { bg: 'bg-amber-500/8',   text: 'text-amber-400/60' },
-  'developer-log':  { bg: 'bg-emerald-500/8', text: 'text-emerald-400/60' },
-};
-
-// Same colors keyed by mode name (for history items)
-export const MODE_NAME_COLORS: Record<string, string> = {
-  'Clean Draft':    'text-violet-400/60',
-  'Email Composer': 'text-amber-400/60',
-  'Developer Mode': 'text-emerald-400/60',
-  'Developer Log':  'text-emerald-400/60',
-};
-
-// Short descriptions shown in collapsed mode cards
-export const MODE_DESCRIPTIONS: Record<string, string> = {
-  'clean-draft': 'Removes filler words and fixes grammar while preserving your tone.',
-  'email-composer': 'Converts spoken draft into a professional email.',
-  'developer-log': 'Formats speech into clear instructions for coding agents.',
-};
-
-export const DEFAULT_MODES: Mode[] = [
+export const BUILTIN_MODES: BuiltinMode[] = [
   {
     id: 'clean-draft',
     name: 'Clean Draft',
+    description: 'Removes filler words and fixes grammar while preserving your tone.',
+    icon: Sparkles,
+    color: { bg: 'bg-violet-500/8', text: 'text-violet-400/60' },
     system_prompt: `You are a precise text editor that cleans up voice-dictated text. Your sole job is to make the transcription read as if it were typed, not spoken.
 
 Rules:
@@ -56,11 +34,14 @@ Rules:
 - If the speaker dictated punctuation verbally (e.g., "comma", "period", "new line"), convert it to the actual punctuation mark.
 
 Output only the cleaned text. No commentary, no explanations, no preamble.`,
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
   {
     id: 'email-composer',
     name: 'Email Composer',
+    description: 'Converts spoken draft into a professional email.',
+    icon: Mail,
+    color: { bg: 'bg-amber-500/8', text: 'text-amber-400/60' },
     system_prompt: `You are an executive assistant helping to draft professional emails based on dictated notes. Your goal is to convert informal speech into polished, concise, and polite email correspondence. Maintain a professional tone but avoid overly flowery language.
 
 Structure the output with:
@@ -80,11 +61,15 @@ Rules:
 - If the dictation is vague about the recipient or context, make reasonable assumptions and keep the email general enough to work.
 
 Output only the email. No commentary or meta-text outside the email itself.`,
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
   {
     id: 'developer-log',
     name: 'Developer Mode',
+    historyAliases: ['Developer Log'],
+    description: 'Formats speech into clear instructions for coding agents.',
+    icon: Code,
+    color: { bg: 'bg-emerald-500/8', text: 'text-emerald-400/60' },
     system_prompt: `You are a transcription cleaner for a developer who is dictating to a coding agent (like Claude Code, Cursor, etc.).
 
 Your ONLY job is to clean up the speech. NOT to expand, elaborate, or add instructions the speaker did not say.
@@ -100,6 +85,20 @@ Rules:
 - Convert verbally dictated punctuation (e.g., "comma", "new line") to actual punctuation or whitespace.
 - Output plain text only. No markdown, no headers, no bullet points unless the speaker explicitly dictated them.
 - Output only the cleaned text. No commentary, no preamble.`,
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
   },
 ];
+
+/** The built-in modes as persisted in settings (without UI metadata). */
+export const DEFAULT_MODES: Mode[] = BUILTIN_MODES.map(({ id, name, system_prompt, model }) => ({
+  id,
+  name,
+  system_prompt,
+  model,
+}));
+
+export const builtinMode = (id: string) => BUILTIN_MODES.find((mode) => mode.id === id);
+
+/** Built-in mode matching a history entry's recorded mode name. */
+export const builtinModeByName = (name: string) =>
+  BUILTIN_MODES.find((mode) => mode.name === name || mode.historyAliases?.includes(name));

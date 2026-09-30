@@ -1,37 +1,53 @@
 import type { Provider, Settings } from './types';
 import { DEFAULT_MODES } from './defaultModes';
 
-export const CHAT_MODELS: Record<Provider, string[]> = {
-  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b'],
-  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano'],
-  custom: []
+type ProviderConfig = {
+  label: string;
+  base_url: string;
+  /** Transcription models; the first entry is the default. */
+  models: string[];
+  /**
+   * Curated chat models for modes, checked against Groq's and OpenAI's model
+   * docs on 2026-09-29. First entry = default; see lib/models.ts for fallback.
+   */
+  chatModels: string[];
+  /**
+   * Curated "thinking" models for meeting summaries — verified against the live
+   * Groq/OpenAI model APIs on 2026-06-10 (see spec §11.3); Groq's qwen3-32b
+   * was dropped after its 2026-07-17 shutdown. First entry = default.
+   */
+  summaryModels: string[];
+  /** Where to create an API key. */
+  keyUrl?: string;
 };
 
-export const PROVIDERS: Record<Provider, { label: string; base_url: string; models: string[] }> = {
+export const PROVIDERS: Record<Provider, ProviderConfig> = {
   groq: {
     label: 'Groq',
     base_url: 'https://api.groq.com/openai/v1',
-    models: ['whisper-large-v3-turbo', 'whisper-large-v3']
+    models: ['whisper-large-v3-turbo', 'whisper-large-v3'],
+    chatModels: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+    summaryModels: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+    keyUrl: 'https://console.groq.com/keys',
   },
   openai: {
     label: 'OpenAI',
     base_url: 'https://api.openai.com/v1',
-    models: ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'gpt-4o-transcribe-diarize', 'whisper-1']
+    models: ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'gpt-4o-transcribe-diarize', 'whisper-1'],
+    chatModels: ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-4.1'],
+    summaryModels: ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.4', 'gpt-5.5'],
+    keyUrl: 'https://platform.openai.com/api-keys',
   },
   custom: {
     label: 'Custom',
     base_url: '',
-    models: []
-  }
+    models: [],
+    chatModels: [],
+    summaryModels: [],
+  },
 };
 
-// Curated "thinking" models for meeting summaries — verified against the live
-// Groq/OpenAI model APIs on 2026-06-10 (see spec §11.3). First entry = default.
-export const SUMMARY_MODELS: Record<Provider, string[]> = {
-  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3-32b'],
-  openai: ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.4', 'gpt-5.5'],
-  custom: []
-};
+export const PROVIDER_IDS = Object.keys(PROVIDERS) as Provider[];
 
 export const DEFAULT_SETTINGS: Settings = {
   provider: 'groq',
@@ -58,7 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
   provider_api_keys: {},
   summary_provider: 'groq',
   summary_base_url: PROVIDERS.groq.base_url,
-  summary_model: SUMMARY_MODELS.groq[0],
+  summary_model: PROVIDERS.groq.summaryModels[0],
   summary_api_key: '',
   summary_provider_api_keys: {},
   vocabulary: [],

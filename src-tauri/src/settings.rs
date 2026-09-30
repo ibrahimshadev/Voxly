@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -16,8 +16,10 @@ const DEFAULT_HOTKEY: &str = "CommandOrControl+Space";
 const DEFAULT_MEETING_HOTKEY: &str = "CommandOrControl+Alt+M";
 const LEGACY_DEFAULT_MEETING_HOTKEY: &str = "CommandOrControl+Shift+M";
 
+/// Every setting except API keys; persisted verbatim in settings.json.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppSettings {
+pub struct Preferences {
+    #[serde(default = "default_provider")]
     pub provider: String,
     pub base_url: String,
     pub model: String,
@@ -26,13 +28,13 @@ pub struct AppSettings {
     pub meeting_hotkey: String,
     #[serde(default = "default_hotkey_mode")]
     pub hotkey_mode: String,
-    #[serde(default = "default_copy_to_clipboard_on_success")]
+    #[serde(default)]
     pub copy_to_clipboard_on_success: bool,
-    #[serde(default = "default_meeting_record_video")]
+    #[serde(default = "default_true")]
     pub meeting_record_video: bool,
-    #[serde(default = "default_meeting_record_mic")]
+    #[serde(default = "default_true")]
     pub meeting_record_mic: bool,
-    #[serde(default = "default_meeting_record_system_audio")]
+    #[serde(default = "default_true")]
     pub meeting_record_system_audio: bool,
     #[serde(default = "default_meeting_video_preset")]
     pub meeting_video_preset: String,
@@ -42,9 +44,6 @@ pub struct AppSettings {
     pub meeting_system_audio_device: Option<String>,
     #[serde(default)]
     pub meeting_consent_acknowledged: bool,
-    pub api_key: String,
-    #[serde(default)]
-    pub deepgram_api_key: String,
     #[serde(default)]
     pub keyterm_glossary: Vec<KeytermEntry>,
     #[serde(default = "default_meeting_language")]
@@ -55,18 +54,12 @@ pub struct AppSettings {
     pub deepgram_redact_pii: bool,
     #[serde(default = "default_true")]
     pub deepgram_redact_pci: bool,
-    #[serde(default)]
-    pub provider_api_keys: HashMap<String, String>,
-    #[serde(default = "default_summary_provider")]
+    #[serde(default = "default_provider")]
     pub summary_provider: String,
     #[serde(default = "default_summary_base_url")]
     pub summary_base_url: String,
     #[serde(default = "default_summary_model")]
     pub summary_model: String,
-    #[serde(default)]
-    pub summary_api_key: String,
-    #[serde(default)]
-    pub summary_provider_api_keys: HashMap<String, String>,
     #[serde(default)]
     pub vocabulary: Vec<VocabularyEntry>,
     #[serde(default)]
@@ -75,11 +68,38 @@ pub struct AppSettings {
     pub modes: Vec<Mode>,
 }
 
-fn default_provider() -> String {
-    "groq".to_string()
+/// Settings as exchanged with the frontend: preferences plus plaintext API keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AppSettings {
+    #[serde(flatten)]
+    pub prefs: Preferences,
+    pub api_key: String,
+    #[serde(default)]
+    pub deepgram_api_key: String,
+    #[serde(default)]
+    pub provider_api_keys: HashMap<String, String>,
+    #[serde(default)]
+    pub summary_api_key: String,
+    #[serde(default)]
+    pub summary_provider_api_keys: HashMap<String, String>,
 }
 
-fn default_summary_provider() -> String {
+/// On-disk shape of settings.json: preferences plus encrypted API keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct StoredSettings {
+    #[serde(flatten)]
+    prefs: Preferences,
+    #[serde(default)]
+    encrypted_api_key: Option<String>,
+    #[serde(default)]
+    encrypted_deepgram_api_key: Option<String>,
+    #[serde(default)]
+    encrypted_provider_api_keys: HashMap<String, String>,
+    #[serde(default)]
+    encrypted_summary_provider_api_keys: HashMap<String, String>,
+}
+
+fn default_provider() -> String {
     "groq".to_string()
 }
 
@@ -95,28 +115,12 @@ fn default_hotkey_mode() -> String {
     "hold".to_string()
 }
 
-fn default_copy_to_clipboard_on_success() -> bool {
-    false
-}
-
 fn default_true() -> bool {
     true
 }
 
 fn default_meeting_hotkey() -> String {
     DEFAULT_MEETING_HOTKEY.to_string()
-}
-
-fn default_meeting_record_video() -> bool {
-    true
-}
-
-fn default_meeting_record_mic() -> bool {
-    true
-}
-
-fn default_meeting_record_system_audio() -> bool {
-    true
 }
 
 fn default_meeting_video_preset() -> String {
@@ -129,7 +133,7 @@ fn default_meeting_language() -> String {
 
 fn default_modes(provider: &str) -> Vec<Mode> {
     let model = match provider {
-        "groq" => "llama-3.3-70b-versatile",
+        "groq" => "openai/gpt-oss-120b",
         "openai" => "gpt-4o-mini",
         _ => "",
     }
@@ -151,74 +155,15 @@ fn default_modes(provider: &str) -> Vec<Mode> {
   ]
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct StoredSettings {
-    #[serde(default = "default_provider")]
-    provider: String,
-    base_url: String,
-    model: String,
-    hotkey: String,
-    #[serde(default = "default_meeting_hotkey")]
-    meeting_hotkey: String,
-    #[serde(default = "default_hotkey_mode")]
-    hotkey_mode: String,
-    #[serde(default = "default_copy_to_clipboard_on_success")]
-    copy_to_clipboard_on_success: bool,
-    #[serde(default = "default_meeting_record_video")]
-    meeting_record_video: bool,
-    #[serde(default = "default_meeting_record_mic")]
-    meeting_record_mic: bool,
-    #[serde(default = "default_meeting_record_system_audio")]
-    meeting_record_system_audio: bool,
-    #[serde(default = "default_meeting_video_preset")]
-    meeting_video_preset: String,
-    #[serde(default)]
-    meeting_mic_device: Option<String>,
-    #[serde(default)]
-    meeting_system_audio_device: Option<String>,
-    #[serde(default)]
-    meeting_consent_acknowledged: bool,
-    #[serde(default)]
-    encrypted_api_key: Option<String>,
-    #[serde(default)]
-    encrypted_deepgram_api_key: Option<String>,
-    #[serde(default)]
-    keyterm_glossary: Vec<KeytermEntry>,
-    #[serde(default = "default_meeting_language")]
-    meeting_language: String,
-    #[serde(default)]
-    deepgram_redaction_enabled: bool,
-    #[serde(default = "default_true")]
-    deepgram_redact_pii: bool,
-    #[serde(default = "default_true")]
-    deepgram_redact_pci: bool,
-    #[serde(default)]
-    encrypted_provider_api_keys: HashMap<String, String>,
-    #[serde(default = "default_summary_provider")]
-    summary_provider: String,
-    #[serde(default = "default_summary_base_url")]
-    summary_base_url: String,
-    #[serde(default = "default_summary_model")]
-    summary_model: String,
-    #[serde(default)]
-    encrypted_summary_provider_api_keys: HashMap<String, String>,
-    #[serde(default)]
-    vocabulary: Vec<VocabularyEntry>,
-    #[serde(default)]
-    active_mode_id: Option<String>,
-    #[serde(default)]
-    modes: Vec<Mode>,
-}
-
-impl Default for AppSettings {
+impl Default for Preferences {
     fn default() -> Self {
         Self {
-            provider: "groq".to_string(),
+            provider: default_provider(),
             base_url: "https://api.groq.com/openai/v1".to_string(),
             model: "whisper-large-v3-turbo".to_string(),
             hotkey: DEFAULT_HOTKEY.to_string(),
             meeting_hotkey: default_meeting_hotkey(),
-            hotkey_mode: "hold".to_string(),
+            hotkey_mode: default_hotkey_mode(),
             copy_to_clipboard_on_success: false,
             meeting_record_video: true,
             meeting_record_mic: true,
@@ -227,19 +172,14 @@ impl Default for AppSettings {
             meeting_mic_device: None,
             meeting_system_audio_device: None,
             meeting_consent_acknowledged: false,
-            api_key: String::new(),
-            deepgram_api_key: String::new(),
             keyterm_glossary: Vec::new(),
             meeting_language: default_meeting_language(),
             deepgram_redaction_enabled: false,
             deepgram_redact_pii: true,
             deepgram_redact_pci: true,
-            provider_api_keys: HashMap::new(),
-            summary_provider: default_summary_provider(),
+            summary_provider: default_provider(),
             summary_base_url: default_summary_base_url(),
             summary_model: default_summary_model(),
-            summary_api_key: String::new(),
-            summary_provider_api_keys: HashMap::new(),
             vocabulary: Vec::new(),
             active_mode_id: None,
             modes: Vec::new(),
@@ -255,88 +195,23 @@ pub fn load_settings() -> AppSettings {
         if let Ok(contents) = fs::read_to_string(&path) {
             let has_modes_field = json_has_modes_field(&contents);
             if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
-                let mut updated = false;
-                let normalized = normalize_hotkey(&stored.hotkey);
-                if normalized != stored.hotkey {
-                    stored.hotkey = normalized;
-                    updated = true;
+                let hotkey = normalize_hotkey(&stored.prefs.hotkey);
+                let meeting_hotkey = normalize_meeting_hotkey(&stored.prefs.meeting_hotkey);
+                if hotkey != stored.prefs.hotkey || meeting_hotkey != stored.prefs.meeting_hotkey {
+                    stored.prefs.hotkey = hotkey;
+                    stored.prefs.meeting_hotkey = meeting_hotkey;
+                    let _ = write_stored(&path, &stored);
                 }
 
-                let normalized_meeting = normalize_meeting_hotkey(&stored.meeting_hotkey);
-                if normalized_meeting != stored.meeting_hotkey {
-                    stored.meeting_hotkey = normalized_meeting;
-                    updated = true;
-                }
-
-                if updated {
-                    if let Ok(new_contents) = serde_json::to_string_pretty(&stored) {
-                        let _ = fs::write(&path, new_contents);
-                    }
-                }
-
-                let StoredSettings {
-                    provider,
-                    base_url,
-                    model,
-                    hotkey,
-                    meeting_hotkey,
-                    hotkey_mode,
-                    copy_to_clipboard_on_success,
-                    meeting_record_video,
-                    meeting_record_mic,
-                    meeting_record_system_audio,
-                    meeting_video_preset,
-                    meeting_mic_device,
-                    meeting_system_audio_device,
-                    meeting_consent_acknowledged,
-                    encrypted_api_key: _,
-                    encrypted_deepgram_api_key: _,
-                    keyterm_glossary,
-                    meeting_language,
-                    deepgram_redaction_enabled,
-                    deepgram_redact_pii,
-                    deepgram_redact_pci,
-                    encrypted_provider_api_keys,
-                    summary_provider,
-                    summary_base_url,
-                    summary_model,
-                    encrypted_summary_provider_api_keys,
-                    vocabulary,
-                    active_mode_id,
-                    modes,
-                } = stored;
-
-                settings.provider = provider;
-                settings.base_url = base_url;
-                settings.model = model;
-                settings.hotkey = hotkey;
-                settings.meeting_hotkey = normalize_meeting_hotkey(&meeting_hotkey);
-                settings.hotkey_mode = hotkey_mode;
-                settings.copy_to_clipboard_on_success = copy_to_clipboard_on_success;
-                settings.meeting_record_video = meeting_record_video;
-                settings.meeting_record_mic = meeting_record_mic;
-                settings.meeting_record_system_audio = meeting_record_system_audio;
-                settings.meeting_video_preset = meeting_video_preset;
-                settings.meeting_mic_device = meeting_mic_device;
-                settings.meeting_system_audio_device = meeting_system_audio_device;
-                settings.meeting_consent_acknowledged = meeting_consent_acknowledged;
-                settings.keyterm_glossary = keyterm_glossary;
-                settings.meeting_language = normalize_meeting_language(&meeting_language);
-                settings.deepgram_redaction_enabled = deepgram_redaction_enabled;
-                settings.deepgram_redact_pii = deepgram_redact_pii;
-                settings.deepgram_redact_pci = deepgram_redact_pci;
-                settings.vocabulary = vocabulary;
-                settings.active_mode_id = active_mode_id;
-                settings.modes = modes;
-                settings.summary_provider = summary_provider;
-                settings.summary_base_url = summary_base_url;
-                settings.summary_model = summary_model;
-                for (provider, encrypted) in encrypted_provider_api_keys {
+                settings.prefs = stored.prefs;
+                settings.prefs.meeting_language =
+                    normalize_meeting_language(&settings.prefs.meeting_language);
+                for (provider, encrypted) in stored.encrypted_provider_api_keys {
                     if let Some(decrypted) = decrypt_api_key(&encrypted) {
                         settings.provider_api_keys.insert(provider, decrypted);
                     }
                 }
-                for (provider, encrypted) in encrypted_summary_provider_api_keys {
+                for (provider, encrypted) in stored.encrypted_summary_provider_api_keys {
                     if let Some(decrypted) = decrypt_api_key(&encrypted) {
                         settings
                             .summary_provider_api_keys
@@ -348,31 +223,34 @@ pub fn load_settings() -> AppSettings {
         }
     }
 
-    if let Some(provider_key) = settings.provider_api_keys.get(&settings.provider).cloned() {
+    if let Some(provider_key) = settings
+        .provider_api_keys
+        .get(&settings.prefs.provider)
+        .cloned()
+    {
         settings.api_key = provider_key;
-    } else if let Ok(Some(api_key)) = get_api_key() {
+    } else if let Some(api_key) = get_key(API_KEY) {
         if !api_key.trim().is_empty() {
-            settings
-                .provider_api_keys
-                .insert(settings.provider.clone(), api_key.clone());
+            let provider = settings.prefs.provider.clone();
+            settings.provider_api_keys.insert(provider, api_key.clone());
         }
         settings.api_key = api_key;
     }
 
     if let Some(summary_key) = settings
         .summary_provider_api_keys
-        .get(&settings.summary_provider)
+        .get(&settings.prefs.summary_provider)
         .cloned()
     {
         settings.summary_api_key = summary_key;
     }
 
-    if let Ok(Some(api_key)) = get_deepgram_api_key() {
+    if let Some(api_key) = get_key(DEEPGRAM_KEY) {
         settings.deepgram_api_key = api_key;
     }
 
-    if should_seed_default_modes && settings.modes.is_empty() {
-        settings.modes = default_modes(&settings.provider);
+    if should_seed_default_modes && settings.prefs.modes.is_empty() {
+        settings.prefs.modes = default_modes(&settings.prefs.provider);
     }
 
     settings
@@ -385,7 +263,7 @@ fn json_has_modes_field(contents: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn normalize_meeting_language(value: &str) -> String {
+pub fn normalize_meeting_language(value: &str) -> String {
     match value.trim() {
         "multi" => "multi".to_string(),
         _ => default_meeting_language(),
@@ -395,9 +273,9 @@ fn normalize_meeting_language(value: &str) -> String {
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     let mut provider_api_keys = settings.provider_api_keys.clone();
     if settings.api_key.trim().is_empty() {
-        provider_api_keys.remove(&settings.provider);
+        provider_api_keys.remove(&settings.prefs.provider);
     } else {
-        provider_api_keys.insert(settings.provider.clone(), settings.api_key.clone());
+        provider_api_keys.insert(settings.prefs.provider.clone(), settings.api_key.clone());
     }
 
     let mut encrypted_provider_api_keys = HashMap::new();
@@ -410,10 +288,10 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
 
     let mut summary_provider_api_keys = settings.summary_provider_api_keys.clone();
     if settings.summary_api_key.trim().is_empty() {
-        summary_provider_api_keys.remove(&settings.summary_provider);
+        summary_provider_api_keys.remove(&settings.prefs.summary_provider);
     } else {
         summary_provider_api_keys.insert(
-            settings.summary_provider.clone(),
+            settings.prefs.summary_provider.clone(),
             settings.summary_api_key.clone(),
         );
     }
@@ -426,72 +304,46 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
         encrypted_summary_provider_api_keys.insert(provider, encrypt_api_key(&api_key));
     }
 
+    let mut prefs = settings.prefs.clone();
+    prefs.meeting_language = normalize_meeting_language(&prefs.meeting_language);
     let stored = StoredSettings {
-        provider: settings.provider.clone(),
-        base_url: settings.base_url.clone(),
-        model: settings.model.clone(),
-        hotkey: settings.hotkey.clone(),
-        meeting_hotkey: settings.meeting_hotkey.clone(),
-        hotkey_mode: settings.hotkey_mode.clone(),
-        copy_to_clipboard_on_success: settings.copy_to_clipboard_on_success,
-        meeting_record_video: settings.meeting_record_video,
-        meeting_record_mic: settings.meeting_record_mic,
-        meeting_record_system_audio: settings.meeting_record_system_audio,
-        meeting_video_preset: settings.meeting_video_preset.clone(),
-        meeting_mic_device: settings.meeting_mic_device.clone(),
-        meeting_system_audio_device: settings.meeting_system_audio_device.clone(),
-        meeting_consent_acknowledged: settings.meeting_consent_acknowledged,
+        prefs,
         encrypted_api_key: None,
         encrypted_deepgram_api_key: None,
-        keyterm_glossary: settings.keyterm_glossary.clone(),
-        meeting_language: normalize_meeting_language(&settings.meeting_language),
-        deepgram_redaction_enabled: settings.deepgram_redaction_enabled,
-        deepgram_redact_pii: settings.deepgram_redact_pii,
-        deepgram_redact_pci: settings.deepgram_redact_pci,
         encrypted_provider_api_keys,
-        summary_provider: settings.summary_provider.clone(),
-        summary_base_url: settings.summary_base_url.clone(),
-        summary_model: settings.summary_model.clone(),
         encrypted_summary_provider_api_keys,
-        vocabulary: settings.vocabulary.clone(),
-        active_mode_id: settings.active_mode_id.clone(),
-        modes: settings.modes.clone(),
     };
+    write_stored(&settings_path()?, &stored)?;
 
-    let path = settings_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let contents = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
-    fs::write(&path, contents).map_err(|e| e.to_string())?;
-
-    if settings.api_key.trim().is_empty() {
-        delete_api_key()?;
-    } else {
-        store_api_key(&settings.api_key)?;
-    }
-
-    if settings.deepgram_api_key.trim().is_empty() {
-        delete_deepgram_api_key()?;
-    } else {
-        store_deepgram_api_key(&settings.deepgram_api_key)?;
+    for (key, value) in [
+        (API_KEY, &settings.api_key),
+        (DEEPGRAM_KEY, &settings.deepgram_api_key),
+    ] {
+        if value.trim().is_empty() {
+            delete_key(key);
+        } else {
+            store_key(key, value)?;
+        }
     }
 
     Ok(())
 }
 
 fn settings_path() -> Result<PathBuf, String> {
-    let base_dir = if let Ok(appdata) = std::env::var("APPDATA") {
-        PathBuf::from(appdata)
-    } else if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg)
-    } else if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".config")
-    } else {
-        std::env::temp_dir()
-    };
+    Ok(crate::db::app_data_dir()?.join("settings.json"))
+}
 
-    Ok(base_dir.join("dikt").join("settings.json"))
+fn read_stored(path: &Path) -> Option<StoredSettings> {
+    let contents = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&contents).ok()
+}
+
+fn write_stored(path: &Path, stored: &StoredSettings) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let contents = serde_json::to_string_pretty(stored).map_err(|e| e.to_string())?;
+    fs::write(path, contents).map_err(|e| e.to_string())
 }
 
 fn normalize_hotkey(hotkey: &str) -> String {
@@ -552,201 +404,60 @@ fn decrypt_api_key(encrypted: &str) -> Option<String> {
     String::from_utf8(decrypted).ok()
 }
 
-fn store_api_key(api_key: &str) -> Result<(), String> {
+/// A keyring entry plus its encrypted fallback field in settings.json.
+type KeySlot = (&'static str, fn(&mut StoredSettings) -> &mut Option<String>);
+
+const API_KEY: KeySlot = (API_KEY_USER, |stored| &mut stored.encrypted_api_key);
+const DEEPGRAM_KEY: KeySlot = (DEEPGRAM_KEY_USER, |stored| {
+    &mut stored.encrypted_deepgram_api_key
+});
+
+fn store_key((user, field): KeySlot, api_key: &str) -> Result<(), String> {
     // Always store encrypted fallback (keyring may not persist on some systems like WSL)
-    store_encrypted_api_key_fallback(api_key)?;
+    let path = settings_path()?;
+    let mut stored = read_stored(&path).unwrap_or_default();
+    *field(&mut stored) = Some(encrypt_api_key(api_key));
+    write_stored(&path, &stored)?;
 
     // Also try keyring as primary storage
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, API_KEY_USER) {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, user) {
         let _ = entry.set_password(api_key);
     }
 
     Ok(())
 }
 
-fn get_api_key() -> Result<Option<String>, String> {
+fn get_key((user, field): KeySlot) -> Option<String> {
     // Try keyring first
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, API_KEY_USER) {
-        match entry.get_password() {
-            Ok(value) => return Ok(Some(value)),
-            Err(keyring::Error::NoEntry) => {}
-            Err(_) => {}
-        }
+    if let Ok(value) =
+        keyring::Entry::new(SERVICE_NAME, user).and_then(|entry| entry.get_password())
+    {
+        return Some(value);
     }
 
     // Fallback: check encrypted storage
-    get_encrypted_api_key_fallback()
+    let mut stored = read_stored(&settings_path().ok()?)?;
+    decrypt_api_key(field(&mut stored).as_deref()?)
 }
 
-fn delete_api_key() -> Result<(), String> {
-    // Try to delete from keyring
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, API_KEY_USER) {
+fn delete_key((user, field): KeySlot) {
+    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, user) {
         let _ = entry.delete_credential();
     }
 
     // Also clear fallback
-    clear_encrypted_api_key_fallback();
-    Ok(())
-}
-
-fn store_encrypted_api_key_fallback(api_key: &str) -> Result<(), String> {
-    let path = settings_path()?;
-    let mut stored = if let Ok(contents) = fs::read_to_string(&path) {
-        serde_json::from_str::<StoredSettings>(&contents)
-            .unwrap_or_else(|_| default_stored_settings())
-    } else {
-        default_stored_settings()
-    };
-
-    stored.encrypted_api_key = Some(encrypt_api_key(api_key));
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let contents = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
-    fs::write(&path, contents).map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-fn get_encrypted_api_key_fallback() -> Result<Option<String>, String> {
-    let path = settings_path()?;
-    if let Ok(contents) = fs::read_to_string(&path) {
-        if let Ok(stored) = serde_json::from_str::<StoredSettings>(&contents) {
-            if let Some(encrypted) = stored.encrypted_api_key {
-                return Ok(decrypt_api_key(&encrypted));
-            }
-        }
-    }
-    Ok(None)
-}
-
-fn clear_encrypted_api_key_fallback() {
     if let Ok(path) = settings_path() {
-        if let Ok(contents) = fs::read_to_string(&path) {
-            if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
-                stored.encrypted_api_key = None;
-                if let Ok(new_contents) = serde_json::to_string_pretty(&stored) {
-                    let _ = fs::write(&path, new_contents);
-                }
-            }
+        if let Some(mut stored) = read_stored(&path) {
+            *field(&mut stored) = None;
+            let _ = write_stored(&path, &stored);
         }
-    }
-}
-
-fn store_deepgram_api_key(api_key: &str) -> Result<(), String> {
-    store_encrypted_deepgram_api_key_fallback(api_key)?;
-
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, DEEPGRAM_KEY_USER) {
-        let _ = entry.set_password(api_key);
-    }
-
-    Ok(())
-}
-
-fn get_deepgram_api_key() -> Result<Option<String>, String> {
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, DEEPGRAM_KEY_USER) {
-        match entry.get_password() {
-            Ok(value) => return Ok(Some(value)),
-            Err(keyring::Error::NoEntry) => {}
-            Err(_) => {}
-        }
-    }
-
-    get_encrypted_deepgram_api_key_fallback()
-}
-
-fn delete_deepgram_api_key() -> Result<(), String> {
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, DEEPGRAM_KEY_USER) {
-        let _ = entry.delete_credential();
-    }
-
-    clear_encrypted_deepgram_api_key_fallback();
-    Ok(())
-}
-
-fn store_encrypted_deepgram_api_key_fallback(api_key: &str) -> Result<(), String> {
-    let path = settings_path()?;
-    let mut stored = if let Ok(contents) = fs::read_to_string(&path) {
-        serde_json::from_str::<StoredSettings>(&contents)
-            .unwrap_or_else(|_| default_stored_settings())
-    } else {
-        default_stored_settings()
-    };
-
-    stored.encrypted_deepgram_api_key = Some(encrypt_api_key(api_key));
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let contents = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
-    fs::write(&path, contents).map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-fn get_encrypted_deepgram_api_key_fallback() -> Result<Option<String>, String> {
-    let path = settings_path()?;
-    if let Ok(contents) = fs::read_to_string(&path) {
-        if let Ok(stored) = serde_json::from_str::<StoredSettings>(&contents) {
-            if let Some(encrypted) = stored.encrypted_deepgram_api_key {
-                return Ok(decrypt_api_key(&encrypted));
-            }
-        }
-    }
-    Ok(None)
-}
-
-fn clear_encrypted_deepgram_api_key_fallback() {
-    if let Ok(path) = settings_path() {
-        if let Ok(contents) = fs::read_to_string(&path) {
-            if let Ok(mut stored) = serde_json::from_str::<StoredSettings>(&contents) {
-                stored.encrypted_deepgram_api_key = None;
-                if let Ok(new_contents) = serde_json::to_string_pretty(&stored) {
-                    let _ = fs::write(&path, new_contents);
-                }
-            }
-        }
-    }
-}
-
-fn default_stored_settings() -> StoredSettings {
-    StoredSettings {
-        provider: "groq".to_string(),
-        base_url: "https://api.groq.com/openai/v1".to_string(),
-        model: "whisper-large-v3-turbo".to_string(),
-        hotkey: DEFAULT_HOTKEY.to_string(),
-        meeting_hotkey: default_meeting_hotkey(),
-        hotkey_mode: "hold".to_string(),
-        copy_to_clipboard_on_success: false,
-        meeting_record_video: true,
-        meeting_record_mic: true,
-        meeting_record_system_audio: true,
-        meeting_video_preset: default_meeting_video_preset(),
-        meeting_mic_device: None,
-        meeting_system_audio_device: None,
-        meeting_consent_acknowledged: false,
-        encrypted_api_key: None,
-        encrypted_deepgram_api_key: None,
-        keyterm_glossary: Vec::new(),
-        meeting_language: default_meeting_language(),
-        deepgram_redaction_enabled: false,
-        deepgram_redact_pii: true,
-        deepgram_redact_pci: true,
-        encrypted_provider_api_keys: HashMap::new(),
-        summary_provider: default_summary_provider(),
-        summary_base_url: default_summary_base_url(),
-        summary_model: default_summary_model(),
-        encrypted_summary_provider_api_keys: HashMap::new(),
-        vocabulary: Vec::new(),
-        active_mode_id: None,
-        modes: Vec::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{json_has_modes_field, normalize_meeting_hotkey, StoredSettings};
+    use super::{json_has_modes_field, normalize_meeting_hotkey, AppSettings, StoredSettings};
+    use serde_json::json;
 
     #[test]
     fn legacy_settings_without_vocabulary_deserialize() {
@@ -758,7 +469,7 @@ mod tests {
     }"#;
 
         let parsed: StoredSettings = serde_json::from_str(legacy_json).unwrap();
-        assert!(parsed.vocabulary.is_empty());
+        assert!(parsed.prefs.vocabulary.is_empty());
     }
 
     #[test]
@@ -772,8 +483,8 @@ mod tests {
     }"#;
 
         let parsed: StoredSettings = serde_json::from_str(legacy_json).unwrap();
-        assert!(parsed.modes.is_empty());
-        assert!(parsed.active_mode_id.is_none());
+        assert!(parsed.prefs.modes.is_empty());
+        assert!(parsed.prefs.active_mode_id.is_none());
     }
 
     #[test]
@@ -823,9 +534,102 @@ mod tests {
     }"#;
 
         let parsed: StoredSettings = serde_json::from_str(legacy_json).unwrap();
-        assert_eq!(parsed.summary_provider, "groq");
-        assert_eq!(parsed.summary_base_url, "https://api.groq.com/openai/v1");
-        assert_eq!(parsed.summary_model, "openai/gpt-oss-120b");
+        assert_eq!(parsed.prefs.summary_provider, "groq");
+        assert_eq!(
+            parsed.prefs.summary_base_url,
+            "https://api.groq.com/openai/v1"
+        );
+        assert_eq!(parsed.prefs.summary_model, "openai/gpt-oss-120b");
         assert!(parsed.encrypted_summary_provider_api_keys.is_empty());
+    }
+
+    fn full_preferences_json() -> serde_json::Value {
+        json!({
+            "provider": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "model": "whisper-1",
+            "hotkey": "CommandOrControl+Space",
+            "meeting_hotkey": "CommandOrControl+Alt+M",
+            "hotkey_mode": "toggle",
+            "copy_to_clipboard_on_success": true,
+            "meeting_record_video": false,
+            "meeting_record_mic": true,
+            "meeting_record_system_audio": false,
+            "meeting_video_preset": "audio_only",
+            "meeting_mic_device": "Mic",
+            "meeting_system_audio_device": null,
+            "meeting_consent_acknowledged": true,
+            "keyterm_glossary": [{ "id": "k1", "term": "Dikt", "enabled": true }],
+            "meeting_language": "multi",
+            "deepgram_redaction_enabled": true,
+            "deepgram_redact_pii": false,
+            "deepgram_redact_pci": true,
+            "summary_provider": "openai",
+            "summary_base_url": "https://api.openai.com/v1",
+            "summary_model": "gpt-4o-mini",
+            "vocabulary": [{ "id": "v1", "word": "Kubernetes", "replacements": ["cube"], "enabled": true }],
+            "active_mode_id": "m1",
+            "modes": [{ "id": "m1", "name": "Mode", "system_prompt": "p", "model": "m" }]
+        })
+    }
+
+    fn merged(mut base: serde_json::Value, extra: serde_json::Value) -> serde_json::Value {
+        let obj = base.as_object_mut().unwrap();
+        for (key, value) in extra.as_object().unwrap() {
+            obj.insert(key.clone(), value.clone());
+        }
+        base
+    }
+
+    #[test]
+    fn stored_settings_json_round_trips_unchanged() {
+        let on_disk = merged(
+            full_preferences_json(),
+            json!({
+                "encrypted_api_key": "YWJj",
+                "encrypted_deepgram_api_key": null,
+                "encrypted_provider_api_keys": { "openai": "YWJj" },
+                "encrypted_summary_provider_api_keys": {}
+            }),
+        );
+        let parsed: StoredSettings = serde_json::from_value(on_disk.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), on_disk);
+    }
+
+    #[test]
+    fn legacy_stored_settings_fill_defaults() {
+        let parsed: StoredSettings = serde_json::from_value(json!({
+            "base_url": "https://api.groq.com/openai/v1",
+            "model": "whisper-large-v3-turbo",
+            "hotkey": "CommandOrControl+Space"
+        }))
+        .unwrap();
+        let expected = merged(
+            serde_json::to_value(super::Preferences::default()).unwrap(),
+            json!({
+                "encrypted_api_key": null,
+                "encrypted_deepgram_api_key": null,
+                "encrypted_provider_api_keys": {},
+                "encrypted_summary_provider_api_keys": {}
+            }),
+        );
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), expected);
+    }
+
+    #[test]
+    fn app_settings_json_round_trips_unchanged() {
+        let from_frontend = merged(
+            full_preferences_json(),
+            json!({
+                "api_key": "sk-1",
+                "deepgram_api_key": "dg",
+                "provider_api_keys": { "openai": "sk-1" },
+                "summary_api_key": "sk-2",
+                "summary_provider_api_keys": { "openai": "sk-2" }
+            }),
+        );
+        let parsed: AppSettings = serde_json::from_value(from_frontend.clone()).unwrap();
+        assert_eq!(parsed.prefs.provider, "openai");
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), from_frontend);
     }
 }

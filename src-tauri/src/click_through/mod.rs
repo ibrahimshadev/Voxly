@@ -5,7 +5,6 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -16,40 +15,20 @@ pub struct HitRect {
     pub h: f64,
 }
 
-static HIT_RECTS: Lazy<Mutex<Vec<HitRect>>> = Lazy::new(|| Mutex::new(Vec::new()));
-static SCALE_FACTOR: Lazy<Mutex<f64>> = Lazy::new(|| Mutex::new(1.0));
+static HIT_RECTS: Mutex<Vec<HitRect>> = Mutex::new(Vec::new());
+static SCALE_FACTOR: Mutex<f64> = Mutex::new(1.0);
 
-/// Check if a point (in physical pixels, relative to window top-left) falls
-/// within any interactive hit rect. Used by Windows (WM_NCHITTEST).
-#[allow(dead_code)]
-pub fn point_in_hit_region(x: i32, y: i32) -> bool {
-    let rects = HIT_RECTS.lock().unwrap();
-    let scale = *SCALE_FACTOR.lock().unwrap();
-    let px = x as f64;
-    let py = y as f64;
-    for rect in rects.iter() {
+/// Check if a point (relative to window top-left) falls within any interactive
+/// hit rect. The rects are in CSS pixels; `scale` converts them to the point's
+/// units: the device scale factor for physical pixels (Windows WM_NCHITTEST),
+/// 1.0 for CSS points (macOS hitTest:).
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub fn point_in_hit_region(x: f64, y: f64, scale: f64) -> bool {
+    HIT_RECTS.lock().unwrap().iter().any(|rect| {
         let rx = rect.x * scale;
         let ry = rect.y * scale;
-        let rw = rect.w * scale;
-        let rh = rect.h * scale;
-        if px >= rx && px < rx + rw && py >= ry && py < ry + rh {
-            return true;
-        }
-    }
-    false
-}
-
-/// Check if a point (in CSS pixels, relative to window top-left) falls
-/// within any interactive hit rect. Used by macOS where hitTest: gives points.
-#[cfg(target_os = "macos")]
-pub fn point_in_hit_region_css(x: f64, y: f64) -> bool {
-    let rects = HIT_RECTS.lock().unwrap();
-    for rect in rects.iter() {
-        if x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h {
-            return true;
-        }
-    }
-    false
+        x >= rx && x < rx + rect.w * scale && y >= ry && y < ry + rect.h * scale
+    })
 }
 
 /// Platform-specific setup for per-pixel hit testing.

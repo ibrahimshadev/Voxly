@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
-@import "material-symbols/outlined.css";
 
 @theme {
   --color-primary: #10b77f;
@@ -9,7 +8,6 @@
   --color-surface-dark: #111111;
   --color-surface-hover: #1a1e23;
   --color-border-dark: #333333;
-  --color-accent-dark: #1c1c1c;
   --color-sidebar: #0d0e12;
   --color-input-bg: #0a0a0a;
 
@@ -29,14 +27,12 @@
     "Liberation Mono", "Courier New", monospace;
 }
 
-/* Material Symbols — match Google Fonts CDN defaults */
-.material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+/* Native <select> popups follow the app theme */
+select {
+  color-scheme: dark;
 }
-
-/* Filled icon variant for inline metadata */
-.icon-meta {
-  font-variation-settings: 'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+.light select {
+  color-scheme: light;
 }
 
 /* Scrollbar hide utility */
@@ -48,10 +44,48 @@
   scrollbar-width: none;
 }
 
+/* Bottom fade on a scroll container while more content lies below. The mask
+   exists only inside a scroll-driven animation, so it is absent (not merely
+   opaque) when there is nothing to scroll; over the last stretch of scrolling
+   the fade shrinks to nothing. Paint-only: no layout changes. */
+@property --scroll-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes scroll-fade-bottom {
+  0%, 90% {
+    --scroll-fade: 32px;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent);
+  }
+  100% {
+    --scroll-fade: 0px;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent);
+  }
+}
+.scroll-fade-bottom {
+  animation: scroll-fade-bottom linear both;
+  animation-timeline: scroll(self);
+}
+
 /* Grid dot pattern (extracted from inline style for theme override) */
 .grid-dots {
   background-image: radial-gradient(#ffffff 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+/* Meetings: indeterminate saving bar (transform only) */
+.meeting-progress-indeterminate {
+  animation: meeting-progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes meeting-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
 }
 
 /* Custom range slider styling */
@@ -161,7 +195,6 @@ input[type="range"]::-webkit-slider-runnable-track {
   --color-sidebar: #f8f9fb;
   --color-input-bg: #f8f8f8;
   --color-border-dark: #e0e0e0;
-  --color-accent-dark: #f0f0f0;
 
   /* Flip white → near-black (affects text-white, bg-white/*, border-white/*) */
   --color-white: #1a1a1a;
@@ -184,6 +217,11 @@ input[type="range"]::-webkit-slider-runnable-track {
   --color-sky-300: oklch(50% 0.134 242.749);
   --color-sky-400: oklch(58.8% 0.158 241.966);
   --color-red-300: oklch(50.5% 0.213 27.518);
+  /* Remaining speaker-badge text tints */
+  --color-violet-300: oklch(49.1% 0.27 292.581);
+  --color-rose-300: oklch(51.4% 0.222 16.935);
+  --color-cyan-300: oklch(52% 0.105 223.128);
+  --color-lime-300: oklch(53.2% 0.157 131.589);
   --color-red-400: oklch(57.7% 0.245 27.325);
 }
 

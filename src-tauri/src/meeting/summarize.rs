@@ -1,8 +1,6 @@
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
-
-use once_cell::sync::Lazy;
 
 use crate::meeting::storage;
 use crate::meeting::types::{
@@ -81,7 +79,7 @@ going forward.
 const TITLE_SYSTEM_PROMPT: &str = "You are given an AI-generated meeting summary. Reply with ONLY a concise descriptive meeting title for it: 3-8 words, plain text, no quotes, no markdown, no trailing punctuation.";
 const MAX_GENERATED_TITLE_CHARS: usize = 80;
 
-static IN_FLIGHT: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static IN_FLIGHT: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 #[derive(Debug)]
 struct InFlightGuard {
@@ -107,14 +105,8 @@ fn acquire_in_flight(id: &str) -> Result<InFlightGuard, String> {
 }
 
 pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, String> {
-    let provider = {
-        let trimmed = settings.summary_provider.trim();
-        if trimmed.is_empty() {
-            "groq".to_string()
-        } else {
-            trimmed.to_string()
-        }
-    };
+    let provider =
+        non_empty(&settings.prefs.summary_provider).unwrap_or_else(|| "groq".to_string());
 
     let api_key = non_empty(&settings.summary_api_key)
         .or_else(|| {
@@ -133,7 +125,7 @@ pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, S
                 .get("groq")
                 .and_then(|key| non_empty(key))
                 .or_else(|| {
-                    if settings.provider == "groq" {
+                    if settings.prefs.provider == "groq" {
                         non_empty(&settings.api_key)
                     } else {
                         None
@@ -144,22 +136,18 @@ pub fn resolve_summary_config(settings: &AppSettings) -> Result<SummaryConfig, S
             "Add an API key under Meetings → AI Summary to generate meeting summaries.".to_string()
         })?;
 
-    let base_url = match non_empty(&settings.summary_base_url) {
-        Some(url) => url,
-        None => match provider.as_str() {
-            "groq" => GROQ_BASE_URL.to_string(),
-            "openai" => DEFAULT_OPENAI_BASE_URL.to_string(),
-            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
-        },
+    let defaults = match provider.as_str() {
+        "groq" => Some((GROQ_BASE_URL, MODEL)),
+        "openai" => Some((DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_SUMMARY_MODEL)),
+        _ => None,
     };
-    let model = match non_empty(&settings.summary_model) {
-        Some(model) => model,
-        None => match provider.as_str() {
-            "groq" => MODEL.to_string(),
-            "openai" => DEFAULT_OPENAI_SUMMARY_MODEL.to_string(),
-            _ => return Err("Set a base URL and model under Meetings → AI Summary.".to_string()),
-        },
-    };
+    let missing = || "Set a base URL and model under Meetings → AI Summary.".to_string();
+    let base_url = non_empty(&settings.prefs.summary_base_url)
+        .or_else(|| defaults.map(|(base_url, _)| base_url.to_string()))
+        .ok_or_else(missing)?;
+    let model = non_empty(&settings.prefs.summary_model)
+        .or_else(|| defaults.map(|(_, model)| model.to_string()))
+        .ok_or_else(missing)?;
 
     Ok(SummaryConfig {
         provider,
@@ -280,12 +268,14 @@ fn sanitize_generated_title(raw: &str) -> Option<String> {
     Some(capped.trim_end().to_string())
 }
 
-async fn generate_and_store_title(
+/// Sends one chat-completions request; `what` ("Summary"/"Title") labels errors.
+async fn chat(
     client: &reqwest::Client,
     config: &SummaryConfig,
-    id: &str,
-    summary_markdown: &str,
-) -> Result<(), String> {
+    what: &str,
+    system_prompt: &str,
+    user_content: &str,
+) -> Result<(reqwest::StatusCode, String), String> {
     let response = client
         .post(format!(
             "{}/chat/completions",
@@ -295,18 +285,37 @@ async fn generate_and_store_title(
         .json(&request_body(
             &config.provider,
             &config.model,
-            TITLE_SYSTEM_PROMPT,
-            summary_markdown,
+            system_prompt,
+            user_content,
         ))
         .send()
         .await
-        .map_err(|error| format!("Title request failed: {error}"))?;
+        .map_err(|error| format!("{what} request failed: {error}"))?;
 
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| format!("Failed to read title response: {error}"))?;
+    let body = response.text().await.map_err(|error| {
+        format!(
+            "Failed to read {} response: {error}",
+            what.to_ascii_lowercase()
+        )
+    })?;
+    Ok((status, body))
+}
+
+async fn generate_and_store_title(
+    client: &reqwest::Client,
+    config: &SummaryConfig,
+    id: &str,
+    summary_markdown: &str,
+) -> Result<(), String> {
+    let (status, body) = chat(
+        client,
+        config,
+        "Title",
+        TITLE_SYSTEM_PROMPT,
+        summary_markdown,
+    )
+    .await?;
     if !status.is_success() {
         return Err(format!("Title API error ({}) {status}", config.provider));
     }
@@ -360,27 +369,14 @@ pub async fn run(
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
-    let response = client
-        .post(format!(
-            "{}/chat/completions",
-            config.base_url.trim_end_matches('/')
-        ))
-        .bearer_auth(&config.api_key)
-        .json(&request_body(
-            &config.provider,
-            &config.model,
-            SUMMARY_SYSTEM_PROMPT,
-            &transcript_text,
-        ))
-        .send()
-        .await
-        .map_err(|error| format!("Summary request failed: {error}"))?;
-
-    let status = response.status();
-    let response_body = response
-        .text()
-        .await
-        .map_err(|error| format!("Failed to read summary response: {error}"))?;
+    let (status, response_body) = chat(
+        &client,
+        &config,
+        "Summary",
+        SUMMARY_SYSTEM_PROMPT,
+        &transcript_text,
+    )
+    .await?;
     if !status.is_success() {
         return Err(with_rate_limit_hint(
             status,
@@ -419,16 +415,17 @@ mod tests {
     use crate::meeting::types::Utterance;
 
     fn settings_with(provider: &str, api_key: &str, groq_map_key: Option<&str>) -> AppSettings {
-        let mut settings = AppSettings::default();
-        settings.provider = provider.to_string();
-        settings.api_key = api_key.to_string();
-        settings.provider_api_keys.clear();
-        if let Some(key) = groq_map_key {
-            settings
-                .provider_api_keys
-                .insert("groq".to_string(), key.to_string());
+        AppSettings {
+            prefs: crate::settings::Preferences {
+                provider: provider.to_string(),
+                ..Default::default()
+            },
+            api_key: api_key.to_string(),
+            provider_api_keys: groq_map_key
+                .map(|key| [("groq".to_string(), key.to_string())].into())
+                .unwrap_or_default(),
+            ..Default::default()
         }
-        settings
     }
 
     fn transcript(utterances: Vec<Utterance>, text: &str) -> MeetingTranscript {
@@ -459,7 +456,7 @@ mod tests {
         api_key: &str,
         map_key: Option<&str>,
     ) -> AppSettings {
-        settings.summary_provider = provider.to_string();
+        settings.prefs.summary_provider = provider.to_string();
         settings.summary_api_key = api_key.to_string();
         settings.summary_provider_api_keys.clear();
         if let Some(key) = map_key {
@@ -540,8 +537,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = "  ".to_string();
-        settings.summary_model = String::new();
+        settings.prefs.summary_base_url = "  ".to_string();
+        settings.prefs.summary_model = String::new();
         let config = resolve_summary_config(&settings).unwrap();
         assert_eq!(config.base_url, "https://api.openai.com/v1");
         assert_eq!(config.model, "gpt-5.4-mini");
@@ -555,8 +552,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = String::new();
-        settings.summary_model = "some-model".to_string();
+        settings.prefs.summary_base_url = String::new();
+        settings.prefs.summary_model = "some-model".to_string();
         assert!(resolve_summary_config(&settings)
             .unwrap_err()
             .contains("base URL"));
@@ -570,8 +567,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = String::new();
-        settings.summary_model = "  ".to_string();
+        settings.prefs.summary_base_url = String::new();
+        settings.prefs.summary_model = "  ".to_string();
         let config = resolve_summary_config(&settings).unwrap();
         assert_eq!(config.base_url, "https://api.groq.com/openai/v1");
         assert_eq!(config.model, "openai/gpt-oss-120b");
@@ -585,8 +582,8 @@ mod tests {
             "summary-key",
             None,
         );
-        settings.summary_base_url = "http://localhost:11434/v1".to_string();
-        settings.summary_model = String::new();
+        settings.prefs.summary_base_url = "http://localhost:11434/v1".to_string();
+        settings.prefs.summary_model = String::new();
         assert!(resolve_summary_config(&settings).is_err());
     }
 

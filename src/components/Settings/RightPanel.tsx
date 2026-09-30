@@ -1,29 +1,17 @@
 import { For, Show, onMount, onCleanup } from 'solid-js';
 import type { Accessor } from 'solid-js';
-import type { Mode, Tab } from '../../types';
-import { DEFAULT_MODES, MODE_COLORS, MODE_ICONS } from '../../defaultModes';
-
-export type HistoryStats = {
-  filteredCount: number;
-  totalCount: number;
-  todayCount: number;
-  weekCount: number;
-  latestAt: number | null;
-  totalAudioSecs: number;
-  averageAudioSecs: number;
-};
+import type { Mode } from '../../types';
+import { Mic, MicOff } from 'lucide-solid';
+import { BUILTIN_MODES } from '../../defaultModes';
 
 type AudioLevel = { rms_db: number; peak_db: number };
 
 type RightPanelProps = {
-  activeTab: Accessor<Tab>;
   modes: Accessor<Mode[]>;
   activeModeId: Accessor<string | null>;
   onSetActiveModeId: (id: string | null) => void;
   audioLevel: Accessor<AudioLevel | null>;
 };
-
-const PANEL_MODE_IDS = ['clean-draft', 'email-composer', 'developer-log'] as const;
 
 // ── Visualizer constants ─────────────────────────────────────────────
 const BAR_COUNT = 17;
@@ -111,9 +99,9 @@ function MicVisualizer(props: { audioLevel: Accessor<AudioLevel | null> }) {
             Live Input
           </span>
         </Show>
-        <span class={`material-symbols-outlined text-[16px] ${isActive() ? 'text-primary' : 'text-gray-600'}`}>
-          {isActive() ? 'mic' : 'mic_off'}
-        </span>
+        <Show when={isActive()} fallback={<MicOff size={24} class="text-gray-600" />}>
+          <Mic size={24} class="text-primary" />
+        </Show>
       </div>
       <div class="h-16 w-full bg-input-bg rounded-lg border border-white/10 flex items-center justify-center gap-[2px] overflow-hidden px-4">
         {BAR_WEIGHTS.map((_, i) => (
@@ -136,12 +124,7 @@ function MicVisualizer(props: { audioLevel: Accessor<AudioLevel | null> }) {
 }
 
 // ── Settings right panel ─────────────────────────────────────────────
-function SettingsPanel(props: RightPanelProps) {
-  const panelModes = () =>
-    PANEL_MODE_IDS.map((id) =>
-      props.modes().find((mode) => mode.id === id) ?? DEFAULT_MODES.find((mode) => mode.id === id)!
-    );
-
+export default function RightPanel(props: RightPanelProps) {
   return (
     <div class="p-6 flex-1 flex flex-col h-full">
       {/* AI Configuration Heading */}
@@ -165,15 +148,16 @@ function SettingsPanel(props: RightPanelProps) {
 
       {/* Transcription Modes */}
       <div class="space-y-3 mb-auto">
-        <For each={panelModes()}>
-          {(mode) => {
-            const modeActive = () => props.activeModeId() === mode.id;
-            const modeColor = MODE_COLORS[mode.id] ?? { bg: 'bg-primary/10', text: 'text-primary' };
-            const icon = MODE_ICONS[mode.id] ?? 'tune';
+        <For each={BUILTIN_MODES}>
+          {(builtin) => {
+            // The panel always offers the built-in modes, with the user's edits applied.
+            const mode = () => props.modes().find((m) => m.id === builtin.id) ?? builtin;
+            const modeActive = () => props.activeModeId() === builtin.id;
+            const Icon = builtin.icon;
             return (
               <button
                 type="button"
-                onClick={() => props.onSetActiveModeId(modeActive() ? null : mode.id)}
+                onClick={() => props.onSetActiveModeId(modeActive() ? null : builtin.id)}
                 class={`relative p-4 rounded-xl border cursor-pointer group transition-colors ${
                   modeActive()
                     ? 'border-primary bg-primary/5 shadow-[0_0_20px_rgba(16,183,127,0.05)]'
@@ -182,14 +166,14 @@ function SettingsPanel(props: RightPanelProps) {
               >
                 <div class="flex justify-between items-start mb-1">
                   <span class={`font-semibold transition-colors text-left ${modeActive() ? 'text-white group-hover:text-primary' : 'text-gray-300 group-hover:text-white'}`}>
-                    {mode.name}
+                    {mode().name}
                   </span>
-                  <span class={`material-symbols-outlined text-[18px] ${modeColor.bg} ${modeColor.text} rounded-md px-1.5 py-0.5`}>
-                    {icon}
+                  <span class={`${builtin.color.bg} ${builtin.color.text} rounded-md px-1.5 py-0.5`}>
+                    <Icon size={24} />
                   </span>
                 </div>
                 <p class={`text-xs leading-relaxed text-left ${modeActive() ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {promptPreview(mode.system_prompt)}
+                  {promptPreview(mode().system_prompt)}
                 </p>
               </button>
             );
@@ -197,38 +181,8 @@ function SettingsPanel(props: RightPanelProps) {
         </For>
       </div>
 
-      {/* Enhancements (disabled) */}
-      {false && (
-        <div class="mb-auto">
-          <h3 class="text-xs font-semibold text-gray-500 mb-4 px-1">ENHANCEMENTS</h3>
-          <div class="bg-surface-dark rounded-xl border border-white/5 p-4 space-y-4">
-            {/* Auto-Punctuation */}
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-gray-300">Auto-Punctuation</span>
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input checked type="checkbox" class="sr-only peer" />
-                <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
-              </label>
-            </div>
-
-            {/* Vocabulary Boost */}
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-gray-300">Vocabulary Boost</span>
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" class="sr-only peer" />
-                <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-primary" />
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Mic Visualizer */}
       <MicVisualizer audioLevel={props.audioLevel} />
     </div>
   );
-}
-
-export default function RightPanel(props: RightPanelProps) {
-  return <SettingsPanel {...props} />;
 }

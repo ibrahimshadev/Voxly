@@ -4,15 +4,11 @@ import { APP_NAME } from './branding';
 
 async function boot() {
   document.title = APP_NAME;
-  try {
-    await getCurrentWindow().setTitle(APP_NAME);
-  } catch {
-    // Running outside Tauri (e.g. plain browser preview).
-  }
-
   let isSettingsWindow = false;
   try {
-    isSettingsWindow = getCurrentWindow().label === 'settings';
+    const currentWindow = getCurrentWindow();
+    isSettingsWindow = currentWindow.label === 'settings';
+    await currentWindow.setTitle(APP_NAME);
   } catch {
     // Running outside Tauri (e.g. plain browser preview) falls back to main UI.
   }

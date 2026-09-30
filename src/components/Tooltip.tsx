@@ -1,5 +1,5 @@
 import type { HotkeyMode } from '../types';
-import { formatHotkey } from './Pill';
+import { formatHotkey } from '../lib/hotkey';
 import GearButton from './Pill/GearButton';
 
 type TooltipProps = {
@@ -17,7 +17,7 @@ export default function Tooltip(props: TooltipProps) {
     >
       <span>
         {props.hotkeyMode === 'hold' ? 'Hold to talk: ' : 'Press to toggle: '}
-        <strong>{formatHotkey(props.hotkey)}</strong>
+        <strong>{formatHotkey(props.hotkey, true)}</strong>
       </span>
       <GearButton onClick={props.onSettingsClick} />
     </div>

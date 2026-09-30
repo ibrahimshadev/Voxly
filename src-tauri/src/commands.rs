@@ -92,15 +92,15 @@ pub async fn test_connection(settings: AppSettings) -> Result<String, String> {
         return Err("Missing API key".to_string());
     }
 
-    if settings.base_url.trim().is_empty() {
+    if settings.prefs.base_url.trim().is_empty() {
         return Err("Missing base URL".to_string());
     }
 
-    if settings.model.trim().is_empty() {
+    if settings.prefs.model.trim().is_empty() {
         return Err("Missing model".to_string());
     }
 
-    let trimmed = settings.base_url.trim_end_matches('/');
+    let trimmed = settings.prefs.base_url.trim_end_matches('/');
     let url = format!("{trimmed}/models");
 
     let client = reqwest::Client::builder()
@@ -195,10 +195,9 @@ pub fn start_meeting(
         MeetingUpdate {
             state: "recording".to_string(),
             meeting_id: Some(meta.id.clone()),
-            message: None,
             elapsed_secs: Some(0),
             file_size_bytes: meta.file_size_bytes,
-            progress_pct: None,
+            ..Default::default()
         },
     );
     let _ = app.emit("meetings-updated", ());
@@ -214,10 +213,9 @@ pub fn stop_meeting(app: AppHandle, state: State<'_, AppState>) -> Result<Meetin
                 MeetingUpdate {
                     state: "processing".to_string(),
                     meeting_id: Some(meta.id.clone()),
-                    message: None,
                     elapsed_secs: meta.duration_secs.map(|value| value.round() as u64),
                     file_size_bytes: meta.file_size_bytes,
-                    progress_pct: None,
+                    ..Default::default()
                 },
             );
             let _ = app.emit("meetings-updated", ());
@@ -228,11 +226,8 @@ pub fn stop_meeting(app: AppHandle, state: State<'_, AppState>) -> Result<Meetin
                 "meeting:update",
                 MeetingUpdate {
                     state: "error".to_string(),
-                    meeting_id: None,
                     message: Some(error.clone()),
-                    elapsed_secs: None,
-                    file_size_bytes: None,
-                    progress_pct: None,
+                    ..Default::default()
                 },
             );
             let _ = app.emit("meetings-updated", ());
@@ -248,7 +243,7 @@ pub fn transcribe_meeting(
     state: State<'_, AppState>,
 ) -> Result<MeetingMeta, String> {
     let settings = state.manager.get_settings()?;
-    if !settings.meeting_consent_acknowledged {
+    if !settings.prefs.meeting_consent_acknowledged {
         return Err("Acknowledge meeting consent in Settings first.".to_string());
     }
     let api_key = settings.deepgram_api_key.trim().to_string();
@@ -256,15 +251,20 @@ pub fn transcribe_meeting(
         return Err("Add your Deepgram API key in Meeting settings.".to_string());
     }
     let options = crate::meeting::transcribe::DeepgramTranscriptionOptions {
-        keyterms: enabled_keyterms(&settings.keyterm_glossary),
-        language: normalized_meeting_language(&settings.meeting_language),
-        redact_pii: settings.deepgram_redaction_enabled && settings.deepgram_redact_pii,
-        redact_pci: settings.deepgram_redaction_enabled && settings.deepgram_redact_pci,
+        keyterms: enabled_keyterms(&settings.prefs.keyterm_glossary),
+        language: crate::settings::normalize_meeting_language(&settings.prefs.meeting_language),
+        redact_pii: settings.prefs.deepgram_redaction_enabled && settings.prefs.deepgram_redact_pii,
+        redact_pci: settings.prefs.deepgram_redaction_enabled && settings.prefs.deepgram_redact_pci,
     };
 
+    // Track this run as in flight so reconciliation won't complete/error it. Taken
+    // before `begin` writes `pending` and held for the whole task; if `begin`
+    // rejects the request the guard drops here and nothing stays registered.
+    let guard = state.meeting_manager.mark_transcribing(id.clone())?;
     let meta = crate::meeting::transcribe::begin(&id)?;
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
+        let _guard = guard;
         crate::meeting::transcribe::run(app2, api_key, options, id).await;
     });
     let _ = app.emit("meetings-updated", ());
@@ -292,13 +292,6 @@ fn enabled_keyterms(entries: &[crate::domain::types::KeytermEntry]) -> Vec<Strin
         }
     }
     terms
-}
-
-fn normalized_meeting_language(value: &str) -> String {
-    match value.trim() {
-        "multi" => "multi".to_string(),
-        _ => "en".to_string(),
-    }
 }
 
 #[tauri::command]
@@ -333,9 +326,8 @@ pub fn rename_meeting_speaker(
     speaker: String,
     name: String,
     app: AppHandle,
-    state: State<'_, AppState>,
 ) -> Result<MeetingTranscript, String> {
-    let transcript = state.meeting_manager.rename_speaker(&id, &speaker, &name)?;
+    let transcript = crate::meeting::storage::update_transcript_speaker_name(&id, &speaker, &name)?;
     let _ = app.emit("meetings-updated", ());
     Ok(transcript)
 }
@@ -362,16 +354,8 @@ pub fn delete_meeting(
 }
 
 #[tauri::command]
-pub fn list_meeting_devices(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<MeetingDevices, String> {
-    Ok(state.meeting_manager.devices(&app))
-}
-
-#[tauri::command]
-pub fn position_window_bottom(window: WebviewWindow) -> Result<(), String> {
-    position_window_bottom_internal(&window)
+pub fn list_meeting_devices(app: AppHandle) -> Result<MeetingDevices, String> {
+    Ok(crate::meeting::devices::list_devices(&app))
 }
 
 #[tauri::command]
@@ -431,95 +415,27 @@ pub fn hide_settings_window_internal(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn position_window_bottom_internal(window: &WebviewWindow) -> Result<(), String> {
+pub fn position_window_bottom(window: &WebviewWindow) -> Result<(), String> {
     let window_size = window.outer_size().map_err(|e| e.to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or("No monitor found")?;
 
-    // Prefer platform work-area APIs (Windows taskbar-aware). Fallback to monitor bounds.
-    let (left, top, right, bottom) = work_area_bounds(window)?;
-    let work_width = (right - left) as f64;
-    let work_height = (bottom - top) as f64;
-    let window_width = window_size.width as f64;
-    let window_height = window_size.height as f64;
+    // Windows: the taskbar-aware work area. Elsewhere: the full monitor bounds.
+    #[cfg(target_os = "windows")]
+    let (position, size) = (monitor.work_area().position, monitor.work_area().size);
+    #[cfg(not(target_os = "windows"))]
+    let (position, size) = (*monitor.position(), *monitor.size());
 
-    let x = left as f64 + (work_width - window_width) / 2.0;
-    let y = top as f64 + work_height - window_height - 10.0;
+    let x = position.x as f64 + (size.width as f64 - window_size.width as f64) / 2.0;
+    let y = position.y as f64 + size.height as f64 - window_size.height as f64 - 10.0;
 
     window
         .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
         .map_err(|e| e.to_string())?;
 
     Ok(())
-}
-
-fn work_area_bounds(window: &WebviewWindow) -> Result<(i32, i32, i32, i32), String> {
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or("No monitor found")?;
-
-    let monitor_size = monitor.size();
-    let monitor_pos = monitor.position();
-
-    let monitor_bounds = (
-        monitor_pos.x,
-        monitor_pos.y,
-        monitor_pos.x + monitor_size.width as i32,
-        monitor_pos.y + monitor_size.height as i32,
-    );
-
-    #[cfg(target_os = "windows")]
-    if let Some((left, top, right, bottom)) = windows_work_area() {
-        if rect_inside_rect(
-            left,
-            top,
-            right,
-            bottom,
-            monitor_bounds.0,
-            monitor_bounds.1,
-            monitor_bounds.2,
-            monitor_bounds.3,
-        ) {
-            return Ok((left, top, right, bottom));
-        }
-    }
-
-    Ok(monitor_bounds)
-}
-
-#[cfg(target_os = "windows")]
-fn rect_inside_rect(
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
-    outer_left: i32,
-    outer_top: i32,
-    outer_right: i32,
-    outer_bottom: i32,
-) -> bool {
-    left >= outer_left && top >= outer_top && right <= outer_right && bottom <= outer_bottom
-}
-
-#[cfg(target_os = "windows")]
-fn windows_work_area() -> Option<(i32, i32, i32, i32)> {
-    use windows::Win32::Foundation::RECT;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    };
-
-    let mut rect = RECT::default();
-    let result = unsafe {
-        SystemParametersInfoW(
-            SPI_GETWORKAREA,
-            0,
-            Some(&mut rect as *mut _ as _),
-            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-        )
-    };
-    if result.is_err() {
-        return None;
-    }
-    Some((rect.left, rect.top, rect.right, rect.bottom))
 }
 
 const MAX_EXPORT_FILE_NAME_CHARS: usize = 100;

@@ -34,13 +34,9 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn copy_and_paste(text: &str, restore_clipboard: bool) -> Result<(), String> {
+pub fn copy_and_paste(text: &str) -> Result<(), String> {
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
-    let original_clipboard = if restore_clipboard {
-        clipboard.get_text().ok()
-    } else {
-        None
-    };
+    let original_clipboard = clipboard.get_text().ok();
 
     clipboard.set_text(text).map_err(|e| e.to_string())?;
 

@@ -1,20 +1,10 @@
 use reqwest::multipart;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TranscriptionSegment {
-    pub start: f64,
-    pub end: f64,
-    pub text: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct TranscriptionResult {
     pub text: String,
     pub duration_secs: Option<f64>,
     pub language: Option<String>,
-    #[allow(dead_code)] // Parsed from API, not yet stored in history — future use
-    pub segments: Option<Vec<TranscriptionSegment>>,
 }
 
 pub async fn transcribe(
@@ -34,68 +24,33 @@ pub async fn transcribe(
     let prompt_to_send =
         prompt.filter(|p| supports_prompt(provider, model) && !p.trim().is_empty());
 
-    if let Some(prompt_value) = prompt_to_send {
-        let first_attempt = send_transcription_request(
-            &client,
-            &url,
-            api_key,
-            model,
-            audio_data.clone(),
-            Some(prompt_value),
-            true,
-        )
-        .await;
-        match first_attempt {
-            Ok(result) => return Ok(result),
-            Err(error) => {
-                if should_retry_without_prompt(&error) {
-                    return send_transcription_request(
-                        &client, &url, api_key, model, audio_data, None, true,
-                    )
-                    .await
-                    .map_err(|retry_error| retry_error.to_string());
-                }
-                // If verbose_json caused the error, retry without it
-                if should_retry_without_verbose(&error) {
-                    return send_transcription_request(
-                        &client,
-                        &url,
-                        api_key,
-                        model,
-                        audio_data,
-                        Some(prompt_value),
-                        false,
-                    )
-                    .await
-                    .map_err(|retry_error| retry_error.to_string());
-                }
-                return Err(error.to_string());
-            }
-        }
-    }
-
-    let result = send_transcription_request(
+    let mut result = send_transcription_request(
         &client,
         &url,
         api_key,
         model,
         audio_data.clone(),
-        None,
+        prompt_to_send,
         true,
     )
     .await;
-    match result {
-        Ok(result) => Ok(result),
-        Err(error) => {
-            if should_retry_without_verbose(&error) {
-                send_transcription_request(&client, &url, api_key, model, audio_data, None, false)
-                    .await
-                    .map_err(|retry_error| retry_error.to_string())
-            } else {
-                Err(error.to_string())
-            }
+    if let Err(error) = &result {
+        let retry = if prompt_to_send.is_some() && retryable(error, &["prompt"]) {
+            Some((None, true))
+        } else if retryable(error, &["response_format", "verbose"]) {
+            // verbose_json caused the error: retry without it
+            Some((prompt_to_send, false))
+        } else {
+            None
+        };
+        if let Some((prompt, verbose)) = retry {
+            result = send_transcription_request(
+                &client, &url, api_key, model, audio_data, prompt, verbose,
+            )
+            .await;
         }
     }
+    result.map_err(|error| error.to_string())
 }
 
 fn build_transcription_url(base_url: &str) -> String {
@@ -116,37 +71,20 @@ fn supports_prompt(provider: &str, model: &str) -> bool {
     }
 }
 
-fn should_retry_without_verbose(error: &ApiError) -> bool {
-    let Some(status) = error.status else {
-        return false;
-    };
-
-    if !matches!(status.as_u16(), 400 | 404 | 415 | 422) {
-        return false;
-    }
-
-    let body = error.body.to_ascii_lowercase();
-    body.contains("response_format")
-        || body.contains("verbose")
-        || body.contains("unknown parameter")
-        || body.contains("not allowed")
-        || body.contains("unexpected field")
-}
-
-fn should_retry_without_prompt(error: &ApiError) -> bool {
-    let Some(status) = error.status else {
-        return false;
-    };
-
-    if !matches!(status.as_u16(), 400 | 404 | 415 | 422) {
+/// Whether a rejected request is worth retrying without the parameter named by `keywords`.
+fn retryable(error: &ApiError, keywords: &[&str]) -> bool {
+    if !error
+        .status
+        .is_some_and(|status| matches!(status.as_u16(), 400 | 404 | 415 | 422))
+    {
         return false;
     }
 
     let body = error.body.to_ascii_lowercase();
-    body.contains("prompt")
-        || body.contains("unknown parameter")
-        || body.contains("not allowed")
-        || body.contains("unexpected field")
+    keywords
+        .iter()
+        .chain(&["unknown parameter", "not allowed", "unexpected field"])
+        .any(|keyword| body.contains(keyword))
 }
 
 async fn send_transcription_request(
@@ -200,23 +138,11 @@ async fn send_transcription_request(
     let text = json["text"].as_str().unwrap_or("").trim().to_string();
     let duration_secs = json["duration"].as_f64();
     let language = json["language"].as_str().map(|s| s.to_lowercase());
-    let segments = json["segments"].as_array().map(|arr| {
-        arr.iter()
-            .filter_map(|seg| {
-                Some(TranscriptionSegment {
-                    start: seg["start"].as_f64()?,
-                    end: seg["end"].as_f64()?,
-                    text: seg["text"].as_str().unwrap_or("").to_string(),
-                })
-            })
-            .collect()
-    });
 
     Ok(TranscriptionResult {
         text,
         duration_secs,
         language,
-        segments,
     })
 }
 
@@ -253,7 +179,7 @@ impl std::fmt::Display for ApiError {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_transcription_url, supports_prompt};
+    use super::{build_transcription_url, retryable, supports_prompt, ApiError};
 
     #[test]
     fn url_builder_appends_endpoint() {
@@ -285,5 +211,25 @@ mod tests {
         assert!(supports_prompt("openai", "whisper-1"));
         assert!(!supports_prompt("openai", "gpt-4o-transcribe"));
         assert!(supports_prompt("custom", "anything"));
+    }
+
+    #[test]
+    fn retryable_requires_client_error_status_and_matching_body() {
+        let bad_request = |body: &str| ApiError::api(reqwest::StatusCode::BAD_REQUEST, body.into());
+        assert!(retryable(&bad_request("Unknown PROMPT field"), &["prompt"]));
+        assert!(retryable(&bad_request("unexpected field"), &["prompt"]));
+        assert!(!retryable(&bad_request("prompt too long"), &["verbose"]));
+        assert!(retryable(
+            &bad_request("response_format invalid"),
+            &["response_format", "verbose"]
+        ));
+        assert!(!retryable(
+            &ApiError::api(reqwest::StatusCode::INTERNAL_SERVER_ERROR, "prompt".into()),
+            &["prompt"]
+        ));
+        assert!(!retryable(
+            &ApiError::transport("prompt".into()),
+            &["prompt"]
+        ));
     }
 }

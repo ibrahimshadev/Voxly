@@ -8,8 +8,7 @@ use tauri::{AppHandle, Emitter};
 use crate::meeting::recorder::RunningRecorder;
 use crate::meeting::storage;
 use crate::meeting::types::{
-    MeetingDetail, MeetingDevices, MeetingMeta, MeetingStartOptions, MeetingStatus,
-    MeetingTranscript, MeetingUpdate,
+    MeetingDetail, MeetingMeta, MeetingStartOptions, MeetingStatus, MeetingUpdate,
 };
 use crate::settings::AppSettings;
 
@@ -25,6 +24,9 @@ pub struct MeetingSessionManager {
     // Meetings whose finalization task is currently running. Keeps reconciliation
     // from declaring them orphaned and blocks deletion while FFmpeg holds files.
     finalizing: Arc<Mutex<HashSet<String>>>,
+    // Meetings whose transcription task is currently running this session. Keeps
+    // reconciliation from completing or erroring a transcript that is still in flight.
+    transcribing: Arc<Mutex<HashSet<String>>>,
 }
 
 struct FinalizingGuard {
@@ -40,6 +42,22 @@ impl Drop for FinalizingGuard {
     }
 }
 
+/// Marks a meeting as actively transcribing for the duration of its run; removes
+/// it from the live set on drop so a finished or crashed task stops being treated
+/// as in flight.
+pub struct TranscribingGuard {
+    set: Arc<Mutex<HashSet<String>>>,
+    id: String,
+}
+
+impl Drop for TranscribingGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.set.lock() {
+            set.remove(&self.id);
+        }
+    }
+}
+
 impl MeetingSessionManager {
     pub fn start(
         &self,
@@ -47,7 +65,7 @@ impl MeetingSessionManager {
         settings: &AppSettings,
         mut options: MeetingStartOptions,
     ) -> Result<MeetingMeta, String> {
-        if !settings.meeting_consent_acknowledged {
+        if !settings.prefs.meeting_consent_acknowledged {
             return Err(
                 "Acknowledge meeting recording consent in Settings before recording.".to_string(),
             );
@@ -62,13 +80,13 @@ impl MeetingSessionManager {
         }
 
         if options.video_preset.trim().is_empty() {
-            options.video_preset = settings.meeting_video_preset.clone();
+            options.video_preset = settings.prefs.meeting_video_preset.clone();
         }
         if options.mic_device.is_none() {
-            options.mic_device = settings.meeting_mic_device.clone();
+            options.mic_device = settings.prefs.meeting_mic_device.clone();
         }
         if options.system_audio_device.is_none() {
-            options.system_audio_device = settings.meeting_system_audio_device.clone();
+            options.system_audio_device = settings.prefs.meeting_system_audio_device.clone();
         }
         if options.record_system_audio
             && options
@@ -81,7 +99,11 @@ impl MeetingSessionManager {
             options.system_audio_device = None;
         }
 
-        if options.record_system_audio && !crate::meeting::loopback::system_audio_available() {
+        if options.record_system_audio
+            && crate::meeting::loopback::output_devices()
+                .unwrap_or_default()
+                .is_empty()
+        {
             return Err(
                 "No Windows playback output is available for system-audio capture.".to_string(),
             );
@@ -100,7 +122,8 @@ impl MeetingSessionManager {
         storage::create_meeting_folder(&id)?;
         let output_path = storage::source_path(&id)?;
 
-        let has_video = options.record_video && options.video_preset != "audio_only";
+        let has_video = options.record_video
+            && crate::meeting::recorder::video_params(&options.video_preset).is_some();
         let has_mic = options
             .mic_device
             .as_deref()
@@ -167,21 +190,23 @@ impl MeetingSessionManager {
         let source_path = storage::source_path(&id)?;
         let file_size_bytes = storage::file_size(&source_path);
 
-        let meta = storage::update_meta_by_id(&id, |item| {
+        let mark_processing = |item: &mut MeetingMeta| {
             item.ended_at_ms = Some(ended_at_ms);
             item.duration_secs = Some(duration_secs);
             item.file_size_bytes = file_size_bytes;
             item.status = MeetingStatus::Processing;
             Ok(())
-        })?
-        .unwrap_or_else(|| {
-            let mut meta = active.meta.clone();
-            meta.ended_at_ms = Some(ended_at_ms);
-            meta.duration_secs = Some(duration_secs);
-            meta.file_size_bytes = file_size_bytes;
-            meta.status = MeetingStatus::Processing;
-            meta
-        });
+        };
+        // Patch the stored row (it may carry edits made while recording, e.g. a
+        // rename); fall back to the in-memory copy if the row is gone.
+        let meta = match storage::update_meta_by_id(&id, mark_processing)? {
+            Some(meta) => meta,
+            None => {
+                let mut meta = active.meta.clone();
+                mark_processing(&mut meta)?;
+                meta
+            }
+        };
 
         self.finalizing
             .lock()
@@ -202,11 +227,11 @@ impl MeetingSessionManager {
     }
 
     pub fn list(&self) -> Result<Vec<MeetingMeta>, String> {
-        storage::load_index_reconciled(&self.live_ids()?)
+        storage::load_index_reconciled(&self.live_ids()?, || self.transcribing_ids())
     }
 
     pub fn get(&self, id: &str) -> Result<MeetingDetail, String> {
-        storage::get_detail_reconciled(id, &self.live_ids()?)
+        storage::get_detail_reconciled(id, &self.live_ids()?, || self.transcribing_ids())
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
@@ -239,17 +264,26 @@ impl MeetingSessionManager {
         .ok_or_else(|| "Meeting not found".to_string())
     }
 
-    pub fn rename_speaker(
-        &self,
-        id: &str,
-        speaker: &str,
-        name: &str,
-    ) -> Result<MeetingTranscript, String> {
-        storage::update_transcript_speaker_name(id, speaker, name)
-    }
-
-    pub fn devices(&self, app: &AppHandle) -> MeetingDevices {
-        crate::meeting::devices::list_devices(app)
+    /// Registers a meeting as actively transcribing. The returned guard removes it
+    /// when dropped (i.e. when the transcription task ends), so reconciliation only
+    /// recovers a stuck `pending` meeting once nothing is working on it. Acquire this
+    /// *before* `transcribe::begin` writes `pending`: reconciliation reads the set
+    /// under the storage lock, so it can never see that `pending` without the
+    /// registration. A second registration is rejected, so a duplicate request can't
+    /// drop the running task's entry.
+    pub fn mark_transcribing(&self, id: String) -> Result<TranscribingGuard, String> {
+        let inserted = self
+            .transcribing
+            .lock()
+            .map_err(|_| "Meeting transcribing lock poisoned".to_string())?
+            .insert(id.clone());
+        if !inserted {
+            return Err("This meeting is already being transcribed.".to_string());
+        }
+        Ok(TranscribingGuard {
+            set: Arc::clone(&self.transcribing),
+            id,
+        })
     }
 
     fn live_ids(&self) -> Result<HashSet<String>, String> {
@@ -271,6 +305,14 @@ impl MeetingSessionManager {
         );
         Ok(ids)
     }
+
+    fn transcribing_ids(&self) -> Result<HashSet<String>, String> {
+        Ok(self
+            .transcribing
+            .lock()
+            .map_err(|_| "Meeting transcribing lock poisoned".to_string())?
+            .clone())
+    }
 }
 
 fn run_finalize(
@@ -288,10 +330,8 @@ fn run_finalize(
             MeetingUpdate {
                 state: "processing".to_string(),
                 meeting_id: Some(progress_id.clone()),
-                message: None,
-                elapsed_secs: None,
-                file_size_bytes: None,
                 progress_pct: Some(pct),
+                ..Default::default()
             },
         );
     });
@@ -308,34 +348,21 @@ fn run_finalize(
         Ok(())
     });
 
-    match result {
-        Ok(()) => {
-            let _ = app.emit(
-                "meeting:update",
-                MeetingUpdate {
-                    state: "stopped".to_string(),
-                    meeting_id: Some(id),
-                    message: None,
-                    elapsed_secs: Some(duration_secs.round() as u64),
-                    file_size_bytes,
-                    progress_pct: None,
-                },
-            );
-        }
-        Err(error) => {
-            let _ = app.emit(
-                "meeting:update",
-                MeetingUpdate {
-                    state: "error".to_string(),
-                    meeting_id: Some(id),
-                    message: Some(error),
-                    elapsed_secs: None,
-                    file_size_bytes,
-                    progress_pct: None,
-                },
-            );
-        }
-    }
+    let (state, message, elapsed_secs) = match result {
+        Ok(()) => ("stopped", None, Some(duration_secs.round() as u64)),
+        Err(error) => ("error", Some(error), None),
+    };
+    let _ = app.emit(
+        "meeting:update",
+        MeetingUpdate {
+            state: state.to_string(),
+            meeting_id: Some(id),
+            message,
+            elapsed_secs,
+            file_size_bytes,
+            ..Default::default()
+        },
+    );
     let _ = app.emit("meetings-updated", ());
 }
 
@@ -355,10 +382,9 @@ fn emit_progress(app: AppHandle, id: String, output_path: std::path::PathBuf) {
                 MeetingUpdate {
                     state: "recording".to_string(),
                     meeting_id: Some(id.clone()),
-                    message: None,
                     elapsed_secs: Some(elapsed_secs),
                     file_size_bytes,
-                    progress_pct: None,
+                    ..Default::default()
                 },
             );
             if emit_result.is_err() {
@@ -404,6 +430,29 @@ mod tests {
         drop(guard);
 
         assert!(set.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn mark_transcribing_registers_and_clears_on_drop() {
+        let manager = MeetingSessionManager::default();
+
+        let guard = manager.mark_transcribing("m1".to_string()).unwrap();
+        assert!(manager.transcribing_ids().unwrap().contains("m1"));
+
+        drop(guard);
+        assert!(!manager.transcribing_ids().unwrap().contains("m1"));
+    }
+
+    #[test]
+    fn duplicate_mark_transcribing_keeps_the_running_registration() {
+        let manager = MeetingSessionManager::default();
+
+        let running = manager.mark_transcribing("m1".to_string()).unwrap();
+        assert!(manager.mark_transcribing("m1".to_string()).is_err());
+        assert!(manager.transcribing_ids().unwrap().contains("m1"));
+
+        drop(running);
+        assert!(manager.transcribing_ids().unwrap().is_empty());
     }
 
     #[test]

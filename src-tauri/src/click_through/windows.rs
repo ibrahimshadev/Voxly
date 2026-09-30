@@ -1,13 +1,10 @@
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows::Win32::Foundation::{COLORREF, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Whether WS_EX_TRANSPARENT is currently set (click-through active).
 static PASSTHROUGH: AtomicBool = AtomicBool::new(true);
-
-/// Stored HWND for the cursor tracker thread.
-static WINDOW_HWND: AtomicIsize = AtomicIsize::new(0);
 
 /// Toggle only WS_EX_TRANSPARENT on an HWND.
 /// Never touches WS_EX_LAYERED — prevents WebView2 compositor surface corruption.
@@ -54,7 +51,6 @@ pub fn setup(window: &tauri::WebviewWindow) {
         toggle_ex_transparent(hwnd, true);
     }
     PASSTHROUGH.store(true, Ordering::Relaxed);
-    WINDOW_HWND.store(hwnd_val, Ordering::Relaxed);
 
     // Cursor tracker thread: checks cursor position against hit rects
     // and toggles WS_EX_TRANSPARENT. Single authority for passthrough state.
@@ -71,7 +67,7 @@ pub fn setup(window: &tauri::WebviewWindow) {
             }
 
             tick = tick.wrapping_add(1);
-            if tick % WATCHDOG_INTERVAL == 0 {
+            if tick.is_multiple_of(WATCHDOG_INTERVAL) {
                 unsafe {
                     ensure_layered_visible(hwnd);
                 }
@@ -98,21 +94,15 @@ pub fn setup(window: &tauri::WebviewWindow) {
             let y_local = point.y - rect.top;
 
             // Check against hit rects from the frontend
-            let in_hit_region = super::point_in_hit_region(x_local, y_local);
+            let scale = *super::SCALE_FACTOR.lock().unwrap();
+            let in_hit_region = super::point_in_hit_region(x_local as f64, y_local as f64, scale);
 
-            let passthrough = PASSTHROUGH.load(Ordering::Relaxed);
             let want_passthrough = !in_hit_region;
-
-            if want_passthrough && !passthrough {
+            if want_passthrough != PASSTHROUGH.load(Ordering::Relaxed) {
                 unsafe {
-                    toggle_ex_transparent(hwnd, true);
+                    toggle_ex_transparent(hwnd, want_passthrough);
                 }
-                PASSTHROUGH.store(true, Ordering::Relaxed);
-            } else if !want_passthrough && passthrough {
-                unsafe {
-                    toggle_ex_transparent(hwnd, false);
-                }
-                PASSTHROUGH.store(false, Ordering::Relaxed);
+                PASSTHROUGH.store(want_passthrough, Ordering::Relaxed);
             }
         }
     });

@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { For, Match, Show, Switch, createMemo, createSignal } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import {
@@ -9,8 +9,6 @@ import {
   Clock,
   Copy,
   Download,
-  Eye,
-  EyeOff,
   FileText,
   HardDrive,
   Loader2,
@@ -27,15 +25,15 @@ import {
   Video,
   Volume2,
 } from 'lucide-solid';
-import type { JSX } from 'solid-js';
 import type { MeetingDetail, MeetingDevices, MeetingMeta, Provider, Settings } from '../../types';
-import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDERS, SUMMARY_MODELS } from '../../constants';
+import { MAX_KEYTERM_LEN, MAX_KEYTERMS, PROVIDER_IDS, PROVIDERS } from '../../constants';
 import { notifyError, notifySuccess } from '../../lib/notify';
 import { renderMarkdown } from '../../lib/markdown';
+import { formatDuration, formatSpeakerLabel } from '../../lib/meetingFormat';
 import { createPanelResize } from '../../lib/panelResize';
-import Select from './Select';
+import { HotkeyInput, SecretInput, Select, SwitchKnob, settingsFieldSetter } from './controls';
 import VideoPlayer from './VideoPlayer';
-import { GroqIcon, OpenAIIcon } from './SettingsPage';
+import ProviderIcon from './ProviderIcon';
 
 type MeetingsPageProps = {
   meetings: Accessor<MeetingMeta[]>;
@@ -77,19 +75,6 @@ const CONFIG_TABS: { value: ConfigTab; label: string }[] = [
   { value: 'summary', label: 'AI Summary' },
 ];
 
-type SummaryProviderOption = {
-  value: Provider;
-  label: string;
-  icon?: string;
-  iconComponent?: (props: { class?: string }) => JSX.Element;
-};
-
-const SUMMARY_PROVIDER_OPTIONS: SummaryProviderOption[] = [
-  { value: 'groq', label: 'Groq', iconComponent: GroqIcon },
-  { value: 'openai', label: 'OpenAI', iconComponent: OpenAIIcon },
-  { value: 'custom', label: 'Custom', icon: 'dns' },
-];
-
 // Session-scoped model stash per provider (mirrors providerModelMemory in SettingsPage).
 const summaryModelMemory: Partial<Record<Provider, string>> = {};
 
@@ -100,18 +85,6 @@ function formatDate(ms: number) {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function formatDuration(seconds?: number) {
-  if (!seconds) return '0:00';
-  const total = Math.round(seconds);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  }
-  return `${minutes}:${String(secs).padStart(2, '0')}`;
 }
 
 function formatBytes(bytes?: number) {
@@ -126,14 +99,6 @@ function formatBytes(bytes?: number) {
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function formatHotkeyForDisplay(hotkey: string) {
-  return hotkey
-    .replace('CommandOrControl', 'Ctrl')
-    .replace('Control', 'Ctrl')
-    .replace('Shift', 'Shift')
-    .replace(/\+/g, ' + ');
-}
-
 const SPEAKER_BADGE_CLASSES = [
   'border-sky-400/30 bg-sky-500/10 text-sky-300',
   'border-violet-400/30 bg-violet-500/10 text-violet-300',
@@ -142,14 +107,6 @@ const SPEAKER_BADGE_CLASSES = [
   'border-cyan-400/30 bg-cyan-500/10 text-cyan-300',
   'border-lime-400/30 bg-lime-500/10 text-lime-300',
 ];
-
-function formatSpeakerLabel(speaker: string, names?: Record<string, string>) {
-  const renamed = names?.[speaker]?.trim();
-  if (renamed) return renamed;
-  if (speaker === 'You' || speaker === 'System') return speaker;
-  if (speaker.startsWith('Sys-') || /^Ch\d+-/.test(speaker)) return speaker;
-  return `Speaker ${speaker}`;
-}
 
 function speakerBadgeClass(speaker: string) {
   if (speaker === 'You') return 'border-primary/30 bg-primary/10 text-primary';
@@ -211,17 +168,7 @@ function ToggleRow(props: {
           <span class="text-[11px] text-gray-500 leading-snug">{props.description}</span>
         </Show>
       </span>
-      <span
-        class={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${
-          props.checked ? 'bg-primary' : 'bg-white/10'
-        }`}
-      >
-        <span
-          class={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-            props.checked ? 'translate-x-[18px]' : 'translate-x-[3px]'
-          }`}
-        />
-      </span>
+      <SwitchKnob on={props.checked} />
     </button>
   );
 }
@@ -230,8 +177,6 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   let videoRef: HTMLVideoElement | undefined;
   const [activeTab, setActiveTab] = createSignal<TranscriptTab>('transcript');
   const [configTab, setConfigTab] = createSignal<ConfigTab>('capture');
-  const [showSummaryKey, setShowSummaryKey] = createSignal(false);
-  const [showDeepgramKey, setShowDeepgramKey] = createSignal(false);
   const [keytermDraft, setKeytermDraft] = createSignal('');
   const [editingTitleId, setEditingTitleId] = createSignal<string | null>(null);
   const [titleDraft, setTitleDraft] = createSignal('');
@@ -242,11 +187,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   const toggleConfigCollapsed = () => {
     const next = !configCollapsed();
     setConfigCollapsed(next);
-    try {
-      localStorage.setItem('meetings.configCollapsed', next ? '1' : '0');
-    } catch {
-      // Best-effort persistence only.
-    }
+    localStorage.setItem('meetings.configCollapsed', next ? '1' : '0');
   };
 
   const leftResize = createPanelResize({
@@ -285,7 +226,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   };
 
   const summaryModelOptions = () =>
-    SUMMARY_MODELS[props.settings().summary_provider].map((model) => ({
+    PROVIDERS[props.settings().summary_provider].summaryModels.map((model) => ({
       value: model,
       label: model,
     }));
@@ -312,7 +253,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
         ...current,
         summary_provider: provider,
         summary_base_url: PROVIDERS[provider].base_url,
-        summary_model: summaryModelMemory[provider] ?? SUMMARY_MODELS[provider][0] ?? '',
+        summary_model: summaryModelMemory[provider] ?? PROVIDERS[provider].summaryModels[0] ?? '',
         summary_api_key: restoredKey,
         summary_provider_api_keys: stashedKeys,
       };
@@ -365,6 +306,14 @@ export default function MeetingsPage(props: MeetingsPageProps) {
     void props.onSaveSettings();
   };
 
+  /** Change handler that sets `key` and saves right away (toggles and selects). */
+  const saveField = <K extends keyof Settings>(key: K) => (value: Settings[K]) =>
+    applyChange((current) => ({ ...current, [key]: value }));
+
+  /** Text fields update on input and save on blur. */
+  const onField = settingsFieldSetter(props.setSettings);
+  const save = () => void props.onSaveSettings();
+
   const addKeyterm = () => {
     const term = keytermDraft().trim().slice(0, MAX_KEYTERM_LEN);
     if (!term) return;
@@ -379,10 +328,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
         keyterm_glossary: [
           ...current.keyterm_glossary,
           {
-            id:
-              typeof crypto !== 'undefined' && 'randomUUID' in crypto
-                ? crypto.randomUUID()
-                : `keyterm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            id: crypto.randomUUID(),
             term,
             enabled: true,
           },
@@ -456,7 +402,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   };
 
   const canTranscribe = (meeting: MeetingDetail) =>
-    props.settings().deepgram_api_key.trim() &&
+    !!props.settings().deepgram_api_key.trim() &&
     props.settings().meeting_consent_acknowledged &&
     (meeting.meta.has_mic || meeting.meta.has_system_audio) &&
     meeting.meta.status === 'recorded' &&
@@ -465,7 +411,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
   return (
     <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
       <header class="shrink-0 border-b border-white/5 px-6 lg:px-10 py-5">
-        <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 class="text-white text-[30px] leading-9 font-bold tracking-tight">Meetings</h1>
             <p class="mt-1 text-sm text-gray-500">
@@ -510,11 +456,11 @@ export default function MeetingsPage(props: MeetingsPageProps) {
       </header>
 
       <div
-        class="relative flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[var(--meetings-left)_minmax(0,1fr)] overflow-hidden"
+        class="relative flex-1 min-h-0 grid grid-cols-[var(--meetings-left)_minmax(0,1fr)] overflow-hidden"
         style={{ '--meetings-left': `${leftResize.percent()}%` }}
       >
         <div
-          class={`hidden xl:block absolute inset-y-0 z-20 w-[7px] -translate-x-1/2 cursor-col-resize transition-colors ${
+          class={`absolute inset-y-0 z-20 w-[7px] -translate-x-1/2 cursor-col-resize transition-colors ${
             leftResize.dragging() ? 'bg-primary/40' : 'hover:bg-primary/25'
           }`}
           style={{ left: 'var(--meetings-left)' }}
@@ -522,7 +468,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
           title="Drag to resize"
         />
         <section class="min-h-0 flex flex-col border-r border-white/5 bg-background-dark overflow-hidden">
-          <div class="shrink-0 border-b border-white/5 bg-surface-dark/70 p-4 lg:p-5">
+          <div class="min-h-0 flex flex-col border-b border-white/5 bg-surface-dark/70">
+          <div class="@container min-h-0 overflow-y-auto scrollbar-hide scroll-fade-bottom p-4 lg:p-5">
             <div class="space-y-3">
               <Show
                 when={!props.settings().meeting_consent_acknowledged}
@@ -540,12 +487,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                             type="checkbox"
                             class="mt-0.5 accent-primary"
                             checked={props.settings().meeting_consent_acknowledged}
-                            onChange={(e) =>
-                              applyChange((current) => ({
-                                ...current,
-                                meeting_consent_acknowledged: (e.target as HTMLInputElement).checked,
-                              }))
-                            }
+                            onChange={(e) => saveField('meeting_consent_acknowledged')(e.currentTarget.checked)}
                           />
                           I understand and will obtain required consent.
                         </label>
@@ -597,31 +539,13 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     <label class="text-xs text-gray-500 font-medium ml-1">
                       Deepgram API key
                     </label>
-                    <div class="relative mt-1.5">
-                      <input
-                        type={showDeepgramKey() ? 'text' : 'password'}
-                        value={props.settings().deepgram_api_key}
-                        onInput={(e) =>
-                          props.setSettings((current) => ({
-                            ...current,
-                            deepgram_api_key: (e.target as HTMLInputElement).value,
-                          }))
-                        }
-                        onBlur={() => void props.onSaveSettings()}
-                        placeholder="Deepgram key for meeting transcripts"
-                        class="w-full bg-input-bg border border-white/15 rounded-lg py-1.5 pl-3 pr-10 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowDeepgramKey((value) => !value)}
-                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors cursor-pointer"
-                        title={showDeepgramKey() ? 'Hide key' : 'Show key'}
-                      >
-                        <Show when={showDeepgramKey()} fallback={<Eye size={15} />}>
-                          <EyeOff size={15} />
-                        </Show>
-                      </button>
-                    </div>
+                    <SecretInput
+                      class="mt-1.5"
+                      value={props.settings().deepgram_api_key}
+                      onInput={onField('deepgram_api_key')}
+                      onBlur={save}
+                      placeholder="Deepgram key for meeting transcripts"
+                    />
                   </div>
 
                   <div>
@@ -633,12 +557,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         { value: 'multi', label: 'Multilingual' },
                       ]}
                       class="mt-1.5 px-3 py-1.5"
-                      onChange={(value) =>
-                        applyChange((current) => ({
-                          ...current,
-                          meeting_language: value === 'multi' ? 'multi' : 'en',
-                        }))
-                      }
+                      onChange={(value) => saveField('meeting_language')(value === 'multi' ? 'multi' : 'en')}
                     />
                   </div>
 
@@ -682,20 +601,11 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         <For each={props.settings().keyterm_glossary}>
                           {(entry) => (
                             <div class="flex items-center gap-2 border-b border-white/5 px-2 py-1.5 last:border-b-0">
-                              <button
-                                type="button"
-                                onClick={() => toggleKeyterm(entry.id)}
-                                class={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
-                                  entry.enabled ? 'bg-primary' : 'bg-white/10'
-                                }`}
+                              <SwitchKnob
+                                on={entry.enabled}
+                                onToggle={() => toggleKeyterm(entry.id)}
                                 title={entry.enabled ? 'Disable keyterm' : 'Enable keyterm'}
-                              >
-                                <span
-                                  class={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                                    entry.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
-                                  }`}
-                                />
-                              </button>
+                              />
                               <span
                                 class={`min-w-0 flex-1 truncate text-xs ${
                                   entry.enabled ? 'text-gray-300' : 'text-gray-600'
@@ -724,12 +634,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                       label="Redact sensitive text"
                       description="Saved transcripts and summaries will use Deepgram redaction placeholders."
                       checked={props.settings().deepgram_redaction_enabled}
-                      onChange={(checked) =>
-                        applyChange((current) => ({
-                          ...current,
-                          deepgram_redaction_enabled: checked,
-                        }))
-                      }
+                      onChange={saveField('deepgram_redaction_enabled')}
                     />
                     <Show when={props.settings().deepgram_redaction_enabled}>
                       <div class="grid grid-cols-2 gap-2">
@@ -737,23 +642,13 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                           label="PII"
                           description="Names, email, phone"
                           checked={props.settings().deepgram_redact_pii}
-                          onChange={(checked) =>
-                            applyChange((current) => ({
-                              ...current,
-                              deepgram_redact_pii: checked,
-                            }))
-                          }
+                          onChange={saveField('deepgram_redact_pii')}
                         />
                         <ToggleRow
                           label="PCI"
                           description="Payment data"
                           checked={props.settings().deepgram_redact_pci}
-                          onChange={(checked) =>
-                            applyChange((current) => ({
-                              ...current,
-                              deepgram_redact_pci: checked,
-                            }))
-                          }
+                          onChange={saveField('deepgram_redact_pci')}
                         />
                       </div>
                       <p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-200/80">
@@ -772,21 +667,14 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                   <label class="text-xs text-gray-500 font-medium ml-1">
                     Meeting hotkey
                   </label>
-                  <input
-                    type="text"
+                  <HotkeyInput
                     value={props.settings().meeting_hotkey}
-                    onInput={(e) =>
-                      props.setSettings((current) => ({
-                        ...current,
-                        meeting_hotkey: (e.target as HTMLInputElement).value,
-                      }))
+                    onChange={(raw) =>
+                      props.setSettings((current) => ({ ...current, meeting_hotkey: raw }))
                     }
-                    onBlur={() => void props.onSaveSettings()}
-                    class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-primary font-bold focus:outline-none focus:border-primary/50 hover:border-primary/50 transition-colors"
+                    onBlur={save}
+                    class="mt-1.5 w-full rounded-lg px-3"
                   />
-                  <p class="mt-1 text-[11px] text-gray-600">
-                    Windows: {formatHotkeyForDisplay(props.settings().meeting_hotkey)}
-                  </p>
                 </div>
 
                 <div>
@@ -817,12 +705,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     value={props.settings().meeting_mic_device ?? ''}
                     options={audioOptions()}
                     class="mt-1.5 px-3 py-1.5"
-                    onChange={(value) =>
-                      applyChange((current) => ({
-                        ...current,
-                        meeting_mic_device: value || null,
-                      }))
-                    }
+                    onChange={(value) => saveField('meeting_mic_device')(value || null)}
                   />
                 </div>
 
@@ -834,50 +717,30 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     value={props.settings().meeting_system_audio_device ?? ''}
                     options={systemAudioOptions()}
                     class="mt-1.5 px-3 py-1.5"
-                    onChange={(value) =>
-                      applyChange((current) => ({
-                        ...current,
-                        meeting_system_audio_device: value || null,
-                      }))
-                    }
+                    onChange={(value) => saveField('meeting_system_audio_device')(value || null)}
                   />
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div class="grid grid-cols-1 @lg:grid-cols-3 gap-2">
                 <ToggleRow
                   label="Record Screen"
                   description="MP4 video"
                   checked={props.settings().meeting_record_video}
                   disabled={props.settings().meeting_video_preset === 'audio_only'}
-                  onChange={(checked) =>
-                    applyChange((current) => ({
-                      ...current,
-                      meeting_record_video: checked,
-                    }))
-                  }
+                  onChange={saveField('meeting_record_video')}
                 />
                 <ToggleRow
                   label="Record Mic"
                   description="Your channel"
                   checked={props.settings().meeting_record_mic}
-                  onChange={(checked) =>
-                    applyChange((current) => ({
-                      ...current,
-                      meeting_record_mic: checked,
-                    }))
-                  }
+                  onChange={saveField('meeting_record_mic')}
                 />
                 <ToggleRow
                   label="System Audio"
                   description="Playback"
                   checked={props.settings().meeting_record_system_audio}
-                  onChange={(checked) =>
-                    applyChange((current) => ({
-                      ...current,
-                      meeting_record_system_audio: checked,
-                    }))
-                  }
+                  onChange={saveField('meeting_record_system_audio')}
                 />
               </div>
 
@@ -900,30 +763,22 @@ export default function MeetingsPage(props: MeetingsPageProps) {
               <Show when={configTab() === 'summary'}>
                 <div class="space-y-3">
                   <div class="grid grid-cols-3 gap-2">
-                    <For each={SUMMARY_PROVIDER_OPTIONS}>
-                      {(option) => {
-                        const isActive = () => props.settings().summary_provider === option.value;
+                    <For each={PROVIDER_IDS}>
+                      {(provider) => {
+                        const isActive = () => props.settings().summary_provider === provider;
                         return (
                           <button
                             type="button"
-                            onClick={() => onSummaryProviderChange(option.value)}
+                            onClick={() => onSummaryProviderChange(provider)}
                             class={`cursor-pointer relative p-3 rounded-xl border transition-colors flex flex-col items-center justify-center gap-1.5 ${
                               isActive()
                                 ? 'border-primary bg-primary/5'
                                 : 'border-white/10 bg-surface-dark hover:border-white/20 hover:bg-white/[0.03]'
                             }`}
                           >
-                            {option.iconComponent
-                              ? option.iconComponent({
-                                  class: `w-5 h-5 ${isActive() ? 'text-primary' : 'text-gray-400'}`,
-                                })
-                              : (
-                                <span class={`material-symbols-outlined text-xl ${isActive() ? 'text-primary' : 'text-gray-400'}`}>
-                                  {option.icon}
-                                </span>
-                              )}
+                            <ProviderIcon provider={provider} active={isActive()} class="w-5 h-5" />
                             <span class={`font-medium text-xs ${isActive() ? 'text-white' : 'text-gray-300'}`}>
-                              {option.label}
+                              {PROVIDERS[provider].label}
                             </span>
                           </button>
                         );
@@ -936,13 +791,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     <input
                       type="text"
                       value={props.settings().summary_base_url}
-                      onInput={(e) =>
-                        props.setSettings((current) => ({
-                          ...current,
-                          summary_base_url: (e.target as HTMLInputElement).value,
-                        }))
-                      }
-                      onBlur={() => void props.onSaveSettings()}
+                      onInput={onField('summary_base_url')}
+                      onBlur={save}
                       placeholder="https://api.example.com/v1"
                       class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
                     />
@@ -956,13 +806,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         <input
                           type="text"
                           value={props.settings().summary_model}
-                          onInput={(e) =>
-                            props.setSettings((current) => ({
-                              ...current,
-                              summary_model: (e.target as HTMLInputElement).value,
-                            }))
-                          }
-                          onBlur={() => void props.onSaveSettings()}
+                          onInput={onField('summary_model')}
+                          onBlur={save}
                           placeholder="model-name"
                           class="mt-1.5 w-full bg-input-bg border border-white/15 rounded-lg py-1.5 px-3 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
                         />
@@ -972,40 +817,20 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                         value={props.settings().summary_model}
                         options={summaryModelOptions()}
                         class="mt-1.5 px-3 py-1.5"
-                        onChange={(value) =>
-                          applyChange((current) => ({ ...current, summary_model: value }))
-                        }
+                        onChange={saveField('summary_model')}
                       />
                     </Show>
                   </div>
 
                   <div>
                     <label class="text-xs text-gray-500 font-medium ml-1">API key</label>
-                    <div class="relative mt-1.5">
-                      <input
-                        type={showSummaryKey() ? 'text' : 'password'}
-                        value={props.settings().summary_api_key}
-                        onInput={(e) =>
-                          props.setSettings((current) => ({
-                            ...current,
-                            summary_api_key: (e.target as HTMLInputElement).value,
-                          }))
-                        }
-                        onBlur={() => void props.onSaveSettings()}
-                        placeholder="API key for meeting summaries"
-                        class="w-full bg-input-bg border border-white/15 rounded-lg py-1.5 pl-3 pr-10 text-sm font-mono text-gray-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder-gray-700"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowSummaryKey((value) => !value)}
-                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors cursor-pointer"
-                        title={showSummaryKey() ? 'Hide key' : 'Show key'}
-                      >
-                        <Show when={showSummaryKey()} fallback={<Eye size={15} />}>
-                          <EyeOff size={15} />
-                        </Show>
-                      </button>
-                    </div>
+                    <SecretInput
+                      class="mt-1.5"
+                      value={props.settings().summary_api_key}
+                      onInput={onField('summary_api_key')}
+                      onBlur={save}
+                      placeholder="API key for meeting summaries"
+                    />
                     <p class="mt-1 text-[11px] text-gray-600">
                       Used only for meeting summaries. Transcription settings are unaffected.
                     </p>
@@ -1016,6 +841,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
               </Show>
             </div>
           </div>
+          </div>
 
           <div class="shrink-0 border-b border-border-dark bg-surface-dark px-4 py-3 flex items-center justify-between">
             <h3 class="text-[11px] font-mono uppercase tracking-wider text-gray-500">Saved Meetings</h3>
@@ -1024,7 +850,7 @@ export default function MeetingsPage(props: MeetingsPageProps) {
             </span>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto scrollbar-hide">
+          <div class="min-h-52 flex-1 overflow-y-auto scrollbar-hide">
             <Show
               when={props.meetings().length > 0}
               fallback={
@@ -1329,7 +1155,8 @@ export default function MeetingsPage(props: MeetingsPageProps) {
                     >
                       <TranscriptPanel
                         meeting={meeting()}
-                        settings={props.settings}
+                        canTranscribe={canTranscribe(meeting())}
+                        canRetry={!!props.settings().deepgram_api_key.trim()}
                         onTranscribeMeeting={props.onTranscribeMeeting}
                         onRenameSpeaker={props.onRenameSpeaker}
                         seekTo={seekTo}
@@ -1353,18 +1180,9 @@ function SpeakerRoster(props: {
   const [editingSpeaker, setEditingSpeaker] = createSignal<string | null>(null);
   const [speakerDraft, setSpeakerDraft] = createSignal('');
 
-  const speakers = createMemo(() => {
-    const transcript = props.meeting.transcript;
-    if (!transcript) return [];
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const utterance of transcript.utterances) {
-      if (seen.has(utterance.speaker)) continue;
-      seen.add(utterance.speaker);
-      result.push(utterance.speaker);
-    }
-    return result;
-  });
+  const speakers = createMemo(() => [
+    ...new Set(props.meeting.transcript?.utterances.map((utterance) => utterance.speaker)),
+  ]);
 
   const startEdit = (speaker: string) => {
     setEditingSpeaker(speaker);
@@ -1450,77 +1268,68 @@ function SpeakerRoster(props: {
 
 function TranscriptPanel(props: {
   meeting: MeetingDetail;
-  settings: Accessor<Settings>;
+  canTranscribe: boolean;
+  canRetry: boolean;
   onTranscribeMeeting: (id: string) => void;
   onRenameSpeaker: (id: string, speaker: string, name: string) => void;
   seekTo: (startMs: number) => void;
 }) {
-  const canTranscribe =
-    props.settings().deepgram_api_key.trim() &&
-    props.settings().meeting_consent_acknowledged &&
-    (props.meeting.meta.has_mic || props.meeting.meta.has_system_audio) &&
-    props.meeting.meta.status === 'recorded' &&
-    props.meeting.meta.transcript_status !== 'pending';
-
   return (
     <Show
       when={props.meeting.transcript}
       fallback={
         <div class="p-5 lg:p-6">
-          <Show
-            when={props.meeting.meta.transcript_status === 'pending'}
+          <Switch
             fallback={
-              <Show
-                when={props.meeting.meta.transcript_status === 'error'}
-                fallback={
-                  <div class="border border-border-dark bg-surface-dark p-4 flex items-center justify-between gap-4">
-                    <div class="min-w-0">
-                      <p class="text-sm text-gray-300">No transcript yet.</p>
-                      <p class="mt-1 text-xs text-gray-500">
-                        Speaker labels work best with clear voices and limited crosstalk.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => props.onTranscribeMeeting(props.meeting.meta.id)}
-                      disabled={!canTranscribe}
-                      class="shrink-0 px-4 py-2 bg-primary text-black hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <UploadCloud size={14} />
-                      Transcribe
-                    </button>
-                  </div>
-                }
-              >
-                <div class="border border-amber-400/20 bg-amber-500/10 p-4 flex items-start justify-between gap-4">
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium text-amber-200">Transcription failed</p>
-                    <p class="mt-1 text-xs text-amber-100/70 leading-relaxed">
-                      {props.meeting.meta.transcript_error ?? 'Deepgram returned an error.'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => props.onTranscribeMeeting(props.meeting.meta.id)}
-                    disabled={!props.settings().deepgram_api_key.trim()}
-                    class="shrink-0 px-4 py-2 text-xs font-mono font-bold text-amber-100 hover:bg-amber-400/10 border border-amber-300/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Retry
-                  </button>
+              <div class="border border-border-dark bg-surface-dark p-4 flex items-center justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-sm text-gray-300">No transcript yet.</p>
+                  <p class="mt-1 text-xs text-gray-500">
+                    Speaker labels work best with clear voices and limited crosstalk.
+                  </p>
                 </div>
-              </Show>
+                <button
+                  type="button"
+                  onClick={() => props.onTranscribeMeeting(props.meeting.meta.id)}
+                  disabled={!props.canTranscribe}
+                  class="shrink-0 px-4 py-2 bg-primary text-black hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <UploadCloud size={14} />
+                  Transcribe
+                </button>
+              </div>
             }
           >
-            <div class="border border-primary/20 bg-primary/10 p-4 flex items-center gap-3 text-primary">
-              <Loader2 size={16} class="animate-spin" />
-              <div>
-                <p class="text-sm font-medium">Transcribing...</p>
-                <p class="mt-1 text-xs text-primary/80">
-                  Deepgram is processing the extracted meeting audio.
-                </p>
+            <Match when={props.meeting.meta.transcript_status === 'pending'}>
+              <div class="border border-primary/20 bg-primary/10 p-4 flex items-center gap-3 text-primary">
+                <Loader2 size={16} class="animate-spin" />
+                <div>
+                  <p class="text-sm font-medium">Transcribing...</p>
+                  <p class="mt-1 text-xs text-primary/80">
+                    Deepgram is processing the extracted meeting audio.
+                  </p>
+                </div>
               </div>
-            </div>
-          </Show>
+            </Match>
+            <Match when={props.meeting.meta.transcript_status === 'error'}>
+              <div class="border border-amber-400/20 bg-amber-500/10 p-4 flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-amber-200">Transcription failed</p>
+                  <p class="mt-1 text-xs text-amber-100/70 leading-relaxed">
+                    {props.meeting.meta.transcript_error ?? 'Deepgram returned an error.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => props.onTranscribeMeeting(props.meeting.meta.id)}
+                  disabled={!props.canRetry}
+                  class="shrink-0 px-4 py-2 text-xs font-mono font-bold text-amber-100 hover:bg-amber-400/10 border border-amber-300/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Retry
+                </button>
+              </div>
+            </Match>
+          </Switch>
         </div>
       }
     >

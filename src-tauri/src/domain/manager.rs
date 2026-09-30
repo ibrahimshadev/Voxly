@@ -1,8 +1,10 @@
+use std::io::Cursor;
 use std::sync::Mutex;
 
 use regex::Regex;
 
 use crate::settings::AppSettings;
+use crate::transcription_history::TranscriptionHistoryItem;
 
 use super::{
     ports::{Formatter, Paster, Recorder, SettingsStore, Transcriber},
@@ -63,21 +65,9 @@ impl DictationSessionManager {
     }
 
     pub fn save_vocabulary(&self, vocabulary: Vec<VocabularyEntry>) -> Result<(), String> {
-        let mut next_settings = self
-            .settings
-            .lock()
-            .map_err(|_| "Settings lock poisoned".to_string())?
-            .clone();
-        next_settings.vocabulary = vocabulary;
-
-        self.settings_store.save(&next_settings)?;
-
-        let mut guard = self
-            .settings
-            .lock()
-            .map_err(|_| "Settings lock poisoned".to_string())?;
-        *guard = next_settings;
-        Ok(())
+        let mut settings = self.get_settings()?;
+        settings.prefs.vocabulary = vocabulary;
+        self.save_settings(settings)
     }
 
     pub fn start_recording<F>(&self, mut on_update: F) -> Result<(), String>
@@ -134,7 +124,7 @@ impl DictationSessionManager {
                 .map_err(|_| "Settings lock poisoned".to_string())?
                 .clone();
 
-            let prompt = build_vocabulary_prompt(&settings.vocabulary);
+            let prompt = build_vocabulary_prompt(&settings.prefs.vocabulary);
             let transcription_result = self
                 .transcriber
                 .transcribe(&settings, wav_data, prompt.as_deref())
@@ -143,55 +133,57 @@ impl DictationSessionManager {
             let duration_secs = transcription_result.duration_secs.or(local_duration);
             let language = transcription_result.language;
 
-            let text =
-                apply_vocabulary_replacements(&transcription_result.text, &settings.vocabulary);
+            let text = apply_vocabulary_replacements(
+                &transcription_result.text,
+                &settings.prefs.vocabulary,
+            );
 
             let mut mode_name: Option<String> = None;
             let mut original_text: Option<String> = None;
 
-            let text = if let Some(ref mode_id) = settings.active_mode_id {
-                if let Some(mode) = settings.modes.iter().find(|m| &m.id == mode_id) {
-                    let _ = self.set_state(DictationState::Formatting);
-                    on_update(DictationUpdate::new(DictationState::Formatting));
-                    match self
-                        .formatter
-                        .format(
-                            &settings.base_url,
-                            &settings.api_key,
-                            &mode.model,
-                            &mode.system_prompt,
-                            &text,
-                        )
-                        .await
-                    {
-                        Ok(formatted) => {
-                            mode_name = Some(mode.name.clone());
-                            if formatted != text {
-                                original_text = Some(text);
-                            }
-                            formatted
+            let active_mode = settings
+                .prefs
+                .active_mode_id
+                .as_ref()
+                .and_then(|mode_id| settings.prefs.modes.iter().find(|m| &m.id == mode_id));
+            let text = if let Some(mode) = active_mode {
+                let _ = self.set_state(DictationState::Formatting);
+                on_update(DictationUpdate::new(DictationState::Formatting));
+                match self
+                    .formatter
+                    .format(
+                        &settings.prefs.base_url,
+                        &settings.api_key,
+                        &mode.model,
+                        &mode.system_prompt,
+                        &text,
+                    )
+                    .await
+                {
+                    Ok(formatted) => {
+                        mode_name = Some(mode.name.clone());
+                        if formatted != text {
+                            original_text = Some(text);
                         }
-                        Err(e) => {
-                            eprintln!("Formatting failed, using original text: {e}");
-                            text
-                        }
+                        formatted
                     }
-                } else {
-                    text
+                    Err(e) => {
+                        eprintln!("Formatting failed, using original text: {e}");
+                        text
+                    }
                 }
             } else {
                 text
             };
 
-            if let Err(e) = crate::transcription_history::append_item(
-                crate::transcription_history::AppendItemParams {
-                    text: text.clone(),
-                    duration_secs,
-                    language,
-                    mode_name,
-                    original_text,
-                },
-            ) {
+            if let Err(e) = crate::transcription_history::append_item(TranscriptionHistoryItem {
+                text: text.clone(),
+                duration_secs,
+                language,
+                mode_name,
+                original_text,
+                ..Default::default()
+            }) {
                 eprintln!("Failed to save transcription history: {e}");
                 crate::transcription_history::record_runtime_error(format!(
                     "Failed to save transcription history: {e}"
@@ -204,7 +196,7 @@ impl DictationSessionManager {
             on_update(DictationUpdate::new(DictationState::Pasting));
 
             self.paster.paste(&format!("{text} "))?;
-            if settings.copy_to_clipboard_on_success {
+            if settings.prefs.copy_to_clipboard_on_success {
                 if let Err(copy_err) = self.paster.copy(&text) {
                     eprintln!("Failed to copy transcript to clipboard: {copy_err}");
                 }
@@ -242,38 +234,24 @@ impl DictationSessionManager {
 }
 
 fn build_vocabulary_prompt(vocabulary: &[VocabularyEntry]) -> Option<String> {
-    let words: Vec<&str> = vocabulary
+    const PREFIX: &str = "Vocabulary: ";
+    let mut words = Vec::new();
+    let mut len = PREFIX.len();
+    let enabled_words = vocabulary
         .iter()
         .filter(|entry| entry.enabled)
         .map(|entry| entry.word.trim())
-        .filter(|word| !word.is_empty())
-        .take(MAX_PROMPT_ENTRIES)
-        .collect();
-
-    if words.is_empty() {
-        return None;
-    }
-
-    let mut prompt = String::from("Vocabulary: ");
-    for word in words {
-        let candidate = if prompt == "Vocabulary: " {
-            format!("{prompt}{word}")
-        } else {
-            format!("{prompt}, {word}")
-        };
-
-        if candidate.len() > MAX_PROMPT_CHARS {
+        .filter(|word| !word.is_empty());
+    for word in enabled_words.take(MAX_PROMPT_ENTRIES) {
+        let added = if words.is_empty() { 0 } else { ", ".len() } + word.len();
+        if len + added > MAX_PROMPT_CHARS {
             break;
         }
-
-        prompt = candidate;
+        len += added;
+        words.push(word);
     }
 
-    if prompt == "Vocabulary: " {
-        None
-    } else {
-        Some(prompt)
-    }
+    (!words.is_empty()).then(|| format!("{PREFIX}{}", words.join(", ")))
 }
 
 fn apply_vocabulary_replacements(text: &str, vocabulary: &[VocabularyEntry]) -> String {
@@ -326,41 +304,18 @@ fn is_word_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
 }
 
-/// Extract duration from a WAV buffer by reading the header.
-/// Returns None if the buffer is too small or the byte rate is zero.
 fn wav_duration_secs(data: &[u8]) -> Option<f64> {
-    // Standard WAV: byte_rate is at offset 28 (4 bytes, little-endian).
-    // The "data" sub-chunk starts after the fmt chunk; its size gives the raw audio length.
-    if data.len() < 44 {
-        return None;
-    }
-
-    let byte_rate = u32::from_le_bytes(data[28..32].try_into().ok()?) as f64;
-    if byte_rate == 0.0 {
-        return None;
-    }
-
-    // Walk chunks starting at offset 12 to find the "data" chunk.
-    let mut pos = 12;
-    while pos + 8 <= data.len() {
-        let id = &data[pos..pos + 4];
-        let chunk_size = u32::from_le_bytes(data[pos + 4..pos + 8].try_into().ok()?) as f64;
-        if id == b"data" {
-            return Some(chunk_size / byte_rate);
-        }
-        pos += 8 + chunk_size as usize;
-        // Chunks are word-aligned
-        if pos % 2 != 0 {
-            pos += 1;
-        }
-    }
-
-    None
+    let reader = hound::WavReader::new(Cursor::new(data)).ok()?;
+    let sample_rate = reader.spec().sample_rate;
+    (sample_rate > 0).then(|| reader.duration() as f64 / sample_rate as f64)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_vocabulary_replacements, build_vocabulary_prompt, VocabularyEntry};
+    use super::{
+        apply_vocabulary_replacements, build_vocabulary_prompt, wav_duration_secs, VocabularyEntry,
+        MAX_PROMPT_CHARS,
+    };
 
     #[test]
     fn build_prompt_returns_none_for_empty_vocabulary() {
@@ -416,5 +371,49 @@ mod tests {
             apply_vocabulary_replacements("CUBE AND EIGHTIES", &vocabulary),
             "Kubernetes"
         );
+    }
+
+    fn entry(word: &str) -> VocabularyEntry {
+        VocabularyEntry {
+            id: word.to_string(),
+            word: word.to_string(),
+            replacements: Vec::new(),
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn build_prompt_joins_words_and_stops_at_char_limit() {
+        let vocabulary = vec![entry(" alpha "), entry(""), entry("beta")];
+        assert_eq!(
+            build_vocabulary_prompt(&vocabulary).as_deref(),
+            Some("Vocabulary: alpha, beta")
+        );
+
+        // 12-char prefix + 99-char words joined by ", ": 7 words fit in 800, the 8th does not.
+        let long: Vec<_> = (0..20).map(|i| entry(&format!("{i:0>99}"))).collect();
+        let prompt = build_vocabulary_prompt(&long).unwrap();
+        assert_eq!(prompt.len(), 12 + 7 * 99 + 6 * 2);
+        assert!(prompt.len() <= MAX_PROMPT_CHARS);
+
+        assert!(build_vocabulary_prompt(&[entry(&"x".repeat(MAX_PROMPT_CHARS))]).is_none());
+    }
+
+    #[test]
+    fn wav_duration_reads_hound_header() {
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 8_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut wav = Vec::new();
+        let mut writer = hound::WavWriter::new(std::io::Cursor::new(&mut wav), spec).unwrap();
+        for _ in 0..(4_000 * 2) {
+            writer.write_sample(0i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        assert_eq!(wav_duration_secs(&wav), Some(0.5));
+        assert_eq!(wav_duration_secs(&wav[..20]), None);
     }
 }
