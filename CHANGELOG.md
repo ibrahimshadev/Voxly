@@ -1,3 +1,26 @@
+## [1.29.1](https://github.com/ibrahimshadev/Voxly/compare/v1.29.0...v1.29.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **meetings:** close the window where a starting transcription was reconciled ([aaa7c86](https://github.com/ibrahimshadev/Voxly/commit/aaa7c86572fbc353ff3aa4976104e89964f24397))
+* **meetings:** exclude the tail pad when detecting truncated transcript audio ([73c0380](https://github.com/ibrahimshadev/Voxly/commit/73c03807dee7489a2dbe15a4e6f8631896ab8302))
+* **meetings:** keep system-audio loopback track on wall-clock time ([f3047af](https://github.com/ibrahimshadev/Voxly/commit/f3047afeed29eaa5298bbf82a514804f8592a728))
+* **meetings:** make an interrupted transcription retryable immediately ([2c07fbc](https://github.com/ibrahimshadev/Voxly/commit/2c07fbcb6124b36ff6bee70798b5ea9f5d222bf6))
+* **meetings:** never truncate transcript audio to the shorter source ([9f644c4](https://github.com/ibrahimshadev/Voxly/commit/9f644c433806015581bda41495fb4bd987aed7ae))
+* **meetings:** pad idle system audio incrementally with buffered writes ([462f664](https://github.com/ibrahimshadev/Voxly/commit/462f6640a7d2b6eddb4d910b57d51a9caf3fb1ab))
+* **meetings:** recover transcriptions stuck in pending after interrupted runs ([f15ded5](https://github.com/ibrahimshadev/Voxly/commit/f15ded5e7065728362d149978d1469f21b1f6745))
+* **meetings:** stop system audio cleanly at the WAV size limit ([60d1bd2](https://github.com/ibrahimshadev/Voxly/commit/60d1bd27df9f3c790ac402263fc0da1d1ced9449))
+* **meetings:** transcribe the full mix when transcript audio was truncated ([265b347](https://github.com/ibrahimshadev/Voxly/commit/265b3470b6ae63096d95a58c6ba38b6b84331f93))
+* **modes:** never fall back to an audio, guard or arbitrary model ([2bd4a59](https://github.com/ibrahimshadev/Voxly/commit/2bd4a59d0cf6650e5cb60d6280307e3a29ed65f5))
+* **settings:** default Groq modes to openai/gpt-oss-120b ([653c0d5](https://github.com/ibrahimshadev/Voxly/commit/653c0d5b78806c2999a35ca7b8dbf8c1faa61e3a))
+* **ui:** animate the indeterminate meeting saving bar ([a56e3b0](https://github.com/ibrahimshadev/Voxly/commit/a56e3b0aec9dba72da46464479995bf301be63ef))
+* **ui:** fade the Meetings configuration panel's bottom edge while it scrolls ([a28c5e6](https://github.com/ibrahimshadev/Voxly/commit/a28c5e6470803eeba4e94beee7de12050bba688c))
+* **ui:** keep the Meetings split layout at the default window size ([e58495a](https://github.com/ibrahimshadev/Voxly/commit/e58495a0594932c2b5e4d17e7f9c5ac3962228af))
+* **ui:** readable violet/rose/cyan/lime speaker badges in light theme ([41657b5](https://github.com/ibrahimshadev/Voxly/commit/41657b51845501a0e9f767ee46420d270b245963))
+* **ui:** show the meeting hotkey as "Ctrl + Alt + M" like the global hotkey ([c2e3831](https://github.com/ibrahimshadev/Voxly/commit/c2e3831a3a33b928080b0aca8f4481316c20213a))
+* **ui:** wrap page header stats instead of clipping them ([8ac9753](https://github.com/ibrahimshadev/Voxly/commit/8ac975337e1f051e95597c0b41eb515cbf713dab))
+
 # [1.29.0](https://github.com/ibrahimshadev/Voxly/compare/v1.28.0...v1.29.0) (2026-06-26)
 
 
